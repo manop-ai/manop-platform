@@ -120,38 +120,4 @@ export default function PricingPage() {
       </div>
     </div>
   )
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px', gap: '0.5rem', padding: '0.5rem 1rem', marginTop: '0.5rem' }}>
-            <div />
-            <div style={{ textAlign: 'center', fontSize: '0.65rem', color: text3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Free</div>
-            <div style={{ textAlign: 'center', fontSize: '0.65rem', color: '#7C5FFF', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Pro</div>
-          </div>
-        </div>
-
-        {/* FAQ */}
-        <div>
-          <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '1.25rem', textAlign: 'center' }}>
-            Questions
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            {FAQS.map(faq => (
-              <div key={faq.q} style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 12, padding: '1.25rem' }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: text, marginBottom: '0.5rem', lineHeight: 1.35 }}>{faq.q}</div>
-                <div style={{ fontSize: '0.78rem', color: text2, lineHeight: 1.6 }}>{faq.a}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Bottom CTA */}
-        <div style={{ textAlign: 'center', marginTop: '3rem', paddingTop: '2rem', borderTop: `1px solid ${border}` }}>
-          <div style={{ fontSize: '0.75rem', color: text3, marginBottom: '0.5rem' }}>
-            Questions about the data or partnership?
-          </div>
-          <a href="mailto:partners@manopintel.com" style={{ fontSize: '0.85rem', color: '#14B8A6', fontWeight: 600 }}>
-            partners@manopintel.com
-          </a>
-        </div>
-      </div>
-    </div>
-  )
 }

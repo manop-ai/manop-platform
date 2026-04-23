@@ -224,7 +224,7 @@ export default function PropertySection({ neighborhood, dark }: { neighborhood: 
     setLoading(true)
     try {
       const { createClient } = await import('@supabase/supabase-js')
-      const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+      const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!)
       const name = neighborhood.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
 
       let q = sb.from('properties')
