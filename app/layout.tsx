@@ -3,10 +3,10 @@ import './globals.css'
 import NavBar from '../components/NavBar'
 
 export const metadata: Metadata = {
-  title: 'Zahazi — Africa Property Intelligence',
+  title: 'Manop — Africa Property Intelligence',
   description: 'Search any African neighborhood to see verified yield analysis, cap rates, and market benchmarks before you invest.',
   openGraph: {
-    title: 'Zahazi — Africa Property Intelligence',
+    title: 'Manop — Africa Property Intelligence',
     description: 'Real property intelligence for African real estate investors. Powered by Manop.',
   },
 }

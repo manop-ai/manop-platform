@@ -1,4 +1,4 @@
-// lib/supabase.ts — Zahazi reads from same Manop DB
+// lib/supabase.ts — Manop reads from same Manop DB
 import { createClient } from '@supabase/supabase-js'
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -6,7 +6,7 @@ const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(url, key)
 
-export type ZahaziProperty = {
+export type ManopProperty = {
   id:                  string
   property_type:       string | null
   bedrooms:            number | null
@@ -33,7 +33,7 @@ export async function getProperties(opts: {
   maxPrice?: number
   bedrooms?: number
   limit?: number
-} = {}): Promise<ZahaziProperty[]> {
+} = {}): Promise<ManopProperty[]> {
   let q = supabase
     .from('properties')
     .select('*')
@@ -55,17 +55,17 @@ export async function getProperties(opts: {
 
   const { data, error } = await q
   if (error) { console.error(error); return [] }
-  return (data as ZahaziProperty[]) || []
+  return (data as ManopProperty[]) || []
 }
 
-export async function getProperty(id: string): Promise<ZahaziProperty | null> {
+export async function getProperty(id: string): Promise<ManopProperty | null> {
   const { data, error } = await supabase
     .from('properties')
     .select('*')
     .eq('id', id)
     .single()
   if (error) return null
-  return data as ZahaziProperty
+  return data as ManopProperty
 }
 
 export async function getStats() {

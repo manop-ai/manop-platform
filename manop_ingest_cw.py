@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-manop_ingest_cw.py  — CW Real Estate full ingest for Zahazi/Manop
+manop_ingest_cw.py  — CW Real Estate full ingest for Manop
 ──────────────────────────────────────────────────────────────────
 Handles all 3 sheets:
   Sheet 1: 'Lekki Data Collection'         → for-sale listings
@@ -406,7 +406,7 @@ def process_shortlet_sheet(df, sheet_name):
 
 # ─── Main ─────────────────────────────────────────────────────
 def ingest(filepath, dry_run, skip_existing=True):
-    print(f"\n{'DRY RUN' if dry_run else 'LIVE'} — Zahazi/Manop Ingest: CW Real Estate")
+    print(f"\n{'DRY RUN' if dry_run else 'LIVE'} — Manop Ingest: CW Real Estate")
     print(f"File: {filepath}\n")
     if not dry_run and not SUPABASE_KEY:
         print("ERROR: export SUPABASE_SERVICE_ROLE_KEY=your_key"); sys.exit(1)

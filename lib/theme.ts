@@ -2,8 +2,8 @@
 // Shared dark mode state management across all pages
 // NavBar writes → pages listen → stays in sync
 
-export const THEME_KEY   = 'zahazi-dark'
-export const THEME_EVENT = 'zahazi-theme'
+export const THEME_KEY   = 'manop-dark'
+export const THEME_EVENT = 'manop-theme'
 
 export function getInitialDark(): boolean {
   if (typeof window === 'undefined') return true

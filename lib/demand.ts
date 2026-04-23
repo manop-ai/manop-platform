@@ -1,7 +1,7 @@
 // lib/demand.ts
 // Manop Demand Intelligence
 //
-// Every search, view, and contact click on Zahazi is a signal.
+// Every search, view, and contact click on Manop is a signal.
 // These signals compound over time into proprietary market intelligence
 // that nobody else has — because nobody else has the users.
 //

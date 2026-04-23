@@ -1,6 +1,6 @@
 'use client'
 // app/agency/dashboard/page.tsx
-// Zahazi Agency Dashboard — working login
+// Manop Agency Dashboard — working login
 // Login by email or partner ID (both work)
 // Shows real listings from Supabase, edit inline
 
@@ -185,7 +185,7 @@ export default function AgencyDashboard() {
       <div style={{ maxWidth:420, width:'100%', padding:'2rem' }}>
         <div style={{ textAlign:'center', marginBottom:'2rem' }}>
           <div style={{ width:48, height:48, borderRadius:12, background:'#5B2EFF', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.4rem', fontWeight:800, color:'#fff', margin:'0 auto 1rem' }}>Z</div>
-          <div style={{ fontSize:'0.65rem', color:'#14B8A6', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:'0.4rem' }}>Zahazi · Agency Partner</div>
+          <div style={{ fontSize:'0.65rem', color:'#14B8A6', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:'0.4rem' }}>Manop · Agency Partner</div>
           <h1 style={{ fontSize:'1.5rem', fontWeight:800, letterSpacing:'-0.03em' }}>Dashboard login</h1>
           <p style={{ fontSize:'0.82rem', color:text2, marginTop:'0.5rem' }}>Enter your agency email, partner ID, or agency name</p>
         </div>
@@ -239,7 +239,7 @@ export default function AgencyDashboard() {
       <div style={{ background:bg2, borderBottom:`1px solid ${border}`, padding:'1rem 2rem' }}>
         <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem' }}>
           <div>
-            <div style={{ fontSize:'0.62rem', color:'#14B8A6', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:'0.2rem' }}>Zahazi · Agency Partner</div>
+            <div style={{ fontSize:'0.62rem', color:'#14B8A6', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:'0.2rem' }}>Manop · Agency Partner</div>
             <div style={{ fontWeight:700, fontSize:'1.1rem' }}>{partner.name}</div>
             <div style={{ fontSize:'0.72rem', color:text3 }}>{partner.partner_type} · {partner.trust_level} trust · {(partner.cities || []).join(', ')}</div>
           </div>

@@ -1,9 +1,9 @@
 'use client'
 // app/search/page.tsx
-// Zahazi Search — Day 5 rebuild
+// Manop Search — Day 5 rebuild
 // Magazine-style grid (not straight lines)
 // Listing type tabs at the top so user picks what they want first
-// Source URL opens as embedded preview inside Zahazi — agent gets lead, user stays
+// Source URL opens as embedded preview inside Manop — agent gets lead, user stays
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
@@ -69,7 +69,7 @@ function fmtUSD(n: number | null) {
 }
 
 // ─── Embedded source viewer ───────────────────────────────────
-// Shows the original listing URL inside Zahazi in an iframe overlay
+// Shows the original listing URL inside Manop in an iframe overlay
 // User never leaves. Agent gets a lead signal.
 function SourceViewer({ url, title, onClose, dark }: {
   url: string; title: string; onClose: () => void; dark: boolean
@@ -86,7 +86,7 @@ function SourceViewer({ url, title, onClose, dark }: {
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E' }} />
           <div style={{ fontSize: '0.78rem', color: text, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
           <div style={{ fontSize: '0.65rem', color: '#14B8A6', background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: 20, padding: '0.15rem 0.5rem', fontWeight: 700, flexShrink: 0 }}>
-            Zahazi Intel Applied
+            Manop Intel Applied
           </div>
           <a href={url} target="_blank" rel="noopener" style={{ fontSize: '0.72rem', color: dark?'rgba(248,250,252,0.5)':'rgba(15,23,42,0.5)', textDecoration: 'none', flexShrink: 0 }}>Open ↗</a>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: dark?'rgba(248,250,252,0.5)':'rgba(15,23,42,0.5)', fontSize: '1.2rem', cursor: 'pointer', lineHeight: 1, padding: '0 0.25rem' }}>×</button>
@@ -204,7 +204,7 @@ function PropCard({ p, dark, onSourceOpen }: {
                 signal('contact_click', { property_id: p.id, neighborhood: p.neighborhood||'', partner: agency })
                 onSourceOpen(srcUrl, `${p.bedrooms||''}bed ${p.property_type||'property'} — ${p.neighborhood}`)
               }}
-              title="View on source platform — stays inside Zahazi"
+              title="View on source platform — stays inside Manop"
               style={{ background:dark?'rgba(20,184,166,0.12)':'rgba(20,184,166,0.08)', border:'1px solid rgba(20,184,166,0.25)', color:'#14B8A6', padding:'0.55rem 0.75rem', borderRadius:7, cursor:'pointer', fontSize:'0.75rem', fontWeight:600, whiteSpace:'nowrap' }}>
               View ↗
             </button>

@@ -1,5 +1,5 @@
 // lib/fx.ts
-// FX intelligence module for Manop/Zahazi
+// FX intelligence module for Manop
 //
 // Provides:
 //   - Live NGN/USD rate via open.er-api.com (cached 1hr)

@@ -1,5 +1,5 @@
 'use client'
-// app/page.tsx — Zahazi Homepage
+// app/page.tsx — Manop Homepage
 // City/neighborhood cards use real Unsplash photos (free, no key needed)
 // All CTAs connected: search, agency onboard, neighborhood pages
 // Light/dark mode throughout
@@ -258,7 +258,7 @@ export default function Home() {
             <div>
               <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', fontSize:'0.7rem', fontWeight:700, color:'#14B8A6', textTransform:'uppercase', letterSpacing:'0.15em', marginBottom:'0.875rem' }}>
                 <span style={{ width:16, height:2, background:'#14B8A6', display:'inline-block' }} />
-                What Zahazi computes
+                What Manop computes
               </div>
               <h2 style={{ fontSize:'clamp(1.8rem,3.5vw,2.6rem)', fontWeight:800, color:text, letterSpacing:'-0.04em', lineHeight:1.08, marginBottom:'1rem' }}>
                 Not listings.<br />Intelligence.
@@ -322,7 +322,7 @@ export default function Home() {
           <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
             <div style={{ width:28, height:28, borderRadius:8, background:'#5B2EFF', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.85rem', fontWeight:800, color:'#fff' }}>Z</div>
             <div>
-              <div style={{ fontSize:'0.9rem', fontWeight:700, color:text }}>Zahazi</div>
+              <div style={{ fontSize:'0.9rem', fontWeight:700, color:text }}>Manop</div>
               <div style={{ fontSize:'0.65rem', color:text3 }}>Nigeria · Ghana · Kenya · South Africa</div>
             </div>
           </div>

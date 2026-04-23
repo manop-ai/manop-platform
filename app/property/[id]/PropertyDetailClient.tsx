@@ -297,7 +297,7 @@ export default function PropertyDetailClient({ property: p, liveNGNRate, rateSou
           <div style={panel}>
             <div style={sLabel}>Make an enquiry</div>
             <div style={{ fontSize: '0.75rem', color: text2, marginBottom: '0.875rem', lineHeight: 1.55 }}>
-              Your enquiry goes directly to the agent. Zahazi logs intent to build market data.
+              Your enquiry goes directly to the agent. Manop logs intent to build market data.
             </div>
             {p.agent_phone && p.agent_phone.replace(/\D/g, '').length > 7 && (
               <a href={`https://wa.me/${p.agent_phone.replace(/\D/g, '')}`} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: '#25D366', color: '#fff', padding: '0.7rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', textDecoration: 'none', marginBottom: '0.5rem' }}>

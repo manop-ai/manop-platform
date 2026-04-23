@@ -42,13 +42,13 @@ export default async function PropertyPage({ params }: { params: { id: string } 
 
 export async function generateMetadata({ params }: { params: { id: string } }) {
   const p = await getProperty(params.id)
-  if (!p) return { title: 'Property — Zahazi' }
+  if (!p) return { title: 'Property — Manop' }
   const rates = await getLiveRates()
   const usd   = p.price_local ? Math.round(p.price_local / rates.NGN) : null
   const loc   = p.neighborhood || p.city || 'Lagos'
   const beds  = p.bedrooms ? `${p.bedrooms}-Bed ` : ''
   return {
-    title: `${beds}${p.property_type || 'Property'} in ${loc} — Zahazi`,
+    title: `${beds}${p.property_type || 'Property'} in ${loc} — Manop`,
     description: `₦${(p.price_local / 1_000_000).toFixed(0)}M${usd ? ` · ≈ $${Math.round(usd / 1000)}K at live rate` : ''} · Intelligence by Manop.`,
   }
 }

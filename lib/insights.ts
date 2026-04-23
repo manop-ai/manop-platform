@@ -124,7 +124,7 @@ export function generateInsights(slug: string, ngnRate = 1570): MarketInsight[] 
     id:       'market-depth',
     type:     'market',
     headline: `${b.sale_count + b.rent_count} verified`,
-    body:     `${b.display} has ${b.sale_count} for-sale and ${b.rent_count} rental listings verified in Zahazi — all from agency-sourced data with source attribution. More listings = more accurate benchmarks over time.`,
+    body:     `${b.display} has ${b.sale_count} for-sale and ${b.rent_count} rental listings verified in Manop — all from agency-sourced data with source attribution. More listings = more accurate benchmarks over time.`,
     value:    `${b.sale_count + b.rent_count}`,
     color:    '#22C55E',
     source:   `Manop intelligence · CW Real Estate`,
