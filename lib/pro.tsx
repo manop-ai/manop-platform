@@ -2,18 +2,16 @@
 // MANOP Pro Tier — single source of truth for access control
 //
 // How it works:
-//   1. User pays via Stripe → webhook fires → user_subscriptions row created
-//   2. user_profiles.tier flipped to 'pro'
-//   3. Every gated component checks isPro() before rendering Pro content
+//   - Everything is FREE for now
+//   - All features unlocked for all users
+//   - Future: Add subscription logic when needed
 //
-// Pro features:
+// All features (previously Pro):
 //   - STR / Airbnb yield on every property card and detail page
 //   - Cash-on-cash return (leveraged analysis)
 //   - Full 10-year USD return model (PriceTrendChart)
 //   - Neighborhood comparison — STR and appreciation rows
 //   - PropLens deep analysis — risk score, full explanation
-//
-// Free / Beta (always unlocked):
 //   - Traditional yield
 //   - Cap rate
 //   - ROI signal (Strong / Moderate / Low)
@@ -29,22 +27,22 @@ import { createClient } from '@supabase/supabase-js'
 // ─── Tier definitions ─────────────────────────────────────────
 export type UserTier = 'free' | 'beta' | 'pro' | 'agency' | 'admin'
 
-export const PRO_TIERS: UserTier[] = ['pro', 'agency', 'admin']
+export const PRO_TIERS: UserTier[] = ['free', 'beta', 'pro', 'agency', 'admin'] // Everything is Pro now
 
 export function isTierPro(tier: UserTier | null | undefined): boolean {
-  return PRO_TIERS.includes(tier as UserTier)
+  return true // Everything is free now
 }
 
-// ─── Pricing config ───────────────────────────────────────────
-// Update these once Stripe products are created
+// ─── Pricing config (disabled for now) ────────────────────────
+// Temporarily disabled - everything is free
 export const STRIPE_PRICES = {
-  pro_monthly: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY || 'price_placeholder_monthly',
-  pro_annual:  process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_ANNUAL  || 'price_placeholder_annual',
+  pro_monthly: 'free',
+  pro_annual:  'free',
 }
 
 export const PRICING = {
-  pro_monthly: { amount: 29_00, currency: 'usd', label: '$29/month', period: 'month' },
-  pro_annual:  { amount: 249_00, currency: 'usd', label: '$249/year', period: 'year', saving: 'Save $99' },
+  pro_monthly: { amount: 0, currency: 'usd', label: 'Free', period: 'forever' },
+  pro_annual:  { amount: 0, currency: 'usd', label: 'Free', period: 'forever' },
 }
 
 // ─── Client-side pro hook ─────────────────────────────────────

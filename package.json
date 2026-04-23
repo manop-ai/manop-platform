@@ -9,11 +9,9 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
-    "@types/stripe": "^8.0.416",
     "next": "^14.2.4",
     "react": "^18",
-    "react-dom": "^18",
-    "stripe": "^22.0.2"
+    "react-dom": "^18"
   },
   "devDependencies": {
     "@types/node": "^20",

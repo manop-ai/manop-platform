@@ -1,33 +1,46 @@
 'use client'
 // app/pricing/success/page.tsx
-// Shown after successful Stripe checkout
-// Confirms Pro access, caches tier in localStorage, redirects to search
+// Shown after successful onboarding - everything is free now
 
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { setUserEmail, clearProCache } from '../../../lib/pro'
 import { getInitialDark } from '../../../lib/theme'
 
 export default function PricingSuccess() {
-  const [dark]    = useState(getInitialDark())
-  const [ready,   setReady]   = useState(false)
-  const [seconds, setSeconds] = useState(5)
-  const params    = useSearchParams()
-  const email     = params.get('email') || ''
+  const [dark] = useState(getInitialDark())
 
   useEffect(() => {
-    if (!email) return
+    // No payment processing needed - everything is free
+  }, [])
 
-    // Store email and force tier refresh
-    setUserEmail(email)
-    clearProCache()
+  const bg    = dark ? '#0F172A' : '#F8FAFC'
+  const bg2   = dark ? '#1E293B' : '#F1F5F9'
+  const bg3   = dark ? '#162032' : '#FFFFFF'
+  const text  = dark ? '#F8FAFC' : '#0F172A'
+  const text2 = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
+  const text3 = dark ? 'rgba(248,250,252,0.32)' : 'rgba(15,23,42,0.32)'
+  const border = dark ? 'rgba(248,250,252,0.07)' : 'rgba(15,23,42,0.07)'
 
-    // Confirm Pro status from DB
-    fetch(`/api/pro/status?email=${encodeURIComponent(email)}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.is_pro) {
+  return (
+    <div style={{ background: bg, minHeight: '100vh', color: text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+      <div style={{ maxWidth: 500, textAlign: 'center' }}>
+        <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 16, padding: '3rem 2rem' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎉</div>
+          <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.04em', marginBottom: '1rem' }}>
+            Welcome to Manop!
+          </h1>
+          <p style={{ fontSize: '1rem', color: text2, marginBottom: '2rem', lineHeight: 1.6 }}>
+            Everything is free. Start exploring African property intelligence with all features unlocked.
+          </p>
+
+          <Link href="/search" style={{ display: 'inline-block', background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 10, padding: '1rem 2rem', textDecoration: 'none', fontSize: '1rem', fontWeight: 700, transition: 'background 0.15s' }}>
+            Start Investing →
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
           localStorage.setItem('manop_tier', 'pro')
           localStorage.setItem('manop_tier_at', String(Date.now()))
         }
