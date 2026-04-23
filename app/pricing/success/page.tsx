@@ -41,33 +41,6 @@ export default function PricingSuccess() {
     </div>
   )
 }
-          localStorage.setItem('manop_tier', 'pro')
-          localStorage.setItem('manop_tier_at', String(Date.now()))
-        }
-        setReady(true)
-      })
-      .catch(() => setReady(true))
-  }, [email])
-
-  // Countdown redirect
-  useEffect(() => {
-    if (!ready) return
-    if (seconds <= 0) { window.location.href = '/search'; return }
-    const t = setTimeout(() => setSeconds(s => s - 1), 1000)
-    return () => clearTimeout(t)
-  }, [ready, seconds])
-
-  const bg    = dark ? '#0F172A' : '#F8FAFC'
-  const text  = dark ? '#F8FAFC' : '#0F172A'
-  const text2 = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
-  const text3 = dark ? 'rgba(248,250,252,0.32)' : 'rgba(15,23,42,0.32)'
-  const border = dark ? 'rgba(248,250,252,0.07)' : 'rgba(15,23,42,0.07)'
-
-  return (
-    <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-      <div style={{ maxWidth: 480, width: '100%', textAlign: 'center' }}>
-
-        {/* Success mark */}
         <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.75rem', fontSize: '2rem' }}>
           ✓
         </div>

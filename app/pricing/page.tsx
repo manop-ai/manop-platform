@@ -47,7 +47,6 @@ export default function PricingPage() {
   const [dark,      setDark]      = useState(true)
   const [annual,    setAnnual]    = useState(false)
   const [email,     setEmail]     = useState('')
-  const [dark] = useState(getInitialDark())
 
   useEffect(() => {
     setDark(getInitialDark())
