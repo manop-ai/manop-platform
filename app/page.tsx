@@ -58,10 +58,10 @@ const MARKETS = [
 
 const INTELLIGENCE_METRICS = [
   { icon: '◈', label: 'Traditional yield',   desc: 'Real annual rent ÷ sale price. From verified CW data.' },
-  { icon: '◉', label: 'Short-let yield',      desc: 'Airbnb/STR return at local occupancy. Pro tier.' },
+  { icon: '◉', label: 'Short-let yield',      desc: 'Airbnb/STR return at local occupancy. Free on all property pages.' },
   { icon: '⬡', label: 'Cap rate',             desc: 'Net operating income ÷ price. Beta unlocked.' },
-  { icon: '◇', label: 'Cash-on-cash',         desc: 'Return on equity after Nigerian mortgage. Pro tier.' },
-  { icon: '△', label: 'USD return model',     desc: '10-year income + value chart in USD. Pro tier.' },
+  { icon: '◇', label: 'Cash-on-cash',         desc: 'Return on equity after Nigerian mortgage. Free on all property pages.' },
+  { icon: '△', label: 'USD return model',     desc: '10-year income + value chart in USD. Free on all property pages.' },
   { icon: '○', label: 'vs Market median',     desc: 'Is this listing above or below the real bedroom median?' },
 ]
 

@@ -65,16 +65,7 @@ function IntelRow({ label, value, sub, color, border }: {
   )
 }
 
-function LockedRow({ label, border }: { label: string; border: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0', borderBottom: `1px solid ${border}` }}>
-      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>{label}</div>
-      <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#F59E0B', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 5, padding: '0.15rem 0.55rem' }}>
-        Pro
-      </div>
-    </div>
-  )
-}
+
 
 // ─── Main ─────────────────────────────────────────────────────
 export default function PropertyDetailClient({ property: p, liveNGNRate, rateSource, rateFetchedAt }: Props) {
@@ -276,22 +267,7 @@ export default function PropertyDetailClient({ property: p, liveNGNRate, rateSou
             <IntelRow label="NGN depreciation since 2015" value={`−${depn.usdLossPct}%`} sub="CBN official data · ₦192 → ₦1,480/$1" color="#EF4444" border="none" />
           </div>
 
-          {/* Pro intel (locked) */}
-          <div style={panel}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-              <div style={sLabel}>Intelligence · pro</div>
-              <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#F59E0B', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.18)', borderRadius: 4, padding: '0.12rem 0.45rem' }}>Upgrade</div>
-            </div>
-            <LockedRow label="Short-let / Airbnb yield" border={border} />
-            <LockedRow label="Cap rate" border={border} />
-            <LockedRow label="Cash-on-cash return" border={border} />
-            <LockedRow label="Net operating income" border={border} />
-            <LockedRow label="Price vs market median" border={border} />
-            <LockedRow label="Demand score + days on market" border="none" />
-            <button style={{ width: '100%', marginTop: '1rem', background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 8, padding: '0.7rem', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}>
-              Unlock full intelligence
-            </button>
-          </div>
+
 
           {/* Enquire */}
           <div style={panel}>

@@ -197,7 +197,7 @@ function buildRows(aSlug: string, bSlug: string, ngnRate: number): CompareRow[] 
       aVal: pct(a.str_yield), bVal: pct(b.str_yield),
       aNum: a.str_yield, bNum: b.str_yield,
       winner: winner(a.str_yield, b.str_yield, true),
-      higherIsBetter: true, locked: true,
+      higherIsBetter: true, locked: false,
     },
     {
       metric: 'Entry price', sub: 'Lowest verified / researched',

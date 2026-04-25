@@ -185,7 +185,7 @@ function PropertyCard({ p, dark, neighborhood }: { p: Property; dark: boolean; n
             </div>
             <div>
               <div style={{ fontSize: '0.54rem', color: text3, marginBottom: 2 }}>STR</div>
-              <div title="Upgrade to Pro" style={{ fontSize: '0.8rem', cursor: 'pointer' }}>🔒</div>
+              {yEst ? <div style={{ fontSize: '0.88rem', fontWeight: 800, color: yieldColor(yEst * 0.65) }}>{(yEst * 0.65).toFixed(1)}%</div> : <div style={{ fontSize: '0.7rem', color: text3 }}>—</div>}
             </div>
           </div>
         </div>
@@ -296,8 +296,8 @@ export default function PropertySection({ neighborhood, dark }: { neighborhood: 
           <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#14B8A6', marginBottom: '0.3rem' }}>β Beta intelligence — free now</div>
           <div style={{ fontSize: '0.72rem', color: text3, lineHeight: 1.5 }}>Yield, cap rate, and market signal unlocked. Real data from verified sources — not estimates.</div>
         </div>
-        <div style={{ background: dark ? 'rgba(245,158,11,0.06)' : 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, padding: '0.875rem 1rem' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#F59E0B', marginBottom: '0.3rem' }}>🔒 Pro — coming soon</div>
+        <div style={{ background: dark ? 'rgba(20,184,166,0.06)' : 'rgba(20,184,166,0.04)', border: '1px solid rgba(20,184,166,0.15)', borderRadius: 10, padding: '0.875rem 1rem' }}>
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#14B8A6', marginBottom: '0.3rem' }}>✓ All intelligence included — free</div>
           <div style={{ fontSize: '0.72rem', color: text3, lineHeight: 1.5 }}>STR yield, cash-on-cash, 10yr USD return model, full trend charts.</div>
         </div>
       </div>

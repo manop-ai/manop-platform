@@ -30,16 +30,6 @@ export default function NavBar() {
 
   const navLink = { fontSize:'0.82rem', fontWeight:500, color:textMuted, padding:'0.4rem 0.875rem', borderRadius:8, textDecoration:'none', transition:'color 0.15s' }
 
-  // Check Pro status from localStorage (zero latency)
-  const [isPro, setIsPro] = useState(false)
-  useEffect(() => {
-    const tier = localStorage.getItem('manop_tier')
-    const at   = localStorage.getItem('manop_tier_at')
-    if (tier && at && Date.now() - parseInt(at) < 3600_000) {
-      setIsPro(['pro','agency','admin'].includes(tier))
-    }
-  }, [])
-
   return (
     <nav style={{ position:'sticky', top:0, zIndex:200, background:bg, backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', borderBottom:`1px solid ${borderColor}`, padding:'0 2rem', display:'flex', alignItems:'center', justifyContent:'space-between', height:64, transition:'background 0.3s' }}>
 
@@ -58,7 +48,6 @@ export default function NavBar() {
         <Link href="/compare" style={navLink}>Compare</Link>
         <Link href="/neighborhood/lekki-phase-1" style={navLink}>Markets</Link>
         <Link href="/agency/dashboard" style={navLink}>Agency</Link>
-        <Link href="/pricing" style={navLink}>Pricing</Link>
 
         {/* Dark mode toggle */}
         {mounted && (
@@ -69,18 +58,12 @@ export default function NavBar() {
           </button>
         )}
 
-        {/* Pro badge or upgrade CTA */}
-        {isPro ? (
-          <div style={{ background:'rgba(91,46,255,0.15)', border:'1px solid rgba(91,46,255,0.3)', color:'#A78BFA', borderRadius:8, padding:'0.42rem 0.875rem', fontSize:'0.75rem', fontWeight:700, letterSpacing:'0.04em' }}>
-            ✦ Pro
-          </div>
-        ) : (
-          <Link href="/pricing" style={{ background:'#5B2EFF', color:'#fff', padding:'0.42rem 1rem', borderRadius:8, fontSize:'0.8rem', fontWeight:600, textDecoration:'none', whiteSpace:'nowrap', transition:'background 0.15s' }}
-            onMouseEnter={e=>(e.currentTarget.style.background='#7C5FFF')}
-            onMouseLeave={e=>(e.currentTarget.style.background='#5B2EFF')}>
-            Upgrade to Pro →
-          </Link>
-        )}
+        {/* Partner CTA */}
+        <Link href="/agency/onboard" style={{ background:'#5B2EFF', color:'#fff', padding:'0.42rem 1rem', borderRadius:8, fontSize:'0.8rem', fontWeight:600, textDecoration:'none', whiteSpace:'nowrap', transition:'background 0.15s' }}
+          onMouseEnter={e=>(e.currentTarget.style.background='#7C5FFF')}
+          onMouseLeave={e=>(e.currentTarget.style.background='#5B2EFF')}>
+          Partner with us →
+        </Link>
       </div>
     </nav>
   )

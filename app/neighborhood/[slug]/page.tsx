@@ -170,17 +170,13 @@ function ScenarioCalc({ slug, dark }: { slug: string; dark: boolean }) {
     background: active ? `${color}20` : 'transparent',
     color: active ? color : text3, fontSize: '0.78rem', fontWeight: 600 as const, cursor: 'pointer',
   })
-  const metricRow = (label: string, value: string, color: string, sub: string, locked = false) => (
+  const metricRow = (label: string, value: string, color: string, sub: string) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '0.65rem 0', borderBottom: `1px solid ${border}` }}>
       <div>
         <div style={{ fontSize: '0.78rem', color: text2 }}>{label}</div>
         <div style={{ fontSize: '0.65rem', color: text3, marginTop: 2 }}>{sub}</div>
       </div>
-      {locked ? (
-        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#F59E0B', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 5, padding: '0.15rem 0.45rem' }}>🔒 Pro</div>
-      ) : (
-        <div style={{ fontSize: '1rem', fontWeight: 800, color }}>{value}</div>
-      )}
+      <div style={{ fontSize: '1rem', fontWeight: 800, color }}>{value}</div>
     </div>
   )
 
@@ -231,8 +227,8 @@ function ScenarioCalc({ slug, dark }: { slug: string; dark: boolean }) {
       {/* Metrics */}
       {metricRow('Traditional yield', `${grossYield}%`, grossYield !== '—' && parseFloat(grossYield) >= 6 ? '#22C55E' : '#F59E0B', `₦${Math.round(annualRent/1e6)}M annual rent on ${fmtM(price)}`)}
       {metricRow('Cap rate', `${capRate}%`, '#14B8A6', '75% of gross rent / price (after operating costs)')}
-      {metricRow('STR gross yield', `${strYield}%`, '#F59E0B', `₦${b ? Math.round(b.str_nightly/1_000) : 0}K/night · 55% occupancy`, true)}
-      {metricRow('Cash-on-cash return', '—', '#7C5FFF', '30% down · 22% mortgage · 15yr term', true)}
+      {metricRow('STR gross yield', `${strYield}%`, '#F59E0B', `₦${b ? Math.round(b.str_nightly/1_000) : 0}K/night · 55% occupancy`)}
+      {metricRow('Cash-on-cash return', '—', '#7C5FFF', '30% down · 22% mortgage · 15yr term')}
 
       <div style={{ fontSize: '0.65rem', color: text3, marginTop: '0.75rem', lineHeight: 1.6 }}>
         Rental benchmarks from {b?.rent_count || 0} verified listings. Sale benchmarks from {b?.sale_count || 0} listings. Source: CW Real Estate · Manop Intelligence.
