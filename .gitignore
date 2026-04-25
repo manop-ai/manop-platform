@@ -49,3 +49,4 @@ coverage/
 # Dependencies
 pnpm-lock.yaml
 yarn.lock
+.env.local
