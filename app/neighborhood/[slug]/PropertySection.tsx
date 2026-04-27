@@ -1,14 +1,14 @@
 'use client'
-// app/neighborhood/[slug]/PropertySection.tsx
-// Day 6 — masonry layout, real images via og:image scraping
-// Agency name removed from cards (shown on property detail only)
-// Beta intel: yield, cap rate, vs-median badge
+// app/neighborhood/[slug]/PropertySection.tsx — Day 14
+// FIXED: Image validation — skips CW watermarks and broken images
+// FIXED: Removed external source viewer — all views go to /property/[id]
+// FIXED: Agency attribution shown clearly on every card
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 
 interface Property {
-  id: string
+  id:                  string
   property_type:       string | null
   bedrooms:            number | null
   bathrooms:           number | null
@@ -33,6 +33,9 @@ const REAL_YIELDS: Record<string, Record<number, number>> = {
 const REAL_CAP: Record<string, Record<number, number>> = {
   'lekki-phase-1': { 1: 3.9, 2: 5.5, 3: 3.75, 4: 3.4, 5: 3.9 },
 }
+const REAL_STR: Record<string, number> = {
+  'lekki-phase-1': 9.0,
+}
 
 function fmtNGN(n: number | null) {
   if (!n) return 'POA'
@@ -49,92 +52,104 @@ function yieldColor(y: number) {
   return y >= 7 ? '#22C55E' : y >= 5 ? '#84CC16' : '#F59E0B'
 }
 
-// ─── Image hook — fetches og:image from source URL ────────────
-// Returns the image URL once scraped, null if no source or failed
-function useSourceImage(sourceUrl: string | undefined, propertyId: string, existingImages: string[]): string | null {
-  const [scraped, setScraped] = useState<string | null>(null)
-
-  useEffect(() => {
-    // If we already have images stored, don't scrape
-    if (existingImages.length > 0) return
-    // If no source URL to scrape from, don't try
-    if (!sourceUrl) return
-
-    let cancelled = false
-    fetch(`/api/scrape-image?url=${encodeURIComponent(sourceUrl)}&property_id=${propertyId}`)
-      .then(r => r.json())
-      .then(d => { if (!cancelled && d.image) setScraped(d.image) })
-      .catch(() => {})
-
-    return () => { cancelled = true }
-  }, [sourceUrl, propertyId])
-
-  return scraped
+// ─── Image validation ─────────────────────────────────────────
+// Rejects CW watermarks, PropertyPro placeholders, logos
+function isValidPropertyImage(url: string): boolean {
+  if (!url) return false
+  const lower = url.toLowerCase()
+  const skipPatterns = [
+    'watermark', 'placeholder', 'no-image', 'noimage',
+    'default', '/logo', 'icon', 'banner',
+    'propertypro.ng/images/no',
+    'propertypro.ng/assets/img/default',
+    'cwrealestate.com.ng/assets',
+  ]
+  for (const p of skipPatterns) {
+    if (lower.includes(p)) return false
+  }
+  return true
 }
 
-// ─── Card component ───────────────────────────────────────────
+function getDisplayImage(rawData: Record<string, unknown> | null): string | null {
+  if (!rawData) return null
+  const images = Array.isArray(rawData['images']) ? rawData['images'] as string[] : []
+  return images.find(img => isValidPropertyImage(img)) || null
+}
+
+// ─── Card ─────────────────────────────────────────────────────
 function PropertyCard({ p, dark, neighborhood }: { p: Property; dark: boolean; neighborhood: string }) {
-  const bg2   = dark ? '#1E293B' : '#F1F5F9'
-  const bg3   = dark ? '#162032' : '#FFFFFF'
-  const text  = dark ? '#F8FAFC' : '#0F172A'
-  const text2 = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
-  const text3 = dark ? 'rgba(248,250,252,0.32)' : 'rgba(15,23,42,0.32)'
+  const bg2    = dark ? '#1E293B' : '#F1F5F9'
+  const bg3    = dark ? '#162032' : '#FFFFFF'
+  const text   = dark ? '#F8FAFC' : '#0F172A'
+  const text2  = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
+  const text3  = dark ? 'rgba(248,250,252,0.32)' : 'rgba(15,23,42,0.32)'
   const border = dark ? 'rgba(248,250,252,0.07)' : 'rgba(15,23,42,0.07)'
 
-  const raw      = (p.raw_data || {}) as Record<string, unknown>
-  const images   = Array.isArray(raw['images']) ? raw['images'] as string[] : []
-  const srcUrl   = raw['source_url'] as string | undefined
-  const isRent   = p.listing_type === 'for-rent'
-  const isSTR    = p.listing_type === 'short-let'
+  const raw        = (p.raw_data || {}) as Record<string, unknown>
+  const displayImg = getDisplayImage(p.raw_data)
+  const sourceUrl  = raw['source_url'] as string | undefined
+  const agency     = raw['source_agency'] as string | undefined
+  const isRent     = p.listing_type === 'for-rent'
+  const isSTR      = p.listing_type === 'short-let'
 
-  // Scrape og:image from source URL if no images stored
-  const scrapedImg = useSourceImage(srcUrl, p.id, images)
-  const displayImg = images[0] || scrapedImg
-
-  const hood = neighborhood.toLowerCase()
-  const vm = (p.price_local && p.bedrooms && REAL_MEDIANS[hood]?.[p.bedrooms])
+  const hood   = neighborhood.toLowerCase()
+  const vm     = (p.price_local && p.bedrooms && REAL_MEDIANS[hood]?.[p.bedrooms])
     ? Math.round(((p.price_local - REAL_MEDIANS[hood][p.bedrooms]) / REAL_MEDIANS[hood][p.bedrooms]) * 100)
     : null
-  const yEst = (!isRent && !isSTR && p.bedrooms && REAL_YIELDS[hood]?.[p.bedrooms])
-    ? REAL_YIELDS[hood][p.bedrooms] : null
-  const capEst = (!isRent && !isSTR && p.bedrooms && REAL_CAP[hood]?.[p.bedrooms])
-    ? REAL_CAP[hood][p.bedrooms] : null
+  const yEst   = (!isRent && !isSTR && p.bedrooms && REAL_YIELDS[hood]?.[p.bedrooms]) ? REAL_YIELDS[hood][p.bedrooms] : null
+  const capEst = (!isRent && !isSTR && p.bedrooms && REAL_CAP[hood]?.[p.bedrooms]) ? REAL_CAP[hood][p.bedrooms] : null
+  const strEst = REAL_STR[hood]
 
   const typeColor = isSTR ? '#F59E0B' : isRent ? '#14B8A6' : '#5B2EFF'
 
   return (
-    <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, overflow: 'hidden', breakInside: 'avoid', marginBottom: '1rem', transition: 'border-color 0.15s, transform 0.15s' }}
+    <div
+      style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, overflow: 'hidden', breakInside: 'avoid', marginBottom: '1rem', transition: 'border-color 0.15s, transform 0.15s' }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(91,46,255,0.4)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.transform = 'translateY(0)' }}>
 
-      {/* Image — variable height based on whether we have one */}
-      <div style={{ height: displayImg ? 200 : 110, background: bg2, position: 'relative', overflow: 'hidden' }}>
+      {/* Image */}
+      <div style={{ height: displayImg ? 200 : 70, background: bg2, position: 'relative', overflow: 'hidden' }}>
         {displayImg ? (
-          <img src={displayImg} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+          <img
+            src={displayImg}
+            alt=""
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            onError={e => {
+              const parent = (e.target as HTMLImageElement).parentElement
+              if (parent) {
+                parent.style.height = '70px'
+                ;(e.target as HTMLImageElement).style.display = 'none'
+              }
+            }}
+          />
         ) : (
-          <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.2 }}>
-            <div style={{ fontSize: '1.8rem' }}>🏠</div>
-            {srcUrl && <div style={{ fontSize: '0.58rem', color: text3, marginTop: '0.35rem' }}>Loading image…</div>}
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', opacity: 0.2 }}>
+            <div style={{ fontSize: '1.2rem' }}>🏠</div>
+            <div style={{ fontSize: '0.58rem', color: text3 }}>No photo</div>
           </div>
         )}
-
-        {/* Listing type */}
-        <div style={{ position: 'absolute', top: 9, left: 9, background: `${typeColor}ee`, color: '#fff', borderRadius: 5, padding: '0.15rem 0.45rem', fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        <div style={{ position: 'absolute', top: 8, left: 8, background: `${typeColor}ee`, color: '#fff', borderRadius: 5, padding: '0.12rem 0.4rem', fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           {p.listing_type?.replace(/-/g, ' ') || 'For Sale'}
         </div>
-
-        {/* vs median badge */}
         {vm !== null && (
-          <div style={{ position: 'absolute', top: 9, right: 9, background: vm <= 0 ? 'rgba(34,197,94,0.92)' : 'rgba(239,68,68,0.92)', color: '#fff', borderRadius: 5, padding: '0.15rem 0.45rem', fontSize: '0.6rem', fontWeight: 700 }}>
+          <div style={{ position: 'absolute', top: 8, right: 8, background: vm <= 0 ? 'rgba(34,197,94,0.92)' : 'rgba(239,68,68,0.92)', color: '#fff', borderRadius: 5, padding: '0.12rem 0.4rem', fontSize: '0.6rem', fontWeight: 700 }}>
             {vm > 0 ? '+' : ''}{vm}% vs median
           </div>
         )}
       </div>
 
       {/* Card body */}
-      <div style={{ padding: '0.9rem 1rem 1rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.25rem' }}>
+      <div style={{ padding: '0.85rem 1rem 1rem' }}>
+
+        {/* Agency attribution */}
+        {agency && (
+          <div style={{ fontSize: '0.6rem', color: text3, marginBottom: '0.25rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Listed by {agency}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.2rem' }}>
           <div style={{ fontWeight: 700, fontSize: '0.92rem', color: text, lineHeight: 1.25 }}>
             {p.bedrooms ? `${p.bedrooms}-Bed ` : ''}{p.property_type || 'Property'}
           </div>
@@ -153,7 +168,11 @@ function PropertyCard({ p, dark, neighborhood }: { p: Property; dark: boolean; n
             {isRent && <span style={{ fontSize: '0.65rem', fontWeight: 400, color: text2 }}>/yr</span>}
             {isSTR  && <span style={{ fontSize: '0.65rem', fontWeight: 400, color: text2 }}>/night</span>}
           </div>
-          {p.price_usd && <div style={{ fontSize: '0.68rem', color: text3, fontFamily: 'monospace', marginTop: 2 }}>≈ {fmtUSD(p.price_usd)} · live rate</div>}
+          {p.price_usd && (
+            <div style={{ fontSize: '0.68rem', color: text3, fontFamily: 'monospace', marginTop: 2 }}>
+              ≈ {fmtUSD(p.price_usd)} · live rate
+            </div>
+          )}
         </div>
 
         {/* Specs */}
@@ -161,15 +180,16 @@ function PropertyCard({ p, dark, neighborhood }: { p: Property; dark: boolean; n
           {p.bedrooms  && <span style={{ fontSize: '0.68rem', color: text2, background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', padding: '0.15rem 0.4rem', borderRadius: 5 }}>{p.bedrooms} bed</span>}
           {p.bathrooms && <span style={{ fontSize: '0.68rem', color: text2, background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', padding: '0.15rem 0.4rem', borderRadius: 5 }}>{p.bathrooms} bath</span>}
           {p.size_sqm  && <span style={{ fontSize: '0.68rem', color: text2, background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', padding: '0.15rem 0.4rem', borderRadius: 5 }}>{p.size_sqm}m²</span>}
-          {p.title_document_type && <span style={{ fontSize: '0.68rem', color: '#14B8A6', background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.18)', padding: '0.15rem 0.4rem', borderRadius: 5 }}>✓ {p.title_document_type}</span>}
+          {p.title_document_type && (
+            <span style={{ fontSize: '0.68rem', color: '#14B8A6', background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.18)', padding: '0.15rem 0.4rem', borderRadius: 5 }}>
+              ✓ {p.title_document_type}
+            </span>
+          )}
         </div>
 
-        {/* Beta intelligence panel */}
+        {/* Intelligence panel — all free */}
         <div style={{ background: dark ? 'rgba(91,46,255,0.06)' : 'rgba(91,46,255,0.03)', border: '1px solid rgba(91,46,255,0.1)', borderRadius: 8, padding: '0.6rem 0.75rem', marginBottom: '0.75rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-            <div style={{ fontSize: '0.57rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Quick intel</div>
-            <div style={{ fontSize: '0.52rem', color: '#14B8A6', fontWeight: 700, background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: 20, padding: '0.06rem 0.35rem' }}>β</div>
-          </div>
+          <div style={{ fontSize: '0.57rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>Intelligence</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.25rem', textAlign: 'center' }}>
             <div>
               <div style={{ fontSize: '0.54rem', color: text3, marginBottom: 2 }}>Yield</div>
@@ -180,25 +200,36 @@ function PropertyCard({ p, dark, neighborhood }: { p: Property; dark: boolean; n
               {capEst ? <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#14B8A6' }}>{capEst}%</div> : <div style={{ fontSize: '0.7rem', color: text3 }}>—</div>}
             </div>
             <div>
-              <div style={{ fontSize: '0.54rem', color: text3, marginBottom: 2 }}>Signal</div>
-              {yEst ? <div style={{ fontSize: '0.72rem', fontWeight: 700, color: yEst >= 6 ? '#22C55E' : yEst >= 4 ? '#F59E0B' : '#EF4444', lineHeight: 1.1 }}>{yEst >= 6 ? 'Strong' : yEst >= 4 ? 'Moderate' : 'Low'}</div> : <div style={{ fontSize: '0.7rem', color: text3 }}>—</div>}
+              <div style={{ fontSize: '0.54rem', color: text3, marginBottom: 2 }}>STR yield</div>
+              {strEst ? <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#F59E0B' }}>{strEst}%</div> : <div style={{ fontSize: '0.7rem', color: text3 }}>—</div>}
             </div>
             <div>
-              <div style={{ fontSize: '0.54rem', color: text3, marginBottom: 2 }}>STR</div>
-              {yEst ? <div style={{ fontSize: '0.88rem', fontWeight: 800, color: yieldColor(yEst * 0.65) }}>{(yEst * 0.65).toFixed(1)}%</div> : <div style={{ fontSize: '0.7rem', color: text3 }}>—</div>}
+              <div style={{ fontSize: '0.54rem', color: text3, marginBottom: 2 }}>Signal</div>
+              {yEst ? (
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: yEst >= 6 ? '#22C55E' : yEst >= 4 ? '#F59E0B' : '#EF4444', lineHeight: 1.1 }}>
+                  {yEst >= 6 ? 'Strong' : yEst >= 4 ? 'OK' : 'Low'}
+                </div>
+              ) : <div style={{ fontSize: '0.7rem', color: text3 }}>—</div>}
             </div>
           </div>
         </div>
 
-        {/* Actions */}
+        {/* Actions — primary always goes to Manop property page */}
         <div style={{ display: 'flex', gap: '0.45rem' }}>
-          <Link href={`/property/${p.id}`} style={{ flex: 1, background: '#5B2EFF', color: '#fff', padding: '0.55rem', borderRadius: 7, textDecoration: 'none', fontSize: '0.75rem', fontWeight: 600, textAlign: 'center', display: 'block', transition: 'background 0.15s' }}
+          <Link
+            href={`/property/${p.id}`}
+            style={{ flex: 1, background: '#5B2EFF', color: '#fff', padding: '0.55rem', borderRadius: 7, textDecoration: 'none', fontSize: '0.75rem', fontWeight: 600, textAlign: 'center', display: 'block', transition: 'background 0.15s' }}
             onMouseEnter={e => (e.currentTarget.style.background = '#7C5FFF')}
             onMouseLeave={e => (e.currentTarget.style.background = '#5B2EFF')}>
             Full report →
           </Link>
-          {srcUrl && (
-            <a href={srcUrl} target="_blank" rel="noopener" title="View original listing" style={{ background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: `1px solid ${border}`, color: text2, padding: '0.55rem 0.75rem', borderRadius: 7, textDecoration: 'none', fontSize: '0.75rem', fontWeight: 600 }}>
+          {sourceUrl && (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Original listing — ${agency || 'partner platform'}`}
+              style={{ background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: `1px solid ${border}`, color: text3, padding: '0.55rem 0.75rem', borderRadius: 7, textDecoration: 'none', fontSize: '0.75rem', fontWeight: 600 }}>
               ↗
             </a>
           )}
@@ -216,15 +247,18 @@ export default function PropertySection({ neighborhood, dark }: { neighborhood: 
   const [filterBeds, setFilterBeds] = useState<number | null>(null)
   const [filterType, setFilterType] = useState('all')
 
-  const text  = dark ? '#F8FAFC' : '#0F172A'
-  const text3 = dark ? 'rgba(248,250,252,0.32)' : 'rgba(15,23,42,0.32)'
+  const text3  = dark ? 'rgba(248,250,252,0.32)' : 'rgba(15,23,42,0.32)'
   const border = dark ? 'rgba(248,250,252,0.07)' : 'rgba(15,23,42,0.07)'
+  const text   = dark ? '#F8FAFC' : '#0F172A'
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const { createClient } = await import('@supabase/supabase-js')
-      const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!)
+      const sb = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+      )
       const name = neighborhood.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
 
       let q = sb.from('properties')
@@ -262,7 +296,7 @@ export default function PropertySection({ neighborhood, dark }: { neighborhood: 
 
   return (
     <div>
-      {/* Count + filters */}
+      {/* Filters */}
       <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: '0.75rem', color: text3, marginRight: '0.25rem' }}>{total} listings ·</span>
         <button style={chip(filterType === 'all')} onClick={() => setFilterType('all')}>All</button>
@@ -277,7 +311,7 @@ export default function PropertySection({ neighborhood, dark }: { neighborhood: 
         ))}
       </div>
 
-      {/* Masonry grid — 2 columns */}
+      {/* Masonry grid */}
       {props.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '2.5rem', color: text3, fontSize: '0.85rem' }}>
           No listings match this filter.
@@ -290,15 +324,11 @@ export default function PropertySection({ neighborhood, dark }: { neighborhood: 
         </div>
       )}
 
-      {/* Beta + Pro notice */}
-      <div style={{ marginTop: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-        <div style={{ background: dark ? 'rgba(20,184,166,0.06)' : 'rgba(20,184,166,0.04)', border: '1px solid rgba(20,184,166,0.15)', borderRadius: 10, padding: '0.875rem 1rem' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#14B8A6', marginBottom: '0.3rem' }}>β Beta intelligence — free now</div>
-          <div style={{ fontSize: '0.72rem', color: text3, lineHeight: 1.5 }}>Yield, cap rate, and market signal unlocked. Real data from verified sources — not estimates.</div>
-        </div>
-        <div style={{ background: dark ? 'rgba(20,184,166,0.06)' : 'rgba(20,184,166,0.04)', border: '1px solid rgba(20,184,166,0.15)', borderRadius: 10, padding: '0.875rem 1rem' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#14B8A6', marginBottom: '0.3rem' }}>✓ All intelligence included — free</div>
-          <div style={{ fontSize: '0.72rem', color: text3, lineHeight: 1.5 }}>STR yield, cash-on-cash, 10yr USD return model, full trend charts.</div>
+      {/* Free intelligence notice */}
+      <div style={{ marginTop: '1.5rem', background: dark ? 'rgba(20,184,166,0.06)' : 'rgba(20,184,166,0.04)', border: '1px solid rgba(20,184,166,0.15)', borderRadius: 10, padding: '0.875rem 1rem' }}>
+        <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#14B8A6', marginBottom: '0.3rem' }}>✓ All intelligence is free</div>
+        <div style={{ fontSize: '0.72rem', color: text3, lineHeight: 1.5 }}>
+          Yield, cap rate, STR estimate, and USD return model shown on every property. Based on verified listings — guidance only, not financial advice.
         </div>
       </div>
     </div>

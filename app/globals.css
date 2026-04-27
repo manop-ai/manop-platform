@@ -525,3 +525,146 @@ footer {
   .detail-hero { padding: 2rem 1.25rem; }
   .detail-body { padding: 1.5rem 1.25rem; }
 }
+
+/* ── Prevent horizontal scroll everywhere ── */
+html, body { overflow-x: hidden; }
+* { max-width: 100%; box-sizing: border-box; }
+img { max-width: 100%; height: auto; }
+
+/* ── Touch targets ── */
+button, a { min-height: 36px; }
+
+/* ── Range inputs ── */
+input[type="range"] { width: 100%; cursor: pointer; }
+
+/* ── Number inputs — hide spinners on mobile ── */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { opacity: 0.4; }
+
+/* ── Mobile breakpoint — everything below 640px ── */
+@media (max-width: 640px) {
+
+  /* Nav height offset for sticky elements */
+  div[style*="top: 64"] { top: 60px !important; }
+
+  /* Page padding reduction */
+  div[style*="padding: '2rem'"],
+  section[style*="padding: '5rem 2rem'"] {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  /* Search masonry: 3 → 1 col */
+  div[style*="columns: 3"] { columns: 1 !important; }
+
+  /* PropertySection masonry: 2 → 1 col */
+  div[style*="columns: 2"] { columns: 1 !important; }
+
+  /* Search filter bar: 5 cols → 2 cols */
+  div[style*="grid-template-columns: 2fr 1fr 1fr 1fr 1fr"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Stats bar: 4 → 2 cols */
+  div[style*="grid-template-columns: repeat(4,1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Market cards: auto-fill → 1 col */
+  div[style*="grid-template-columns: repeat(auto-fill, minmax(280px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Intelligence metrics: 1fr 1fr → 1 col */
+  div[style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Compare market selectors: 1fr auto 1fr → 1 col */
+  div[style*="grid-template-columns: 1fr auto 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Hero text */
+  h1 { font-size: clamp(1.6rem, 7vw, 3rem) !important; }
+}
+
+/* ── Tablet — 641px to 768px ── */
+@media (max-width: 768px) {
+
+  /* Property detail: sidebar stacks below */
+  div[style*="grid-template-columns: 1fr 360px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Sticky sidebar becomes static */
+  div[style*="position: sticky; top: 1.5rem"] {
+    position: static !important;
+  }
+
+  /* Neighborhood page: 1fr 340px → 1 col */
+  div[style*="grid-template-columns: 1fr 340px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Hero/detail section padding */
+  div[style*="padding: '2.5rem 2rem'"],
+  div[style*="padding: '2rem'"] {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+}
+
+/* ── Print styles (for deal report) ── */
+@media print {
+  nav, button, .no-print { display: none !important; }
+  body { background: #fff !important; color: #000 !important; }
+  * { color: inherit !important; background: transparent !important; border-color: #ccc !important; }
+}
+
+/* ============================================================
+   DARK MODE — CSS variable layer
+   These work alongside the React state system.
+   When JS sets data-theme="dark" on <html>, these kick in.
+   ============================================================ */
+
+:root {
+  --manop-bg:      #F8FAFC;
+  --manop-bg2:     #F1F5F9;
+  --manop-bg3:     #FFFFFF;
+  --manop-text:    #0F172A;
+  --manop-text2:   rgba(15,23,42,0.65);
+  --manop-text3:   rgba(15,23,42,0.35);
+  --manop-border:  rgba(15,23,42,0.08);
+  --manop-purple:  #5B2EFF;
+  --manop-teal:    #14B8A6;
+}
+
+[data-theme="dark"] {
+  --manop-bg:      #0F172A;
+  --manop-bg2:     #1E293B;
+  --manop-bg3:     #162032;
+  --manop-text:    #F8FAFC;
+  --manop-text2:   rgba(248,250,252,0.65);
+  --manop-text3:   rgba(248,250,252,0.35);
+  --manop-border:  rgba(248,250,252,0.07);
+}
+
+/* Apply to body so every page gets background transition */
+body {
+  background: var(--manop-bg);
+  color: var(--manop-text);
+  transition: background 0.25s, color 0.25s;
+}
+
+/* Smooth transition on all theme-sensitive elements */
+*, *::before, *::after {
+  transition: background-color 0.25s, border-color 0.25s, color 0.15s;
+}
+/* Exclude transitions that would feel laggy */
+input, button, a, img, svg {
+  transition: none;
+}
+input:focus, button:active {
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
