@@ -35,6 +35,7 @@ export default function NavBar() {
     { href: '/compare',                    label: 'Compare' },
     { href: '/neighborhood/lekki-phase-1', label: 'Markets' },
     { href: '/agency/dashboard',           label: 'Agency' },
+    { href: '/developer/dashboard', label: 'Developer' }
   ]
 
   const linkStyle: React.CSSProperties = {
