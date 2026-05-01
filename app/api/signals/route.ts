@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { addCORSHeaders, handleCORSPreflight } from '../../../lib/cors'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,13 +17,18 @@ const WEIGHTS: Record<string, number> = {
   property_save: 5, contact_click: 10, phone_reveal: 20, enquiry_sent: 25,
 }
 
+export async function OPTIONS() {
+  return handleCORSPreflight()
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { signal_type, neighborhood, city, property_id, partner_id, metadata } = body
 
     if (!signal_type) {
-      return NextResponse.json({ error: 'signal_type required' }, { status: 400 })
+      const response = NextResponse.json({ error: 'signal_type required' }, { status: 400 })
+      return addCORSHeaders(response)
     }
 
     await sb.from('activity_log').insert({
@@ -40,9 +46,11 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({ ok: true })
+    const response = NextResponse.json({ ok: true })
+    return addCORSHeaders(response)
   } catch (err) {
     // Silently fail — never break the UI for analytics
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 200 })
+    const response = NextResponse.json({ ok: false, error: String(err) }, { status: 200 })
+    return addCORSHeaders(response)
   }
 }

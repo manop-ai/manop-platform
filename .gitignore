@@ -41,6 +41,7 @@ dist/
 build/
 out/
 .turbo/
+tsconfig.tsbuildinfo
 
 # Testing
 coverage/

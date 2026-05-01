@@ -5,16 +5,25 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { addCORSHeaders, handleCORSPreflight } from '../../../../lib/cors'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SECRET_KEY!,
 )
 
-// ─── Live FX ──────────────────────────────────────────────────
+// ─── Live FX with timeout ─────────────────────────────────────
 async function getNGNRate(): Promise<number> {
   try {
-    const r = await fetch('https://open.er-api.com/v6/latest/USD', { next: { revalidate: 3600 } })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+    
+    const r = await fetch('https://open.er-api.com/v6/latest/USD', {
+      next: { revalidate: 3600 },
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+    
     const d = await r.json()
     return d?.rates?.NGN || 1570
   } catch { return 1570 }
@@ -130,6 +139,10 @@ function parseCSV(text: string): Record<string, unknown>[] {
 }
 
 // ─── Main handler ─────────────────────────────────────────────
+export async function OPTIONS() {
+  return handleCORSPreflight()
+}
+
 export async function POST(req: NextRequest) {
   try {
     const form      = await req.formData()
@@ -138,7 +151,8 @@ export async function POST(req: NextRequest) {
     const agencyName = form.get('agency_name') as string || 'Unknown Agency'
 
     if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
+      const response = NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
+      return addCORSHeaders(response)
     }
 
     const fileName = file.name.toLowerCase()
@@ -156,11 +170,13 @@ export async function POST(req: NextRequest) {
         tip: 'Or use our Python ingest script for Excel files: manop_ingest_cw.py'
       }, { status: 400 })
     } else {
-      return NextResponse.json({ error: `Unsupported file type: ${fileName}` }, { status: 400 })
+      return addCORSHeaders(NextResponse.json({
+        error: `Unsupported file type: ${fileName}`
+      }, { status: 400 }))
     }
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'File appears empty or could not be parsed' }, { status: 400 })
+      return addCORSHeaders(NextResponse.json({ error: 'File appears empty or could not be parsed' }, { status: 400 }))
     }
 
     const headers = Object.keys(rows[0])
@@ -267,7 +283,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success:  true,
       inserted: inserted.length,
       skipped:  skipped.length,
@@ -278,12 +294,14 @@ export async function POST(req: NextRequest) {
         skipped_detail:   skipped.slice(0, 10),
       },
     })
+    return addCORSHeaders(response)
 
   } catch (err: unknown) {
     console.error('Agency bulk upload error:', err)
-    return NextResponse.json(
+    const response = NextResponse.json(
       { error: String(err) },
       { status: 500 }
     )
+    return addCORSHeaders(response)
   }
 }

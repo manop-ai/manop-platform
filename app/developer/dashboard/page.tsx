@@ -3,10 +3,11 @@
 // For property developers: project management, unit tracker, 
 // sales pipeline, payment plan tracking
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
+import ImageUploader from '@/components/ImageUploader'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -129,8 +130,7 @@ function AddProjectForm({ dark, onSaved }: { dark: boolean; onSaved: () => void 
   const [saving,     setSaving]     = useState(false)
   const [error,      setError]      = useState('')
   const [success,    setSuccess]    = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [images, setImages] = useState<{ file: File; preview: string }[]>([])
+  const [mediaUrls, setMediaUrls] = useState<string[]>([])
 
   const border = dark ? 'rgba(248,250,252,0.1)' : 'rgba(15,23,42,0.1)'
   const text   = dark ? '#F8FAFC' : '#0F172A'
@@ -143,17 +143,12 @@ function AddProjectForm({ dark, onSaved }: { dark: boolean; onSaved: () => void 
   function removeUnitType(i: number) { setUnitTypes(prev => prev.filter((_,idx) => idx !== i)) }
   function updateUnit(i: number, field: string, val: string) { setUnitTypes(prev => prev.map((u,idx) => idx === i ? { ...u, [field]: val } : u)) }
 
-  function addImages(files: FileList | null) {
-    if (!files) return
-    const newImgs = Array.from(files).slice(0, 8 - images.length).map(f => ({ file: f, preview: URL.createObjectURL(f) }))
-    setImages(prev => [...prev, ...newImgs].slice(0, 8))
-  }
-
   async function handleSave() {
     if (!name.trim())     { setError('Project name is required'); return }
     if (!location.trim()) { setError('Location is required'); return }
     if (!totalUnits)      { setError('Enter total unit count'); return }
     setSaving(true); setError('')
+    console.log('Project media:', mediaUrls)
     // In production: save to a projects table in Supabase
     // For now: simulate success
     await new Promise(r => setTimeout(r, 1200))
@@ -238,23 +233,13 @@ function AddProjectForm({ dark, onSaved }: { dark: boolean; onSaved: () => void 
 
       {/* Media upload */}
       <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 8 }}>Project media (renders, floor plans, site photos)</div>
-      <div onClick={() => fileRef.current?.click()} onDrop={e => { e.preventDefault(); addImages(e.dataTransfer.files) }} onDragOver={e => e.preventDefault()}
-        style={{ border: `2px dashed ${border}`, borderRadius: 10, padding: '1.25rem', textAlign: 'center', cursor: 'pointer', marginBottom: 10, background: dark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
-        <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>🏗️</div>
-        <div style={{ fontSize: 13, color: text2, marginBottom: 3 }}>Upload renders, floor plans, site photos</div>
-        <div style={{ fontSize: 11, color: text3 }}>JPG, PNG, PDF — up to 10MB each</div>
-        <input ref={fileRef} type="file" accept="image/*,.pdf" multiple style={{ display: 'none' }} onChange={e => addImages(e.target.files)} />
-      </div>
-      {images.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const, marginBottom: 14 }}>
-          {images.map((img, i) => (
-            <div key={i} style={{ position: 'relative', width: 70, height: 56 }}>
-              <img src={img.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 7, border: `1px solid ${border}` }} />
-              <button onClick={() => setImages(prev => prev.filter((_,idx) => idx !== i))} style={{ position: 'absolute', top: -4, right: -4, width: 18, height: 18, background: '#EF4444', border: 'none', borderRadius: '50%', color: '#fff', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>×</button>
-            </div>
-          ))}
-        </div>
-      )}
+      <ImageUploader
+        onImagesChange={setMediaUrls}
+        maxImages={8}
+        label="Project media"
+        hint="Upload JPG, PNG, or WebP images."
+        accept="image/*"
+      />
 
       {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '0.65rem', fontSize: 13, color: '#EF4444', marginBottom: 10 }}>{error}</div>}
       <button onClick={handleSave} disabled={saving} style={{ width: '100%', background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 10, padding: '0.875rem', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>

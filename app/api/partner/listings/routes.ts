@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { addCORSHeaders, handleCORSPreflight } from '../../../../lib/cors'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -168,222 +169,252 @@ async function authenticatePartner(apiKey: string) {
 }
 
 // ─── Main handler ─────────────────────────────────────────────
+export async function OPTIONS() {
+  return handleCORSPreflight()
+}
+
 export async function POST(req: NextRequest) {
-  // Auth
-  const apiKey = req.headers.get('X-Partner-Key')
-  if (!apiKey) {
-    return NextResponse.json({ error: 'Missing X-Partner-Key header' }, { status: 401 })
-  }
-
-  const partner = await authenticatePartner(apiKey)
-  if (!partner) {
-    return NextResponse.json({ error: 'Invalid or inactive partner key' }, { status: 403 })
-  }
-
-  // Parse body
-  let payload: PartnerPayload
   try {
-    payload = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
-
-  const { listings, sync_mode = 'upsert' } = payload
-
-  if (!Array.isArray(listings) || listings.length === 0) {
-    return NextResponse.json({ error: 'listings array is required and must not be empty' }, { status: 400 })
-  }
-
-  if (listings.length > 500) {
-    return NextResponse.json({ error: 'Maximum 500 listings per request. Use multiple requests for larger batches.' }, { status: 400 })
-  }
-
-  // Process each listing
-  const inserted: string[] = []
-  const updated: string[] = []
-  const skipped: { id: string; reason: string }[] = []
-
-  for (const listing of listings) {
-    // Validate required fields
-    if (!listing.external_id || !listing.price_local || !listing.neighborhood) {
-      skipped.push({ id: listing.external_id || 'unknown', reason: 'Missing required fields: external_id, price_local, neighborhood' })
-      continue
+    // Auth
+    const apiKey = req.headers.get('X-Partner-Key')
+    if (!apiKey) {
+      const response = NextResponse.json({ error: 'Missing X-Partner-Key header' }, { status: 401 })
+      return addCORSHeaders(response)
     }
 
-    if (!listing.listing_type) {
-      skipped.push({ id: listing.external_id, reason: 'Missing listing_type' })
-      continue
+    const partner = await authenticatePartner(apiKey)
+    if (!partner) {
+      const response = NextResponse.json({ error: 'Invalid or inactive partner key' }, { status: 403 })
+      return addCORSHeaders(response)
     }
 
-    // Normalize location
-    const { neighborhood, city } = normalizeNeighborhood(listing.neighborhood)
+    // Parse body
+    let payload: PartnerPayload
+    try {
+      payload = await req.json()
+    } catch {
+      const response = NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+      return addCORSHeaders(response)
+    }
 
-    // Compute intel
-    const intel = computeBasicIntel(listing)
+    const { listings, sync_mode = 'upsert' } = payload
 
-    // Build dedup hash
-    const raw_hash = makeDedupHash(listing, partner.short_code)
+    if (!Array.isArray(listings) || listings.length === 0) {
+      const response = NextResponse.json({ error: 'listings array is required and must not be empty' }, { status: 400 })
+      return addCORSHeaders(response)
+    }
 
-    // Map to properties table schema
-    const row = {
-      // Source attribution
-      data_partner_id:      partner.id,
-      source_type:          'agent-direct',
-      confidence:           0.85,
+    if (listings.length > 500) {
+      const response = NextResponse.json({ error: 'Maximum 500 listings per request. Use multiple requests for larger batches.' }, { status: 400 })
+      return addCORSHeaders(response)
+    }
 
-      // Location
-      country_code:         listing.country_code || 'NG',
-      city:                 listing.city || city || 'Unknown',
-      neighborhood,
+    // Process each listing
+    const inserted: string[] = []
+    const updated: string[] = []
+    const skipped: { id: string; reason: string }[] = []
 
-      // Classification
-      property_type:        listing.property_type || null,
-      listing_type:         listing.listing_type,
-      bedrooms:             listing.bedrooms || null,
-      bathrooms:            listing.bathrooms || null,
-      size_sqm:             listing.size_sqm || null,
-      furnishing:           null,
+    for (const listing of listings) {
+      // Validate required fields
+      if (!listing.external_id || !listing.price_local || !listing.neighborhood) {
+        skipped.push({ id: listing.external_id || 'unknown', reason: 'Missing required fields: external_id, price_local, neighborhood' })
+        continue
+      }
 
-      // Pricing — store both local and USD
-      price_local:          listing.price_local,
-      currency_code:        listing.currency_code || 'NGN',
-      price_usd:            intel.price_usd,
+      if (!listing.listing_type) {
+        skipped.push({ id: listing.external_id, reason: 'Missing listing_type' })
+        continue
+      }
 
-      // Title / legal
-      title_document_type:  listing.title_document_type || null,
+      // Normalize location
+      const { neighborhood, city } = normalizeNeighborhood(listing.neighborhood)
 
-      // Agent / lead routing
-      agent_phone:          listing.agent_phone || null,
+      // Compute intel
+      const intel = computeBasicIntel(listing)
 
-      // Rich content
-      raw_data: {
-        // Partner source fields
-        external_id:    listing.external_id,
-        partner_id:     partner.id,
-        partner_name:   partner.name,
-        source_url:     listing.source_url || null,
-        title:          listing.title || null,
-        description:    listing.description || null,
-        images:         listing.images || [],
-        agent_name:     listing.agent_name || null,
-        agent_email:    listing.agent_email || null,
-        listing_date:   listing.listing_date || null,
+      // Build dedup hash
+      const raw_hash = makeDedupHash(listing, partner.short_code)
 
-        // Intel computed at ingest
-        intel: {
-          traditional_yield_pct: intel.traditional_yield_pct,
-          roi_signal:            intel.roi_signal,
-          price_usd:             intel.price_usd,
-          fx_rate_used:          FX_RATES[listing.currency_code] || 1,
-          fx_rate_currency:      listing.currency_code,
-          computed_at:           new Date().toISOString(),
+      // Map to properties table schema
+      const row = {
+        // Source attribution
+        data_partner_id:      partner.id,
+        source_type:          'agent-direct',
+        confidence:           0.85,
+
+        // Location
+        country_code:         listing.country_code || 'NG',
+        city:                 listing.city || city || 'Unknown',
+        neighborhood,
+
+        // Classification
+        property_type:        listing.property_type || null,
+        listing_type:         listing.listing_type,
+        bedrooms:             listing.bedrooms || null,
+        bathrooms:            listing.bathrooms || null,
+        size_sqm:             listing.size_sqm || null,
+        furnishing:           null,
+
+        // Pricing — store both local and USD
+        price_local:          listing.price_local,
+        currency_code:        listing.currency_code || 'NGN',
+        price_usd:            intel.price_usd,
+
+        // Title / legal
+        title_document_type:  listing.title_document_type || null,
+
+        // Agent / lead routing
+        agent_phone:          listing.agent_phone || null,
+
+        // Rich content
+        raw_data: {
+          // Partner source fields
+          external_id:    listing.external_id,
+          partner_id:     partner.id,
+          partner_name:   partner.name,
+          source_url:     listing.source_url || null,
+          title:          listing.title || null,
+          description:    listing.description || null,
+          images:         listing.images || [],
+          agent_name:     listing.agent_name || null,
+          agent_email:    listing.agent_email || null,
+          listing_date:   listing.listing_date || null,
+
+          // Intel computed at ingest
+          intel: {
+            traditional_yield_pct: intel.traditional_yield_pct,
+            roi_signal:            intel.roi_signal,
+            price_usd:             intel.price_usd,
+            fx_rate_used:          FX_RATES[listing.currency_code] || 1,
+            fx_rate_currency:      listing.currency_code,
+            computed_at:           new Date().toISOString(),
+          },
         },
-      },
 
-      // Dedup
-      raw_hash,
-      last_updated: new Date().toISOString(),
-    }
+        // Dedup
+        raw_hash,
+        last_updated: new Date().toISOString(),
+      }
 
-    if (sync_mode === 'upsert') {
-      // Check if this listing already exists by external_id + partner
-      const { data: existing } = await supabase
-        .from('properties')
-        .select('id')
-        .eq('raw_hash', raw_hash)
-        .single()
-
-      if (existing) {
-        // Update existing
-        const { error } = await supabase
+      if (sync_mode === 'upsert') {
+        // Check if this listing already exists by external_id + partner
+        const { data: existing } = await supabase
           .from('properties')
-          .update(row)
-          .eq('id', existing.id)
+          .select('id')
+          .eq('raw_hash', raw_hash)
+          .single()
 
-        if (error) {
-          skipped.push({ id: listing.external_id, reason: error.message })
+        if (existing) {
+          // Update existing
+          const { error } = await supabase
+            .from('properties')
+            .update(row)
+            .eq('id', existing.id)
+
+          if (error) {
+            skipped.push({ id: listing.external_id, reason: error.message })
+          } else {
+            updated.push(listing.external_id)
+          }
         } else {
-          updated.push(listing.external_id)
+          // Insert new
+          const { error } = await supabase
+            .from('properties')
+            .insert(row)
+
+          if (error) {
+            skipped.push({ id: listing.external_id, reason: error.message })
+          } else {
+            inserted.push(listing.external_id)
+          }
         }
       } else {
-        // Insert new
+        // append: skip if hash exists
         const { error } = await supabase
           .from('properties')
           .insert(row)
 
-        if (error) {
+        if (error?.code === '23505') {
+          skipped.push({ id: listing.external_id, reason: 'duplicate' })
+        } else if (error) {
           skipped.push({ id: listing.external_id, reason: error.message })
         } else {
           inserted.push(listing.external_id)
         }
       }
-    } else {
-      // append: skip if hash exists
-      const { error } = await supabase
-        .from('properties')
-        .insert(row)
-
-      if (error?.code === '23505') {
-        skipped.push({ id: listing.external_id, reason: 'duplicate' })
-      } else if (error) {
-        skipped.push({ id: listing.external_id, reason: error.message })
-      } else {
-        inserted.push(listing.external_id)
-      }
     }
+
+    // Log to activity_log
+    await supabase.from('activity_log').insert({
+      event_type: 'partner_ingest',
+      message:    `${partner.name} pushed ${listings.length} listings`,
+      metadata: {
+        partner_id:   partner.id,
+        partner_name: partner.name,
+        sync_mode,
+        inserted:     inserted.length,
+        updated:      updated.length,
+        skipped:      skipped.length,
+      },
+    })
+
+    const response = NextResponse.json({
+      success:  true,
+      partner:  partner.name,
+      summary: {
+        received: listings.length,
+        inserted: inserted.length,
+        updated:  updated.length,
+        skipped:  skipped.length,
+      },
+      skipped_detail: skipped.length > 0 ? skipped : undefined,
+    })
+    return addCORSHeaders(response)
+
+  } catch (err) {
+    console.error('Partner listing POST error:', err)
+    const response = NextResponse.json({ error: String(err) }, { status: 500 })
+    return addCORSHeaders(response)
   }
-
-  // Log to activity_log
-  await supabase.from('activity_log').insert({
-    event_type: 'partner_ingest',
-    message:    `${partner.name} pushed ${listings.length} listings`,
-    metadata: {
-      partner_id:   partner.id,
-      partner_name: partner.name,
-      sync_mode,
-      inserted:     inserted.length,
-      updated:      updated.length,
-      skipped:      skipped.length,
-    },
-  })
-
-  return NextResponse.json({
-    success:  true,
-    partner:  partner.name,
-    summary: {
-      received: listings.length,
-      inserted: inserted.length,
-      updated:  updated.length,
-      skipped:  skipped.length,
-    },
-    skipped_detail: skipped.length > 0 ? skipped : undefined,
-  })
 }
 
 // ─── GET: partner health check + stats ───────────────────────
 export async function GET(req: NextRequest) {
-  const apiKey = req.headers.get('X-Partner-Key')
-  if (!apiKey) return NextResponse.json({ error: 'Missing X-Partner-Key' }, { status: 401 })
+  try {
+    const apiKey = req.headers.get('X-Partner-Key')
+    if (!apiKey) {
+      const response = NextResponse.json({ error: 'Missing X-Partner-Key' }, { status: 401 })
+      return addCORSHeaders(response)
+    }
 
-  const partner = await authenticatePartner(apiKey)
-  if (!partner) return NextResponse.json({ error: 'Invalid key' }, { status: 403 })
+    const partner = await authenticatePartner(apiKey)
+    if (!partner) {
+      const response = NextResponse.json({ error: 'Invalid key' }, { status: 403 })
+      return addCORSHeaders(response)
+    }
 
-  const { count } = await supabase
-    .from('properties')
-    .select('*', { count: 'exact', head: true })
-    .eq('data_partner_id', partner.id)
+    const { count } = await supabase
+      .from('properties')
+      .select('*', { count: 'exact', head: true })
+      .eq('data_partner_id', partner.id)
 
-  return NextResponse.json({
-    partner:        partner.name,
-    short_code:     partner.short_code,
-    trust_level:    partner.trust_level,
-    listing_count:  count || 0,
-    status:         'active',
-    api_version:    '1.0',
-    endpoints: {
-      push_listings:  'POST /api/partner/listings',
-      health_check:   'GET /api/partner/listings',
-      lead_webhook:   'Configure in partner dashboard (coming soon)',
-    },
-  })
+    const response = NextResponse.json({
+      partner:        partner.name,
+      short_code:     partner.short_code,
+      trust_level:    partner.trust_level,
+      listing_count:  count || 0,
+      status:         'active',
+      api_version:    '1.0',
+      endpoints: {
+        push_listings:  'POST /api/partner/listings',
+        health_check:   'GET /api/partner/listings',
+        lead_webhook:   'Configure in partner dashboard (coming soon)',
+      },
+    })
+    return addCORSHeaders(response)
+  } catch (err) {
+    console.error('Partner listing GET error:', err)
+    const response = NextResponse.json({ error: String(err) }, { status: 500 })
+    return addCORSHeaders(response)
+  }
 }

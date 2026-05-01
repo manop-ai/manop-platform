@@ -177,10 +177,17 @@ export default function AgencyOnboard() {
     setSaving(true)
     setError('')
     try {
-      // Live FX rate
+      // Live FX rate with timeout
       let ngnRate = 1570
       try {
-        const fx = await fetch('https://open.er-api.com/v6/latest/USD')
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000)
+        
+        const fx = await fetch('https://open.er-api.com/v6/latest/USD', {
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
+        
         const d  = await fx.json()
         if (d?.rates?.NGN) ngnRate = d.rates.NGN
       } catch { /* use fallback */ }

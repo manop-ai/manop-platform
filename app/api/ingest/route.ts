@@ -3,19 +3,25 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { addCORSHeaders, handleCORSPreflight } from '../../../lib/cors'
 import type { CleanRecord } from '../../../lib/manop-cleaner'
 
-export async function POST(req: NextRequest) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SECRET_KEY!,
-  )
+export async function OPTIONS() {
+  return handleCORSPreflight()
+}
 
+export async function POST(req: NextRequest) {
   try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SECRET_KEY!,
+    )
+
     const { records, source_agency }: { records: CleanRecord[]; source_agency: string } = await req.json()
 
     if (!records || !Array.isArray(records) || records.length === 0) {
-      return NextResponse.json({ error: 'No records provided' }, { status: 400 })
+      const response = NextResponse.json({ error: 'No records provided' }, { status: 400 })
+      return addCORSHeaders(response)
     }
 
     // Map CleanRecord to properties table schema
@@ -52,17 +58,20 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('Supabase insert error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      const response = NextResponse.json({ error: error.message }, { status: 500 })
+      return addCORSHeaders(response)
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       inserted: data?.length || 0,
       message: `${data?.length || 0} records saved to Manop database`,
     })
+    return addCORSHeaders(response)
 
   } catch (err) {
     console.error('Ingest route error:', err)
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    const response = NextResponse.json({ error: String(err) }, { status: 500 })
+    return addCORSHeaders(response)
   }
 }

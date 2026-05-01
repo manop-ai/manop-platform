@@ -43,9 +43,16 @@ export async function getLiveNGNRate(): Promise<number> {
   }
 
   try {
+    // Add timeout for users in regions with slow/unreliable connections (e.g., Nigeria)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+    
     const res = await fetch('https://open.er-api.com/v6/latest/USD', {
       next: { revalidate: 3600 }, // Next.js cache — 1hr
+      signal: controller.signal,
     })
+    clearTimeout(timeoutId)
+    
     if (res.ok) {
       const data = await res.json()
       if (data?.result === 'success' && data?.rates?.NGN) {
@@ -91,9 +98,16 @@ export async function getLiveRates(): Promise<LiveRates> {
   }
 
   try {
+    // Add timeout for users in regions with slow/unreliable connections
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+    
     const res = await fetch('https://open.er-api.com/v6/latest/USD', {
       next: { revalidate: 3600 },
+      signal: controller.signal,
     })
+    clearTimeout(timeoutId)
+    
     if (res.ok) {
       const data = await res.json()
       if (data?.result === 'success') {
@@ -111,7 +125,7 @@ export async function getLiveRates(): Promise<LiveRates> {
       }
     }
   } catch {
-    // ignore
+    // ignore — use fallback
   }
 
   return fallback

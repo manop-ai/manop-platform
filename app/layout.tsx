@@ -30,12 +30,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Anti-flash theme script — runs synchronously before paint */}
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
 
+        {/* Preconnect to Google Fonts for faster loading — critical for Nigeria users */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        
+        {/* Load fonts with font-display: swap to avoid blocking page render */}
+        {/* This allows fallback fonts to display immediately while custom fonts load */}
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap"
           rel="stylesheet"
         />
+
+        {/* DNS prefetch for external resources to improve load time */}
+        <link rel="dns-prefetch" href="https://open.er-api.com" />
+        <link rel="dns-prefetch" href="https://images.unsplash.com" />
+        <link rel="dns-prefetch" href="https://ftbmfjkrgcbykombxdlh.supabase.co" />
       </head>
       <body>
         <NavBar />

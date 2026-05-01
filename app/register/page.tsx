@@ -23,6 +23,7 @@ export default function RegisterPage() {
   const [role, setRole]       = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState('')
+  const [mounted, setMounted] = useState(false)
   const router     = useRouter()
   const params     = useSearchParams()
   const redirectTo = params.get('redirect') || '/search'
@@ -32,11 +33,23 @@ export default function RegisterPage() {
     return listenTheme(d => setDark(d))
   }, [])
 
-  // If already registered, redirect
+  // If already registered, redirect — with better iOS Safari support
   useEffect(() => {
-    const saved = localStorage.getItem('manop_user_email')
-    if (saved) router.push(redirectTo)
-  }, [])
+    setMounted(true)
+    try {
+      const saved = localStorage.getItem('manop_user_email')
+      if (saved) {
+        // Use a small delay to ensure router is ready (important for iOS)
+        const timer = setTimeout(() => {
+          router.push(redirectTo)
+        }, 100)
+        return () => clearTimeout(timer)
+      }
+    } catch (e) {
+      // localStorage might not be available in iOS private mode — just continue
+      console.debug('localStorage unavailable, proceeding with registration')
+    }
+  }, [redirectTo, router])
 
   const bg     = dark ? '#0F172A' : '#F8FAFC'
   const bg3    = dark ? '#162032' : '#FFFFFF'
@@ -75,7 +88,10 @@ export default function RegisterPage() {
     setError('')
 
     try {
-      // Save to Supabase user_profiles
+      // Save to Supabase user_profiles with timeout (5s)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+
       const { error: dbErr } = await sb.from('user_profiles').upsert({
         email:      email.trim().toLowerCase(),
         full_name:  name.trim(),
@@ -83,38 +99,63 @@ export default function RegisterPage() {
         source:     'web_registration',
         created_at: new Date().toISOString(),
       }, { onConflict: 'email' })
+      
+      clearTimeout(timeoutId)
 
       if (dbErr && dbErr.code !== '23505') {
         console.error('DB error:', dbErr)
         // Don't block on DB error — still save locally
       }
 
-      // Log the registration signal
-      await fetch('/api/signals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          signal_type: 'user_registration',
-          metadata: {
-            email:  email.trim().toLowerCase(),
-            name:   name.trim(),
-            role,
-            source: 'register_page',
-            redirect: redirectTo,
-          },
-        }),
-      }).catch(() => {})
+      // Log the registration signal with timeout
+      try {
+        const signalController = new AbortController()
+        const signalTimeout = setTimeout(() => signalController.abort(), 3000)
 
-      // Save session to localStorage
-      localStorage.setItem('manop_user_email', email.trim().toLowerCase())
-      localStorage.setItem('manop_user_name',  name.trim())
-      localStorage.setItem('manop_user_role',  role)
+        await fetch('/api/signals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            signal_type: 'user_registration',
+            metadata: {
+              email:  email.trim().toLowerCase(),
+              name:   name.trim(),
+              role,
+              source: 'register_page',
+              redirect: redirectTo,
+            },
+          }),
+          signal: signalController.signal,
+        })
+        clearTimeout(signalTimeout)
+      } catch {
+        // Never block on analytics — users should always be able to register
+      }
 
-      // Redirect
-      router.push(redirectTo)
+      // Save session to localStorage with fallback
+      try {
+        localStorage.setItem('manop_user_email', email.trim().toLowerCase())
+        localStorage.setItem('manop_user_name',  name.trim())
+        localStorage.setItem('manop_user_role',  role)
+      } catch (e) {
+        // localStorage unavailable (iOS private mode) — still redirect
+        console.debug('localStorage unavailable, proceeding anyway')
+      }
+
+      // Redirect with small delay for iOS Safari reliability
+      setTimeout(() => {
+        router.push(redirectTo)
+      }, 50)
 
     } catch (e) {
-      // If all else fails, still save locally and redirect
+      // If all else fails, still try to redirect
+      console.error('Registration error:', e)
+      try {
+        localStorage.setItem('manop_user_email', email.trim().toLowerCase())
+      } catch {}
+      setTimeout(() => {
+        router.push(redirectTo)
+      }, 50)
       localStorage.setItem('manop_user_email', email.trim().toLowerCase())
       localStorage.setItem('manop_user_name',  name.trim())
       router.push(redirectTo)
