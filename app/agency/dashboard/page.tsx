@@ -431,7 +431,7 @@ export default function AgencyDashboard() {
   return (
     <div style={{ background: bg, minHeight: '100vh', color: text, transition: 'background 0.3s' }}>
       {/* Header */}
-      <div style={{ background: bg2, borderBottom: `1px solid ${border}`, padding: '0.875rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+      <div style={{ background: bg2, borderBottom: `1px solid ${border}`, padding: '0.875rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' as const, gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Link href="/" style={{ textDecoration: 'none' }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: '#5B2EFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: 14 }}>M</div>
@@ -532,7 +532,7 @@ export default function AgencyDashboard() {
                 const isEditing = editId === l.id
                 return (
                   <div key={l.id} style={{ background: bg3, border: `1px solid ${isEditing ? 'rgba(91,46,255,0.4)' : border}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.875rem 1rem', flexWrap: 'wrap' } as React.CSSProperties}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.875rem 1rem', flexWrap: 'wrap' as const }}>
                       <div style={{ width: 60, height: 48, borderRadius: 7, overflow: 'hidden', background: bg2, flexShrink: 0 }}>
                         {images[0]
                           ? <img src={images[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => (e.target as HTMLImageElement).style.display='none'} />
