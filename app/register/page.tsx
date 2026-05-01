@@ -5,7 +5,7 @@
 // After signup: sets localStorage session + redirects to /search
 // This is the gate for: save property, contact agent, download report
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
@@ -172,7 +172,8 @@ export default function RegisterPage() {
   ]
 
   return (
-    <div style={{ background: bg, minHeight: '100vh', color: text, transition: 'background 0.3s, color 0.3s' }}>
+    <Suspense fallback={<div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>}>
+      <div style={{ background: bg, minHeight: '100vh', color: text, transition: 'background 0.3s, color 0.3s' }}>
 
       <div style={{ maxWidth: 520, margin: '0 auto', padding: '2rem 1rem' }}>
 
@@ -274,6 +275,6 @@ export default function RegisterPage() {
         </p>
 
       </div>
-    </div>
+    </Suspense>
   )
 }
