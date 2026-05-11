@@ -1,0 +1,54 @@
+node_modules/
+.next/
+.env.local
+.env
+.env*.local
+.env*.example
+*.log
+.DS_Store
+.vercel
+
+# Data ingestion scripts
+manop_ingest_cw.py
+**/ingest*.py
+**/ingest*.js
+
+# Data files and templates
+*.xlsx
+*.xls
+*.csv
+lekki_property_data_template.*
+
+# Generated documentation
+repomix-output.xml
+*.xml
+manop_ingest_cw.py
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vim/
+
+# OS files
+Thumbs.db
+.env.*.local
+.cache/
+
+# Build and runtime
+dist/
+build/
+out/
+.turbo/
+tsconfig.tsbuildinfo
+
+# Testing
+coverage/
+.nyc_output/
+
+# Dependencies
+pnpm-lock.yaml
+yarn.lock
+.env.local
