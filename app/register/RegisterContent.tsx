@@ -1,37 +1,20 @@
 'use client'
-// app/register/RegisterContent.tsx — REBUILT FROM SCRATCH
+// app/register/RegisterContent.tsx — REBUILT FOR SPRINT 1
 //
-// THREE PROBLEMS SOLVED PERMANENTLY:
+// ROOT CAUSE OF OLD SYSTEM:
+// Registration collected name + email only — no password.
+// This made it impossible for /login (signInWithPassword) to ever work.
 //
-// PROBLEM 1 — "Redirects to search/dashboard immediately on load"
-// Every version had a useEffect that checked localStorage on mount.
-// If manop_user_email, manop_agency_id, or manop_dev_id existed from
-// any previous session or test, it fired router.push() before the user
-// could see the form. This is REMOVED ENTIRELY. Register is a public
-// page. We never auto-redirect away from a page the user chose to visit.
+// NEW ARCHITECTURE:
+// Step 1: Select account type
+// Step 2: Name + email + password → sb.auth.signUp() → profile insert → "Check your email"
+// Step 3: User verifies email → /verify → routed to correct setup page
 //
-// PROBLEM 2 — "Shaking / flickering on click"
-// The previous CTA button was disabled={loading || success} but the
-// label was changing on every state change causing layout shift.
-// Also, the form was re-rendering on every keystroke because all state
-// lived in one component and the account type grid re-rendered with it.
-// Fixed by stable button sizing and removing unnecessary re-renders.
-//
-// PROBLEM 3 — "Should go to setup page per type"
-// Agency   → /agency/onboard    (EXISTS in codebase ✓)
-// Developer → /developer/onboard (EXISTS in codebase ✓)
-// Buyer    → /search             (investor setup page not built yet)
-// Diaspora → /search             (investor setup page not built yet)
-// When investor/diaspora setup pages are built, just update the
-// POST_REGISTER_ROUTES map below — nothing else changes.
-//
-// DESIGN CHANGE: Account type is now a clean LIST not a button grid.
-// User clicks once to select type, form adjusts, they fill name/email,
-// submit. One flow. No confusion.
+// ONE system. No custom tokens. No localStorage auth hacks.
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { getInitialDark, listenTheme } from '../../lib/theme'
 
@@ -40,603 +23,385 @@ const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
 )
 
-// ── Account types (clean, no research/partner clutter) ────────
-type AccountType = 'buyer' | 'diaspora' | 'agency' | 'developer' | ''
+type AccountType = 'buyer' | 'diaspora' | 'agency' | 'developer'
 
-interface AccountOption {
-  value:    AccountType
-  icon:     string
-  label:    string
-  sub:      string
-  color:    string
-  redirect: string
-}
-
-const ACCOUNT_OPTIONS: AccountOption[] = [
-  {
-    value:    'buyer',
-    icon:     '🏠',
-    label:    'Home Buyer / Investor',
-    sub:      'Search verified properties across African cities',
-    color:    '#22C55E',
-    redirect: '/search',                   // → /profile/setup-investor when built
-  },
-  {
-    value:    'diaspora',
-    icon:     '✈️',
-    label:    'Diaspora Investor',
-    sub:      'Invest remotely with full market intelligence',
-    color:    '#5B2EFF',
-    redirect: '/search',                   // → /profile/setup-diaspora when built
-  },
-  {
-    value:    'agency',
-    icon:     '🏢',
-    label:    'Real Estate Agency',
-    sub:      'List properties, earn trust badges, grow with MAPE',
-    color:    '#14B8A6',
-    redirect: '/agency/onboard',           // EXISTS ✓
-  },
-  {
-    value:    'developer',
-    icon:     '🏗️',
-    label:    'Property Developer',
-    sub:      'Track projects, unit sales, and your pipeline',
-    color:    '#F59E0B',
-    redirect: '/developer/onboard',        // EXISTS ✓
-  },
+const ACCOUNT_TYPES: { key: AccountType; label: string; sub: string; icon: string; color: string }[] = [
+  { key: 'buyer',     label: 'Home Buyer',       sub: 'Find and evaluate properties',        icon: '🏠', color: '#5B2EFF' },
+  { key: 'diaspora',  label: 'Diaspora Investor', sub: 'Invest from abroad — USD pricing',    icon: '🌍', color: '#14B8A6' },
+  { key: 'agency',    label: 'Agency',            sub: 'List properties, track leads, earn MAPE', icon: '🏢', color: '#7C5FFF' },
+  { key: 'developer', label: 'Developer',         sub: 'Showcase projects, track unit sales', icon: '🏗️', color: '#F59E0B' },
 ]
 
-// ── Type for Supabase SELECT return — must match query fields ──
-interface ExistingUser {
-  email:     string
-  full_name: string | null
-  user_role: string | null
-}
-
 export default function RegisterContent() {
-  const [dark, setDark]                 = useState(true)
-  const [step, setStep]                 = useState<'type' | 'details'>('type')
-  const [accountType, setAccountType]   = useState<AccountType>('')
-  const [fullName, setFullName]         = useState('')
-  const [email, setEmail]               = useState('')
-  const [loading, setLoading]           = useState(false)
-  const [error, setError]               = useState('')
-  const [done, setDone]                 = useState(false)
-  const [doneMsg, setDoneMsg]           = useState('')
-  const nameRef                         = useRef<HTMLInputElement>(null)
-  const router = useRouter()
+  const router       = useRouter()
+  const params       = useSearchParams()
+  const [dark, setDark] = useState(true)
+  const [step, setStep] = useState<1 | 2>(1)
+  const [type, setType] = useState<AccountType | null>(
+    (params.get('type') as AccountType | null) || null
+  )
+
+  // Form fields
+  const [name,     setName]     = useState('')
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
+
+  // State
+  const [saving, setSaving]   = useState(false)
+  const [error,  setError]    = useState('')
+  const [done,   setDone]     = useState(false)
 
   useEffect(() => {
     setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 
-  // Focus name field when step changes to details
+  // Auto-advance to step 2 if type passed in URL
   useEffect(() => {
-    if (step === 'details') {
-      setTimeout(() => nameRef.current?.focus(), 100)
+    if (params.get('type') && ACCOUNT_TYPES.find(t => t.key === params.get('type'))) {
+      setStep(2)
     }
-  }, [step])
+  }, [params])
 
-  // ── NO localStorage redirect guard here ───────────────────
-  // Register is a public page. Users navigate here intentionally.
-  // Guards belong on protected pages (dashboard, profile setup).
-
-  const selected = ACCOUNT_OPTIONS.find(o => o.value === accountType)
-
-  // ── Theme tokens ──────────────────────────────────────────
-  const bg     = dark ? '#0A0F1E' : '#F4F6FB'
-  const card   = dark ? '#111827' : '#FFFFFF'
+  const bg     = dark ? '#0F172A' : '#F8FAFC'
+  const bg2    = dark ? '#1E293B' : '#F1F5F9'
+  const bg3    = dark ? '#162032' : '#FFFFFF'
   const text   = dark ? '#F8FAFC' : '#0F172A'
-  const text2  = dark ? 'rgba(248,250,252,0.6)'  : 'rgba(15,23,42,0.6)'
-  const text3  = dark ? 'rgba(248,250,252,0.3)'  : 'rgba(15,23,42,0.3)'
-  const border = dark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.09)'
-  const inputBg = dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
+  const text2  = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
+  const text3  = dark ? 'rgba(248,250,252,0.35)' : 'rgba(15,23,42,0.35)'
+  const border = dark ? 'rgba(248,250,252,0.08)' : 'rgba(15,23,42,0.08)'
 
   const INP: React.CSSProperties = {
-    width: '100%',
-    padding: '0.8rem 1rem',
-    background: inputBg,
-    border: `1px solid ${border}`,
-    borderRadius: 10,
-    color: text,
-    fontSize: '0.95rem',
-    outline: 'none',
-    fontFamily: 'inherit',
-    boxSizing: 'border-box',
+    width: '100%', padding: '0.75rem 0.875rem',
+    background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+    border: `1.5px solid ${border}`, borderRadius: 9,
+    color: text, fontSize: '0.9rem', outline: 'none',
+    fontFamily: 'inherit', boxSizing: 'border-box',
     transition: 'border-color 0.15s',
   }
 
-  // ── Step 1: select type, immediately advance to step 2 ────
-  function selectType(type: AccountType) {
-    setAccountType(type)
+  const selectedType = ACCOUNT_TYPES.find(t => t.key === type)
+
+  async function handleRegister() {
     setError('')
-    setStep('details')
-  }
+    const cleanName  = name.trim()
+    const cleanEmail = email.trim().toLowerCase()
 
-  // ── Step 2: submit ────────────────────────────────────────
-  async function handleSubmit() {
-    if (!fullName.trim())                      { setError('Please enter your full name'); return }
-    if (!email.trim() || !email.includes('@')) { setError('Please enter a valid email'); return }
-    if (!accountType)                          { setError('Please go back and select an account type'); return }
+    if (!cleanName)  { setError('Please enter your full name.'); return }
+    if (!cleanEmail || !cleanEmail.includes('@')) { setError('Enter a valid email address.'); return }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    if (!type) { setError('Please select an account type.'); return }
 
-    setLoading(true)
-    setError('')
-
-    const cleanEmail  = email.trim().toLowerCase()
-    const cleanName   = fullName.trim()
-    const destination = selected?.redirect || '/search'
-
+    setSaving(true)
     try {
-      // ── Agency & Developer: pre-fill onboard hints, redirect ──
-      // Their full profile is captured on the dedicated onboard pages.
-      // We don't create a user_profiles row here for them — their
-      // onboard flow creates rows in data_partners / developer_accounts.
-      if (accountType === 'agency' || accountType === 'developer') {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('manop_reg_name',  cleanName)
-          localStorage.setItem('manop_reg_email', cleanEmail)
-          localStorage.setItem('manop_reg_type',  accountType)
+      // Step 1: Create Supabase Auth user with role in metadata
+      const redirectUrl = `${window.location.origin}/verify`
+      const { data: authData, error: authErr } = await sb.auth.signUp({
+        email:    cleanEmail,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            full_name:  cleanName,
+            user_role:  type,
+          },
+        },
+      })
+
+      if (authErr) {
+        if (authErr.message.includes('already registered')) {
+          setError('An account with this email already exists. Sign in at /login or reset your password.')
+        } else {
+          setError(authErr.message)
         }
-        setDone(true)
-        setDoneMsg(
-          accountType === 'agency'
-            ? 'Taking you to agency setup…'
-            : 'Taking you to developer setup…'
-        )
-        setTimeout(() => router.push(destination), 1000)
+        setSaving(false)
         return
       }
 
-      // ── Buyer & Diaspora: insert into user_profiles ───────────
-      // Check if email already exists first
-      const { data: existing } = await sb
-        .from('user_profiles')
-        .select('email, full_name, user_role')
-        .eq('email', cleanEmail)
-        .maybeSingle<ExistingUser>()            // maybeSingle = returns null if not found, no error
-
-      if (existing) {
-        // Already registered — restore session and redirect
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('manop_user_email', cleanEmail)
-          localStorage.setItem('manop_user_name',  existing.full_name || cleanName)
-          localStorage.setItem('manop_user_role',  existing.user_role || accountType)
-        }
-        setDone(true)
-        setDoneMsg('Welcome back! Taking you to your dashboard…')
-        const existingRole = existing.user_role as AccountType
-        const existingDest = ACCOUNT_OPTIONS.find(o => o.value === existingRole)?.redirect || '/search'
-        setTimeout(() => router.push(existingDest), 1000)
+      if (!authData.user) {
+        setError('Something went wrong. Please try again.')
+        setSaving(false)
         return
       }
 
-      // New user — create profile
-      const { error: insertErr } = await sb
-        .from('user_profiles')
-        .insert({
-          email:     cleanEmail,
-          full_name: cleanName,
-          user_role: accountType,
-          source:    'web_registration',
+      const userId = authData.user.id
+
+      // Step 2: Insert into the correct profile table
+      // Use the anon key here — RLS allows user to insert their own row
+      if (type === 'buyer' || type === 'diaspora') {
+        await sb.from('user_profiles').insert({
+          id:         userId,
+          full_name:  cleanName,
+          email:      cleanEmail,
+          user_role:  type,
+          created_at: new Date().toISOString(),
         })
-
-      if (insertErr) {
-        // Race condition duplicate
-        if (insertErr.code === '23505' ||
-            insertErr.message.toLowerCase().includes('duplicate') ||
-            insertErr.message.toLowerCase().includes('unique')) {
-          setError('This email is already registered. Try logging in instead.')
-          return
-        }
-        throw new Error(insertErr.message)
+        // Ignore error — profile can be created later in setup flow
       }
 
-      // Persist session
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('manop_user_email', cleanEmail)
-        localStorage.setItem('manop_user_name',  cleanName)
-        localStorage.setItem('manop_user_role',  accountType)
+      if (type === 'agency') {
+        await sb.from('data_partners').insert({
+          auth_user_id:         userId,
+          contact_name:         cleanName,
+          contact_email:        cleanEmail,
+          name:                 cleanName + ' Agency', // placeholder — updated in onboard
+          verification_status:  'not_started',
+          active:               false,
+          created_at:           new Date().toISOString(),
+        })
       }
 
-      // Fire signal (non-blocking)
+      if (type === 'developer') {
+        await sb.from('developer_accounts').insert({
+          auth_user_id:  userId,
+          contact_name:  cleanName,
+          email:         cleanEmail,
+          company_name:  cleanName + ' Development', // placeholder — updated in onboard
+          active:        false,
+          verified:      false,
+          created_at:    new Date().toISOString(),
+        })
+      }
+
+      // Log the registration signal
       fetch('/api/signals', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
+        body: JSON.stringify({
           signal_type: 'user_registered',
-          metadata:    { role: accountType, email: cleanEmail },
+          metadata: { type, email: cleanEmail },
         }),
       }).catch(() => {})
 
       setDone(true)
-      setDoneMsg(
-        accountType === 'diaspora'
-          ? 'Account created! Taking you to property search…'
-          : 'Account created! Taking you to search…'
-      )
-      setTimeout(() => router.push(destination), 1000)
 
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.')
+      setError(e instanceof Error ? e.message : 'Registration failed. Please try again.')
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
-  return (
-    <div style={{
-      background: bg,
-      minHeight: '100vh',
-      color: text,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      padding: '2.5rem 1rem 5rem',
-    }}>
-
-      {/* Logo */}
-      <Link
-        href="/"
-        style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          textDecoration: 'none', marginBottom: '2.5rem',
-        }}
-      >
-        <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          background: '#5B2EFF',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 900, color: '#fff', fontSize: 16, letterSpacing: '-0.02em',
-        }}>
-          M
+  // ── Done state — "Check your email" ──────────────────────────
+  if (done) return (
+    <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
+      <div style={{ maxWidth: 440, width: '100%', textAlign: 'center' }}>
+        <div style={{ width: 72, height: 72, borderRadius: 18, background: 'rgba(91,46,255,0.1)', border: '1.5px solid rgba(91,46,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', fontSize: '2rem' }}>
+          📬
         </div>
-        <div>
-          <div style={{ fontWeight: 800, color: text, fontSize: 16, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
-            Manop
-          </div>
-          <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#14B8A6', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
-            Africa Intelligence
-          </div>
+        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#5B2EFF', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '0.75rem' }}>
+          Account created
         </div>
-      </Link>
-
-      <div style={{ width: '100%', maxWidth: 440 }}>
-
-        {/* ── STEP 1: Choose account type ── */}
-        {step === 'type' && (
-          <>
-            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-              <h1 style={{
-                fontSize: '1.75rem', fontWeight: 800,
-                letterSpacing: '-0.04em', color: text,
-                marginBottom: '0.5rem', lineHeight: 1.1,
-              }}>
-                Who are you?
-              </h1>
-              <p style={{ fontSize: '0.875rem', color: text2, lineHeight: 1.6 }}>
-                Choose your account type to get started.
-              </p>
-            </div>
-
-            {/* Account type list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {ACCOUNT_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => selectType(opt.value)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14,
-                    padding: '1rem 1.25rem',
-                    background: card,
-                    border: `1px solid ${border}`,
-                    borderRadius: 12,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    textAlign: 'left',
-                    transition: 'border-color 0.15s, transform 0.1s',
-                    WebkitTapHighlightColor: 'transparent',
-                    width: '100%',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.borderColor = opt.color
-                    e.currentTarget.style.transform = 'translateY(-1px)'
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.borderColor = border
-                    e.currentTarget.style.transform = 'none'
-                  }}
-                >
-                  {/* Icon circle */}
-                  <div style={{
-                    width: 42, height: 42, borderRadius: 10, flexShrink: 0,
-                    background: `${opt.color}15`,
-                    border: `1px solid ${opt.color}30`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '1.3rem',
-                  }}>
-                    {opt.icon}
-                  </div>
-
-                  {/* Label + sub */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: '0.9rem', fontWeight: 700,
-                      color: text, marginBottom: '0.15rem',
-                    }}>
-                      {opt.label}
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: text2, lineHeight: 1.4 }}>
-                      {opt.sub}
-                    </div>
-                  </div>
-
-                  {/* Arrow */}
-                  <div style={{ color: text3, fontSize: '0.85rem', flexShrink: 0 }}>→</div>
-                </button>
-              ))}
-            </div>
-
-            <p style={{
-              fontSize: '0.72rem', color: text3,
-              textAlign: 'center', marginTop: '1.5rem', lineHeight: 1.6,
-            }}>
-              Already have an account?{' '}
-              <Link href="/login" style={{ color: '#5B2EFF', fontWeight: 600, textDecoration: 'none' }}>
-                Sign in
-              </Link>
-            </p>
-          </>
-        )}
-
-        {/* ── STEP 2: Name + Email ── */}
-        {step === 'details' && (
-          <>
-            {/* Back + type indicator */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              marginBottom: '2rem',
-            }}>
-              <button
-                onClick={() => { setStep('type'); setError('') }}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: text2, fontSize: '0.85rem', fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: 0,
-                }}
-              >
-                ← Back
-              </button>
-              {selected && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  marginLeft: 'auto',
-                  padding: '4px 10px',
-                  background: `${selected.color}12`,
-                  border: `1px solid ${selected.color}30`,
-                  borderRadius: 20,
-                  fontSize: '0.72rem', fontWeight: 600, color: selected.color,
-                }}>
-                  <span>{selected.icon}</span>
-                  <span>{selected.label}</span>
-                </div>
-              )}
-            </div>
-
-            <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
-              <h1 style={{
-                fontSize: '1.5rem', fontWeight: 800,
-                letterSpacing: '-0.04em', color: text,
-                marginBottom: '0.4rem', lineHeight: 1.15,
-              }}>
-                Create your account
-              </h1>
-              <p style={{ fontSize: '0.85rem', color: text2, lineHeight: 1.55 }}>
-                {accountType === 'agency'
-                  ? 'Enter your details. You\'ll set up your full agency profile next.'
-                  : accountType === 'developer'
-                  ? 'Enter your details. You\'ll set up your developer profile next.'
-                  : 'Enter your details to get started.'}
-              </p>
-            </div>
-
-            {/* Form card */}
-            <div style={{
-              background: card,
-              border: `1px solid ${border}`,
-              borderRadius: 16,
-              padding: '1.75rem',
-              boxShadow: dark
-                ? '0 20px 48px rgba(0,0,0,0.35)'
-                : '0 8px 32px rgba(0,0,0,0.07)',
-            }}>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-                {/* Full name */}
-                <div>
-                  <label style={{
-                    fontSize: '0.72rem', color: text2, fontWeight: 500,
-                    display: 'block', marginBottom: '0.35rem',
-                  }}>
-                    Full name
-                  </label>
-                  <input
-                    ref={nameRef}
-                    style={INP}
-                    type="text"
-                    placeholder="Your full name"
-                    value={fullName}
-                    onChange={e => { setFullName(e.target.value); setError('') }}
-                    autoComplete="name"
-                    disabled={done}
-                    onFocus={e => (e.target.style.borderColor = selected?.color || '#5B2EFF')}
-                    onBlur={e => (e.target.style.borderColor = border)}
-                  />
-                </div>
-
-                {/* Email */}
-                <div>
-                  <label style={{
-                    fontSize: '0.72rem', color: text2, fontWeight: 500,
-                    display: 'block', marginBottom: '0.35rem',
-                  }}>
-                    Email address
-                  </label>
-                  <input
-                    style={INP}
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={e => { setEmail(e.target.value); setError('') }}
-                    autoComplete="email"
-                    disabled={done}
-                    onKeyDown={e => e.key === 'Enter' && !done && handleSubmit()}
-                    onFocus={e => (e.target.style.borderColor = selected?.color || '#5B2EFF')}
-                    onBlur={e => (e.target.style.borderColor = border)}
-                  />
-                </div>
-
-                {/* Context note for agency/developer */}
-                {(accountType === 'agency' || accountType === 'developer') && (
-                  <div style={{
-                    fontSize: '0.78rem',
-                    color: text2,
-                    background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                    border: `1px solid ${border}`,
-                    borderRadius: 8,
-                    padding: '0.65rem 0.875rem',
-                    lineHeight: 1.6,
-                  }}>
-                    {accountType === 'agency'
-                      ? '📋 On the next page you\'ll add your company name, regions, contact details, and upload your verification documents.'
-                      : '📋 On the next page you\'ll add your company info, active projects, cities of operation, and sales contacts.'}
-                  </div>
-                )}
-              </div>
-
-              {/* Error */}
-              {error && (
-                <div style={{
-                  marginTop: '1rem',
-                  padding: '0.7rem 0.875rem',
-                  background: 'rgba(239,68,68,0.08)',
-                  border: '1px solid rgba(239,68,68,0.25)',
-                  borderRadius: 8,
-                  fontSize: '0.8rem',
-                  color: '#EF4444',
-                  lineHeight: 1.5,
-                }}>
-                  {error}
-                </div>
-              )}
-
-              {/* Success */}
-              {done && (
-                <div style={{
-                  marginTop: '1rem',
-                  padding: '0.8rem 0.875rem',
-                  background: 'rgba(34,197,94,0.08)',
-                  border: '1px solid rgba(34,197,94,0.25)',
-                  borderRadius: 8,
-                  fontSize: '0.83rem',
-                  color: '#22C55E',
-                  lineHeight: 1.5,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                }}>
-                  <span>✓</span>
-                  <span style={{ flex: 1 }}>{doneMsg}</span>
-                  <div style={{
-                    width: 15, height: 15, flexShrink: 0,
-                    border: '2px solid rgba(34,197,94,0.3)',
-                    borderTopColor: '#22C55E',
-                    borderRadius: '50%',
-                    animation: 'spin 0.8s linear infinite',
-                  }} />
-                </div>
-              )}
-
-              {/* CTA — stable height so it never shakes */}
-              <button
-                onClick={handleSubmit}
-                disabled={loading || done}
-                style={{
-                  width: '100%',
-                  marginTop: '1.25rem',
-                  height: 48,                    // fixed height prevents layout shift
-                  background: done
-                    ? '#22C55E'
-                    : (selected?.color || '#5B2EFF'),
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 10,
-                  fontSize: '0.95rem',
-                  fontWeight: 700,
-                  cursor: (loading || done) ? 'default' : 'pointer',
-                  fontFamily: 'inherit',
-                  transition: 'background 0.25s, opacity 0.2s',
-                  opacity: loading ? 0.75 : 1,
-                  WebkitTapHighlightColor: 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                }}
-              >
-                {loading ? (
-                  <>
-                    <div style={{
-                      width: 16, height: 16,
-                      border: '2px solid rgba(255,255,255,0.3)',
-                      borderTopColor: '#fff',
-                      borderRadius: '50%',
-                      animation: 'spin 0.7s linear infinite',
-                    }} />
-                    <span>Please wait…</span>
-                  </>
-                ) : done ? (
-                  <span>{doneMsg}</span>
-                ) : accountType === 'agency' ? (
-                  <span>Continue to agency setup →</span>
-                ) : accountType === 'developer' ? (
-                  <span>Continue to developer setup →</span>
-                ) : (
-                  <span>Create account →</span>
-                )}
-              </button>
-
-              <p style={{
-                fontSize: '0.67rem', color: text3,
-                textAlign: 'center', marginTop: '0.875rem', lineHeight: 1.6,
-              }}>
-                By registering you agree to Manop's terms.
-                We never sell your data.
-              </p>
-            </div>
-
-            <p style={{
-              fontSize: '0.78rem', color: text2,
-              textAlign: 'center', marginTop: '1.25rem',
-            }}>
-              Already have an account?{' '}
-              <Link href="/login" style={{ color: '#5B2EFF', fontWeight: 600, textDecoration: 'none' }}>
-                Sign in →
-              </Link>
-            </p>
-          </>
-        )}
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.04em', color: text, marginBottom: '0.875rem', lineHeight: 1.1 }}>
+          Check your email
+        </h1>
+        <p style={{ fontSize: '0.9rem', color: text2, lineHeight: 1.7, marginBottom: '2rem' }}>
+          We sent a verification link to <strong style={{ color: text }}>{email}</strong>.
+          Click the link in that email to activate your account and set up your profile.
+        </p>
+        <div style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', fontSize: '0.8rem', color: text2, lineHeight: 1.6, marginBottom: '1.5rem' }}>
+          <strong style={{ color: text }}>Didn't get it?</strong> Check your spam folder. The email comes from Supabase on behalf of Manop.
+        </div>
+        <Link href="/login" style={{ fontSize: '0.82rem', color: text3, textDecoration: 'none' }}>
+          Already verified? Sign in →
+        </Link>
       </div>
+    </div>
+  )
 
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        input:focus { outline: none; }
-      `}</style>
+  // ── Step 1: Account type selector ────────────────────────────
+  if (step === 1) return (
+    <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
+      <div style={{ maxWidth: 520, width: '100%' }}>
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: '2.5rem' }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#5B2EFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: '#fff', fontSize: 15 }}>M</div>
+          <div>
+            <div style={{ fontWeight: 800, color: text, fontSize: 15, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Manop</div>
+            <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#14B8A6', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Africa Intelligence</div>
+          </div>
+        </Link>
+
+        <h1 style={{ fontSize: 'clamp(1.5rem,4vw,2rem)', fontWeight: 800, letterSpacing: '-0.04em', color: text, lineHeight: 1.1, marginBottom: '0.5rem' }}>
+          Create your account
+        </h1>
+        <p style={{ fontSize: '0.88rem', color: text2, lineHeight: 1.6, marginBottom: '2rem' }}>
+          What brings you to Manop?
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: '1.5rem' }}>
+          {ACCOUNT_TYPES.map(t => (
+            <button
+              key={t.key}
+              onClick={() => { setType(t.key); setStep(2) }}
+              style={{
+                background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                border: `1.5px solid ${border}`,
+                borderRadius: 12, padding: '1.25rem',
+                cursor: 'pointer', textAlign: 'left',
+                fontFamily: 'inherit', color: text,
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = t.color
+                e.currentTarget.style.background = `${t.color}10`
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = border
+                e.currentTarget.style.background = dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'
+              }}
+            >
+              <div style={{ fontSize: '1.4rem', marginBottom: '0.6rem' }}>{t.icon}</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: text, marginBottom: '0.3rem' }}>{t.label}</div>
+              <div style={{ fontSize: '0.72rem', color: text3, lineHeight: 1.4 }}>{t.sub}</div>
+            </button>
+          ))}
+        </div>
+
+        <p style={{ fontSize: '0.78rem', color: text3, textAlign: 'center' }}>
+          Already have an account?{' '}
+          <Link href="/login" style={{ color: '#14B8A6', fontWeight: 600, textDecoration: 'none' }}>Sign in →</Link>
+        </p>
+      </div>
+    </div>
+  )
+
+  // ── Step 2: Registration form ─────────────────────────────────
+  return (
+    <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
+      <div style={{ maxWidth: 440, width: '100%' }}>
+
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: '2rem' }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#5B2EFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: '#fff', fontSize: 15 }}>M</div>
+          <div>
+            <div style={{ fontWeight: 800, color: text, fontSize: 15, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Manop</div>
+            <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#14B8A6', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Africa Intelligence</div>
+          </div>
+        </Link>
+
+        {/* Type badge */}
+        {selectedType && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.5rem' }}>
+            <button
+              onClick={() => setStep(1)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: `${selectedType.color}12`,
+                border: `1px solid ${selectedType.color}30`,
+                borderRadius: 20, padding: '4px 12px',
+                cursor: 'pointer', color: selectedType.color,
+                fontSize: '0.72rem', fontWeight: 700,
+                fontFamily: 'inherit',
+              }}
+            >
+              {selectedType.icon} {selectedType.label} · Change ↗
+            </button>
+          </div>
+        )}
+
+        <h1 style={{ fontSize: 'clamp(1.4rem,3.5vw,1.8rem)', fontWeight: 800, letterSpacing: '-0.04em', color: text, lineHeight: 1.1, marginBottom: '0.5rem' }}>
+          Create your account
+        </h1>
+        <p style={{ fontSize: '0.82rem', color: text2, lineHeight: 1.6, marginBottom: '1.75rem' }}>
+          You'll verify your email before accessing your dashboard.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: text2, marginBottom: 5 }}>
+              Full name *
+            </label>
+            <input
+              style={INP}
+              placeholder="Your full name"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              autoFocus
+              onFocus={e => (e.target.style.borderColor = selectedType?.color || '#5B2EFF')}
+              onBlur={e => (e.target.style.borderColor = border)}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: text2, marginBottom: 5 }}>
+              Email address *
+            </label>
+            <input
+              style={INP}
+              type="email"
+              placeholder={type === 'agency' || type === 'developer' ? 'you@company.com' : 'you@email.com'}
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onFocus={e => (e.target.style.borderColor = selectedType?.color || '#5B2EFF')}
+              onBlur={e => (e.target.style.borderColor = border)}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: text2, marginBottom: 5 }}>
+              Password * <span style={{ color: text3, fontWeight: 400 }}>(min 8 characters)</span>
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input
+                style={{ ...INP, paddingRight: '3rem' }}
+                type={showPass ? 'text' : 'password'}
+                placeholder="At least 8 characters"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleRegister()}
+                onFocus={e => (e.target.style.borderColor = selectedType?.color || '#5B2EFF')}
+                onBlur={e => (e.target.style.borderColor = border)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(v => !v)}
+                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: text3, fontSize: '0.75rem', padding: 0, fontFamily: 'inherit' }}
+              >
+                {showPass ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '0.7rem 0.875rem', fontSize: '0.8rem', color: '#EF4444', marginTop: 14, lineHeight: 1.5 }}>
+            {error}
+          </div>
+        )}
+
+        <button
+          onClick={handleRegister}
+          disabled={saving}
+          style={{
+            width: '100%', marginTop: 16, height: 50,
+            background: selectedType?.color || '#5B2EFF',
+            color: '#fff', border: 'none', borderRadius: 10,
+            fontSize: '0.95rem', fontWeight: 700,
+            cursor: saving ? 'default' : 'pointer',
+            fontFamily: 'inherit',
+            opacity: saving ? 0.75 : 1,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            transition: 'opacity 0.15s',
+          }}
+        >
+          {saving ? (
+            <>
+              <div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
+              Creating account…
+            </>
+          ) : 'Create account →'}
+        </button>
+
+        <p style={{ fontSize: '0.72rem', color: text3, textAlign: 'center', marginTop: '1.25rem', lineHeight: 1.6 }}>
+          Already have an account?{' '}
+          <Link href="/login" style={{ color: '#14B8A6', fontWeight: 600, textDecoration: 'none' }}>Sign in →</Link>
+        </p>
+
+        <p style={{ fontSize: '0.68rem', color: text3, textAlign: 'center', marginTop: '0.75rem', lineHeight: 1.6 }}>
+          By registering you agree to our data commitment: accurate listings only, no fake properties.
+        </p>
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 }

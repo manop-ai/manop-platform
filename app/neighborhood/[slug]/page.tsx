@@ -1,13 +1,7 @@
 'use client'
 // app/neighborhood/[slug]/page.tsx
-// Day 6 rebuild — full neighborhood intelligence page
-// Features:
-//   - Market insight ticker (6 auto-generated sentences from real data)
-//   - Scenario calculator reads real benchmarks
-//   - PropertySection in masonry layout (not straight lines)
-//   - Dark/light mode throughout
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, ComponentType } from 'react'
 import dynamic from 'next/dynamic'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -15,14 +9,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { generateInsights, REAL_BENCHMARKS, type MarketInsight } from '../../../lib/insights'
 
-const PropertySection = dynamic(() => import('./PropertySection'), { ssr: false })
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
-
-// ─── Property interface ─────────────────────────────────────
+// ─── Property interface ───────────────────────────────────────
 interface Property {
   id: string
   property_type: string | null
@@ -43,7 +30,29 @@ interface Property {
   raw_data: Record<string, unknown> | null
 }
 
-// ─── Neighborhood static context ─────────────────────────────
+interface PropertySectionProps {
+  properties: Property[]
+  slug:       string
+  dark:       boolean
+}
+
+// ── THE FIX: cast via `as` instead of the broken generic parameter ─────
+// dynamic<Props>() fails when TypeScript can't reconcile the inferred
+// module type with the explicit generic (known Next.js issue).
+// Casting the import promise to the correct ComponentType works reliably.
+const PropertySection = dynamic(
+  () => import('./PropertySection').then(
+    mod => mod as unknown as { default: ComponentType<PropertySectionProps> }
+  ),
+  { ssr: false }
+) as ComponentType<PropertySectionProps>
+
+const sb = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+)
+
+// ─── Neighborhood static context ──────────────────────────────
 const HOOD_CONTEXT: Record<string, {
   display: string; city: string; tier: string; demand: string
   description: string; title_types: string[]
@@ -81,7 +90,7 @@ const HOOD_CONTEXT: Record<string, {
 
 // ─── Insight ticker ───────────────────────────────────────────
 function InsightTicker({ insights, dark }: { insights: MarketInsight[]; dark: boolean }) {
-  const [active, setActive] = useState(0)
+  const [active,   setActive]   = useState(0)
   const [expanded, setExpanded] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -103,7 +112,6 @@ function InsightTicker({ insights, dark }: { insights: MarketInsight[]; dark: bo
 
   return (
     <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden', marginBottom: '1.5rem' }}>
-      {/* Ticker bar */}
       <div
         onClick={() => setExpanded(e => !e)}
         style={{ padding: '0.875rem 1.25rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -117,7 +125,6 @@ function InsightTicker({ insights, dark }: { insights: MarketInsight[]; dark: bo
         <div style={{ fontSize: '0.72rem', color: text3, flexShrink: 0 }}>{expanded ? '↑' : '↓'}</div>
       </div>
 
-      {/* Expanded — all insights */}
       {expanded && (
         <div style={{ borderTop: `1px solid ${border}`, padding: '0.75rem 1.25rem' }}>
           <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '0.75rem' }}>
@@ -129,9 +136,7 @@ function InsightTicker({ insights, dark }: { insights: MarketInsight[]; dark: bo
               style={{ display: 'flex', gap: '0.75rem', padding: '0.6rem 0', borderBottom: i < insights.length - 1 ? `1px solid ${border}` : 'none', cursor: 'pointer' }}>
               <div style={{ width: 5, height: 5, borderRadius: '50%', background: ins.color, flexShrink: 0, marginTop: 6 }} />
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.8rem', color: dark ? '#F8FAFC' : '#0F172A', fontWeight: 600, marginBottom: '0.15rem' }}>
-                  {ins.headline}
-                </div>
+                <div style={{ fontSize: '0.8rem', color: dark ? '#F8FAFC' : '#0F172A', fontWeight: 600, marginBottom: '0.15rem' }}>{ins.headline}</div>
                 <div style={{ fontSize: '0.75rem', color: text2, lineHeight: 1.55 }}>{ins.body}</div>
                 <div style={{ fontSize: '0.62rem', color: text3, marginTop: '0.25rem', fontFamily: 'monospace' }}>Source: {ins.source}</div>
               </div>
@@ -141,11 +146,11 @@ function InsightTicker({ insights, dark }: { insights: MarketInsight[]; dark: bo
         </div>
       )}
 
-      {/* Dot pagination */}
       {!expanded && (
         <div style={{ display: 'flex', gap: '0.35rem', padding: '0 1.25rem 0.75rem', justifyContent: 'center' }}>
           {insights.map((_, i) => (
-            <div key={i} onClick={() => setActive(i)} style={{ width: i === active ? 14 : 5, height: 5, borderRadius: 3, background: i === active ? insights[i].color : border, cursor: 'pointer', transition: 'all 0.3s' }} />
+            <div key={i} onClick={() => setActive(i)}
+              style={{ width: i === active ? 14 : 5, height: 5, borderRadius: 3, background: i === active ? insights[i].color : border, cursor: 'pointer', transition: 'all 0.3s' }} />
           ))}
         </div>
       )}
@@ -157,11 +162,8 @@ function InsightTicker({ insights, dark }: { insights: MarketInsight[]; dark: bo
 // ─── Scenario calculator ──────────────────────────────────────
 function ScenarioCalculator({ slug, dark }: { slug: string; dark: boolean }) {
   const b = REAL_BENCHMARKS[slug]
-
-  // ── FIXED: price state is always in ACTUAL NAIRA ────────────
-  // Default to 3-bed median, or ₦400M if no benchmark
   const [priceNGN, setPriceNGN] = useState<number>(b?.medians[3] || 400_000_000)
-  const [input,    setInput]    = useState<string>('')   // raw text input
+  const [input,    setInput]    = useState<string>('')
   const [beds,     setBeds]     = useState<number>(3)
 
   const border = dark ? 'rgba(248,250,252,0.07)' : 'rgba(15,23,42,0.07)'
@@ -170,24 +172,16 @@ function ScenarioCalculator({ slug, dark }: { slug: string; dark: boolean }) {
   const text3  = dark ? 'rgba(248,250,252,0.35)' : 'rgba(15,23,42,0.35)'
   const bg3    = dark ? '#162032' : '#FFFFFF'
 
-  // ── FIXED: parseInput always returns actual Naira ───────────
-  // "400M" → 400_000_000
-  // "1.3B" → 1_300_000_000  
-  // "285"  → 285_000_000 (assumes millions when no suffix and < 10,000)
-  // "150000000" → 150_000_000 (already in Naira — large number, kept as-is)
   function parseInput(s: string): number | null {
     const clean = s.toLowerCase().replace(/[₦,\s]/g, '')
     const m = clean.match(/([\d.]+)(b|m|k)?/)
     if (!m) return null
     let n = parseFloat(m[1])
     if (isNaN(n) || n <= 0) return null
-
-    if      (m[2] === 'b') n *= 1e9       // "1.3b" → 1,300,000,000
-    else if (m[2] === 'm') n *= 1e6       // "400m" → 400,000,000
-    else if (m[2] === 'k') n *= 1e3       // "500k" → 500,000
-    else if (n < 10_000)   n *= 1e6       // "400" → 400,000,000 (assumes millions)
-    // else: n >= 10_000 → treat as actual Naira (e.g. 285000000 typed in full)
-
+    if      (m[2] === 'b') n *= 1e9
+    else if (m[2] === 'm') n *= 1e6
+    else if (m[2] === 'k') n *= 1e3
+    else if (n < 10_000)   n *= 1e6
     return n > 0 ? Math.round(n) : null
   }
 
@@ -197,44 +191,25 @@ function ScenarioCalculator({ slug, dark }: { slug: string; dark: boolean }) {
     return `₦${Math.round(n / 1e3)}K`
   }
 
-  // ── All calculations in ACTUAL NAIRA → no unit confusion ───
-  const annualRent = b?.rent_medians[beds] || 0   // actual NGN
-  const strNightly = b?.str_nightly || 0           // actual NGN
-
-  // ── FIXED: yield = (annual_rent_NGN / price_NGN) * 100 ─────
-  // Both values are in actual Naira → result is correct %
-  const grossYield = (priceNGN > 0 && annualRent > 0)
-    ? ((annualRent / priceNGN) * 100).toFixed(1)
-    : '—'
-  const capRate    = (priceNGN > 0 && annualRent > 0)
-    ? ((annualRent * 0.75 / priceNGN) * 100).toFixed(1)
-    : '—'
+  const annualRent = b?.rent_medians[beds] || 0
+  const strNightly = b?.str_nightly || 0
+  const grossYield = (priceNGN > 0 && annualRent > 0) ? ((annualRent / priceNGN) * 100).toFixed(1) : '—'
+  const capRate    = (priceNGN > 0 && annualRent > 0) ? ((annualRent * 0.75 / priceNGN) * 100).toFixed(1) : '—'
   const strAnnual  = strNightly * 365 * 0.55
-  const strYield   = (priceNGN > 0 && strAnnual > 0)
-    ? ((strAnnual / priceNGN) * 100).toFixed(1)
-    : '—'
+  const strYield   = (priceNGN > 0 && strAnnual > 0) ? ((strAnnual / priceNGN) * 100).toFixed(1) : '—'
 
-  // Cash-on-cash: 30% down, 22% interest, 15yr term
   let cocReturn = '—'
   if (priceNGN > 0 && annualRent > 0) {
-    const downNGN   = priceNGN * 0.30
-    const loanNGN   = priceNGN * 0.70
-    const r         = 0.22 / 12
-    const n         = 15 * 12
-    const monthly   = (loanNGN * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
-    const annualDebt = monthly * 12
-    const noi        = annualRent * 0.75
-    const cashFlow   = noi - annualDebt
-    if (downNGN > 0) {
-      cocReturn = ((cashFlow / downNGN) * 100).toFixed(1)
-    }
+    const down = priceNGN * 0.30
+    const loan = priceNGN * 0.70
+    const r    = 0.22 / 12
+    const n    = 15 * 12
+    const mo   = (loan * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
+    const cf   = (annualRent * 0.75) - (mo * 12)
+    if (down > 0) cocReturn = ((cf / down) * 100).toFixed(1)
   }
 
-  const panel: React.CSSProperties = {
-    background: bg3, border: `1px solid ${border}`,
-    borderRadius: 12, padding: '1.25rem', marginBottom: '1rem',
-  }
-
+  const panel: React.CSSProperties = { background: bg3, border: `1px solid ${border}`, borderRadius: 12, padding: '1.25rem', marginBottom: '1rem' }
   const chip = (active: boolean, color = '#5B2EFF'): React.CSSProperties => ({
     padding: '0.3rem 0.875rem', borderRadius: 20,
     border: `1px solid ${active ? color : border}`,
@@ -243,7 +218,7 @@ function ScenarioCalculator({ slug, dark }: { slug: string; dark: boolean }) {
     fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
   })
 
-  const metricRow = (label: string, value: string, color: string, sub: string) => (
+  const row = (label: string, value: string, color: string, sub: string) => (
     <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '0.65rem 0', borderBottom: `1px solid ${border}` }}>
       <div>
         <div style={{ fontSize: '0.78rem', color: text2 }}>{label}</div>
@@ -259,28 +234,19 @@ function ScenarioCalculator({ slug, dark }: { slug: string; dark: boolean }) {
         Run your scenario — real benchmarks
       </div>
 
-      {/* Price input */}
       <div style={{ marginBottom: '0.875rem' }}>
-        <div style={{ fontSize: '0.68rem', color: text3, marginBottom: '0.35rem' }}>
-          Property price (₦) — showing {fmtM(priceNGN)}
-        </div>
+        <div style={{ fontSize: '0.68rem', color: text3, marginBottom: '0.35rem' }}>Property price — showing {fmtM(priceNGN)}</div>
         <input
           style={{ width: '100%', padding: '0.6rem 0.875rem', background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.9rem', outline: 'none', fontFamily: 'inherit' }}
           placeholder={`${fmtM(priceNGN)} — or type e.g. 120M, 1.3B, 400`}
           value={input}
-          onChange={e => {
-            setInput(e.target.value)
-            const p = parseInput(e.target.value)
-            if (p && p >= 1_000_000) setPriceNGN(p)  // guard: must be at least ₦1M
-          }}
-          onBlur={() => setInput('')}  // clear on blur so placeholder shows computed value
+          onChange={e => { setInput(e.target.value); const p = parseInput(e.target.value); if (p && p >= 1_000_000) setPriceNGN(p) }}
+          onBlur={() => setInput('')}
         />
-        {/* Quick-fill chips from benchmark */}
         {b && (
           <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' as const }}>
             {Object.entries(b.medians).map(([bd, p]) => (
-              <button
-                key={bd}
+              <button key={bd}
                 style={{ ...chip(beds === parseInt(bd) && priceNGN === p), fontSize: '0.68rem', padding: '0.2rem 0.6rem' }}
                 onClick={() => { setPriceNGN(p); setBeds(parseInt(bd)); setInput('') }}>
                 {bd}bd ₦{Math.round(p / 1e6)}M
@@ -290,34 +256,23 @@ function ScenarioCalculator({ slug, dark }: { slug: string; dark: boolean }) {
         )}
       </div>
 
-      {/* Bedroom selector */}
       <div style={{ marginBottom: '0.875rem' }}>
-        <div style={{ fontSize: '0.68rem', color: text3, marginBottom: '0.35rem' }}>Bedrooms (for rental benchmark)</div>
+        <div style={{ fontSize: '0.68rem', color: text3, marginBottom: '0.35rem' }}>Bedrooms</div>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' as const }}>
           {[1, 2, 3, 4, 5].map(bd => (
-            <button key={bd} style={chip(beds === bd)} onClick={() => {
-              setBeds(bd)
-              if (b?.medians[bd]) setPriceNGN(b.medians[bd])
-              setInput('')
-            }}>{bd}</button>
+            <button key={bd} style={chip(beds === bd)} onClick={() => { setBeds(bd); if (b?.medians[bd]) setPriceNGN(b.medians[bd]); setInput('') }}>{bd}</button>
           ))}
         </div>
       </div>
 
-      {/* Results */}
       <div>
-        {metricRow(
-          'Traditional yield',
-          grossYield,
-          grossYield !== '—' && parseFloat(grossYield) >= 6 ? '#22C55E' : '#F59E0B',
-          annualRent > 0 ? `₦${Math.round(annualRent / 1e6)}M annual rent on ${fmtM(priceNGN)}` : 'No rental data for this bedroom count'
-        )}
-        {metricRow('Cap rate', capRate, '#14B8A6', '75% of gross rent ÷ price (after operating costs)')}
-        {metricRow('STR gross yield', strYield, '#F59E0B', `₦${b ? Math.round(b.str_nightly / 1_000) : 0}K/night · 55% occupancy`)}
+        {row('Traditional yield', grossYield, grossYield !== '—' && parseFloat(grossYield) >= 6 ? '#22C55E' : '#F59E0B', annualRent > 0 ? `₦${Math.round(annualRent / 1e6)}M annual rent on ${fmtM(priceNGN)}` : 'No rental data for this bedroom count')}
+        {row('Cap rate', capRate, '#14B8A6', '75% of gross rent ÷ price')}
+        {row('STR gross yield', strYield, '#F59E0B', `₦${b ? Math.round(b.str_nightly / 1_000) : 0}K/night · 55% occupancy`)}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '0.65rem 0' }}>
           <div>
             <div style={{ fontSize: '0.78rem', color: text2 }}>Cash-on-cash return</div>
-            <div style={{ fontSize: '0.65rem', color: text3, marginTop: 2 }}>30% down · 22% mortgage · 15yr term</div>
+            <div style={{ fontSize: '0.65rem', color: text3, marginTop: 2 }}>30% down · 22% mortgage · 15yr</div>
           </div>
           <div style={{ fontSize: '1rem', fontWeight: 800, color: cocReturn !== '—' && parseFloat(cocReturn) > 0 ? '#22C55E' : '#EF4444' }}>
             {cocReturn !== '—' ? `${cocReturn}%` : '—'}
@@ -325,11 +280,9 @@ function ScenarioCalculator({ slug, dark }: { slug: string; dark: boolean }) {
         </div>
       </div>
 
-      {/* Source */}
       {b && (
         <div style={{ fontSize: '0.62rem', color: text3, marginTop: '0.75rem', lineHeight: 1.5 }}>
-          Rental benchmarks from {b.rent_count} verified listings. Sale benchmarks from {b.sale_count} listings.
-          Source: CW Real Estate · Manop Intelligence.
+          Benchmarks: {b.rent_count} rental · {b.sale_count} sale listings. Source: CW Real Estate · Manop.
         </div>
       )}
     </div>
@@ -340,52 +293,39 @@ function ScenarioCalculator({ slug, dark }: { slug: string; dark: boolean }) {
 export default function NeighborhoodPage() {
   const params = useParams()
   const slug   = (params?.slug as string) || 'lekki-phase-1'
-  const [dark, setDark] = useState(true)
-  const [insights, setInsights] = useState<MarketInsight[]>([])
+  const [dark,       setDark]       = useState(true)
+  const [insights,   setInsights]   = useState<MarketInsight[]>([])
   const [properties, setProperties] = useState<Property[]>([])
 
-  useEffect(() => {
-    setDark(getInitialDark())
-    return listenTheme(d => setDark(d))
-  }, [])
+  useEffect(() => { setDark(getInitialDark()); return listenTheme(d => setDark(d)) }, [])
 
   useEffect(() => {
-    // Fetch live insights with current FX rate
     fetch(`/api/insights?slug=${slug}`)
       .then(r => r.json())
       .then(d => setInsights(d.insights || []))
       .catch(() => setInsights(generateInsights(slug, 1570)))
   }, [slug])
 
-  // Fetch properties for this neighborhood
   useEffect(() => {
-    async function loadProperties() {
-      const { data, error } = await sb.from('properties')
-        .select('id,property_type,bedrooms,bathrooms,price_local,price_usd,currency_code,listing_type,title_document_type,size_sqm,neighborhood,city,source_type,confidence,agent_phone,created_at,raw_data')
-        .eq('neighborhood', slug.replace(/-/g, ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '))
-        .order('created_at', { ascending: false })
-        .limit(50)
-      
-      if (!error && data) {
-        setProperties(data as Property[])
-      }
-    }
-    loadProperties()
+    sb.from('properties')
+      .select('id,property_type,bedrooms,bathrooms,price_local,price_usd,currency_code,listing_type,title_document_type,size_sqm,neighborhood,city,source_type,confidence,agent_phone,created_at,raw_data')
+      .eq('neighborhood', slug.replace(/-/g, ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '))
+      .order('created_at', { ascending: false })
+      .limit(50)
+      .then(({ data, error }) => { if (!error && data) setProperties(data as Property[]) })
   }, [slug])
 
-  const ctx  = HOOD_CONTEXT[slug]
-  const bg   = dark ? '#0F172A' : '#F8FAFC'
-  const bg2  = dark ? '#1E293B' : '#F1F5F9'
-  const bg3  = dark ? '#162032' : '#FFFFFF'
-  const text  = dark ? '#F8FAFC' : '#0F172A'
-  const text2 = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
-  const text3 = dark ? 'rgba(248,250,252,0.32)' : 'rgba(15,23,42,0.32)'
+  const ctx    = HOOD_CONTEXT[slug]
+  const bg     = dark ? '#0F172A' : '#F8FAFC'
+  const bg2    = dark ? '#1E293B' : '#F1F5F9'
+  const bg3    = dark ? '#162032' : '#FFFFFF'
+  const text   = dark ? '#F8FAFC' : '#0F172A'
+  const text2  = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
+  const text3  = dark ? 'rgba(248,250,252,0.32)' : 'rgba(15,23,42,0.32)'
   const border = dark ? 'rgba(248,250,252,0.07)' : 'rgba(15,23,42,0.07)'
-
   const display = ctx?.display || slug.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
   const city    = ctx?.city || 'Lagos'
-
-  const panel = { background: bg3, border: `1px solid ${border}`, borderRadius: 12, padding: '1.25rem', marginBottom: '1rem' }
+  const panel   = { background: bg3, border: `1px solid ${border}`, borderRadius: 12, padding: '1.25rem', marginBottom: '1rem' }
 
   return (
     <div style={{ background: bg, minHeight: '100vh', color: text }}>
@@ -394,54 +334,48 @@ export default function NeighborhoodPage() {
       <div style={{ background: bg2, borderBottom: `1px solid ${border}`, padding: '2.5rem 2rem' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-            <Link href="/" style={{ fontSize: '0.78rem', color: text3, textDecoration: 'none' }}>Zahazi</Link>
+            <Link href="/"      style={{ fontSize: '0.78rem', color: text3, textDecoration: 'none' }}>Manop</Link>
             <span style={{ color: text3 }}>›</span>
             <Link href="/search" style={{ fontSize: '0.78rem', color: text3, textDecoration: 'none' }}>Markets</Link>
             <span style={{ color: text3 }}>›</span>
             <span style={{ fontSize: '0.78rem', color: text2 }}>{display}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.5rem' }}>
-            <div>
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.12em', background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: 20, padding: '0.15rem 0.6rem' }}>
-                  {city} · {ctx?.tier || 'Market'}
-                </span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.1em', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 20, padding: '0.15rem 0.6rem' }}>
-                  {ctx?.demand || 'Active'} demand
-                </span>
-              </div>
-              <h1 style={{ fontSize: 'clamp(1.8rem,4vw,2.8rem)', fontWeight: 800, letterSpacing: '-0.04em', color: text, marginBottom: '0.6rem' }}>
-                {display}
-              </h1>
-              <p style={{ fontSize: '0.9rem', color: text2, lineHeight: 1.65, maxWidth: 560 }}>
-                {ctx?.description || `${display} market intelligence — verified listings and real benchmarks.`}
-              </p>
-            </div>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.12em', background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: 20, padding: '0.15rem 0.6rem' }}>
+              {city} · {ctx?.tier || 'Market'}
+            </span>
+            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.1em', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 20, padding: '0.15rem 0.6rem' }}>
+              {ctx?.demand || 'Active'} demand
+            </span>
           </div>
+          <h1 style={{ fontSize: 'clamp(1.8rem,4vw,2.8rem)', fontWeight: 800, letterSpacing: '-0.04em', color: text, marginBottom: '0.6rem' }}>
+            {display}
+          </h1>
+          <p style={{ fontSize: '0.9rem', color: text2, lineHeight: 1.65, maxWidth: 560 }}>
+            {ctx?.description || `${display} market intelligence — verified listings and real benchmarks.`}
+          </p>
         </div>
       </div>
 
-      {/* Body — two column */}
+      {/* Body */}
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '2rem', display: 'grid', gridTemplateColumns: '1fr 340px', gap: '2rem', alignItems: 'start' }}>
 
-        {/* Left — insights + properties */}
+        {/* Left */}
         <div>
-          {/* Insight ticker */}
           {insights.length > 0 && <InsightTicker insights={insights} dark={dark} />}
 
-          {/* Properties — masonry */}
           <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <div style={{ width: 14, height: 2, background: '#14B8A6' }} />
             Verified listings
           </div>
+
           <PropertySection properties={properties} slug={slug} dark={dark} />
         </div>
 
-        {/* Right — sticky intelligence panel */}
+        {/* Right */}
         <div style={{ position: 'sticky', top: '1.5rem' }}>
           <ScenarioCalculator slug={slug} dark={dark} />
 
-          {/* Market context */}
           {ctx && (
             <>
               <div style={panel}>
@@ -475,11 +409,10 @@ export default function NeighborhoodPage() {
             </>
           )}
 
-          {/* Agency CTA */}
           <div style={{ background: dark ? 'rgba(91,46,255,0.08)' : 'rgba(91,46,255,0.04)', border: '1px solid rgba(91,46,255,0.18)', borderRadius: 12, padding: '1.25rem' }}>
             <div style={{ fontSize: '0.78rem', fontWeight: 700, color: text, marginBottom: '0.35rem' }}>Agency in {display}?</div>
             <div style={{ fontSize: '0.72rem', color: text2, marginBottom: '0.875rem', lineHeight: 1.55 }}>
-              Upload your listings free. Buyers see yield intelligence on every property. You get qualified leads.
+              List free. Buyers see yield intelligence on every property.
             </div>
             <Link href="/agency/onboard" style={{ display: 'block', background: '#5B2EFF', color: '#fff', padding: '0.6rem', borderRadius: 8, textDecoration: 'none', fontSize: '0.8rem', fontWeight: 600, textAlign: 'center' }}>
               Become a founding partner →
