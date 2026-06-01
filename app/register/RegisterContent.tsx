@@ -17,6 +17,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 import { getInitialDark, listenTheme } from '../../lib/theme'
+import ManopLogo from '../../components/ManopLogo'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -140,29 +141,8 @@ export default function RegisterContent() {
         // Ignore error — profile can be created later in setup flow
       }
 
-      if (type === 'agency') {
-        await sb.from('data_partners').insert({
-          auth_user_id:         userId,
-          contact_name:         cleanName,
-          contact_email:        cleanEmail,
-          name:                 cleanName + ' Agency', // placeholder — updated in onboard
-          verification_status:  'not_started',
-          active:               false,
-          created_at:           new Date().toISOString(),
-        })
-      }
-
-      if (type === 'developer') {
-        await sb.from('developer_accounts').insert({
-          auth_user_id:  userId,
-          contact_name:  cleanName,
-          email:         cleanEmail,
-          company_name:  cleanName + ' Development', // placeholder — updated in onboard
-          active:        false,
-          verified:      false,
-          created_at:    new Date().toISOString(),
-        })
-      }
+      // Agency and developer profile rows are created later during onboarding,
+      // after the user verifies their email and signs in.
 
       // Log the registration signal
       fetch('/api/signals', {
@@ -214,12 +194,8 @@ export default function RegisterContent() {
   if (step === 1) return (
     <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
       <div style={{ maxWidth: 520, width: '100%' }}>
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: '2.5rem' }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#5B2EFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: '#fff', fontSize: 15 }}>M</div>
-          <div>
-            <div style={{ fontWeight: 800, color: text, fontSize: 15, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Manop</div>
-            <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#14B8A6', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Africa Intelligence</div>
-          </div>
+        <Link href="/" style={{ display: 'inline-flex', textDecoration: 'none', marginBottom: '2.5rem' }}>
+          <ManopLogo height={80} dark={dark} />
         </Link>
 
         <h1 style={{ fontSize: 'clamp(1.5rem,4vw,2rem)', fontWeight: 800, letterSpacing: '-0.04em', color: text, lineHeight: 1.1, marginBottom: '0.5rem' }}>
@@ -271,12 +247,8 @@ export default function RegisterContent() {
     <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
       <div style={{ maxWidth: 440, width: '100%' }}>
 
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: '2rem' }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#5B2EFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: '#fff', fontSize: 15 }}>M</div>
-          <div>
-            <div style={{ fontWeight: 800, color: text, fontSize: 15, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Manop</div>
-            <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#14B8A6', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Africa Intelligence</div>
-          </div>
+        <Link href="/" style={{ display: 'inline-flex', textDecoration: 'none', marginBottom: '2.5rem' }}>
+          <ManopLogo height={80} dark={dark} />
         </Link>
 
         {/* Type badge */}

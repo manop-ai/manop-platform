@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 import { getInitialDark, listenTheme } from '../../lib/theme'
+import { ManopLogoSVG } from '../../components/ManopLogo'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -103,6 +104,9 @@ export default function VerifyPage() {
   return (
     <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
       <div style={{ textAlign: 'center' }}>
+        <Link href="/"style={{ display: 'inline-flex',textDecoration: 'none',marginBottom: '2rem',}}>         
+        <ManopLogoSVG height={84} dark={dark} showText />
+        </Link>
         <div style={{ width: 48, height: 48, border: '3px solid rgba(91,46,255,0.18)', borderTopColor: '#5B2EFF', borderRadius: '50%', animation: 'spin 0.75s linear infinite', margin: '0 auto 1.25rem' }} />
         <div style={{ fontSize: '0.85rem', color: text3 }}>
           {status === 'routing' ? 'Email verified. Taking you to setup…' : 'Verifying your email…'}

@@ -1,16 +1,13 @@
 'use client'
-// app/agency/dashboard/page.tsx — SPRINT COMPLETE
+// app/agency/dashboard/page.tsx — FIXED
 //
-// Changes in this version:
-// 1. AddListingForm — writes lat/lng from HOOD_COORDS on insert
-//    so every listing immediately appears on the map
-// 2. VerificationTab — professional body membership (NIESV, NIESV,
-//    EANS, ISKAN, ESVARBON etc.) as primary verification path,
-//    CAC as secondary. Multiple routes to trust, not just one doc.
-// 3. TransactionSubmission — "verified by" field added:
-//    lawyer name, surveyor name, payment method, witnesses
-// 4. MAPEWidget — reads live scores, shows actionable next step
-// 5. Auth via useAuth() — no localStorage tokens
+// FIXES IN THIS VERSION:
+// 1. Added missing state: showTxPrompt, txNeighborhood (TS2304 errors)
+// 2. Moved TransactionPromptModal outside the tab === 'add' div
+//    so it renders as a full-screen overlay correctly
+// 3. Added association membership number to VerificationTab
+//    (AEAN pilot: agencies submit their association number for verification)
+// 4. Replaced purple M square in top bar with ManopLogoSVG
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -19,6 +16,9 @@ import { createClient } from '@supabase/supabase-js'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
 import ImageUploader from '../../../components/ImageUploader'
+import ListingForm from '../../../components/ListingForm'
+import TransactionPromptModal from '../../../components/TransactionPromptModal'
+import { ManopLogoSVG } from '../../../components/ManopLogo'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,46 +27,39 @@ const sb = createClient(
 
 // ─── Neighbourhood → [lng, lat] centre coords ─────────────────
 const HOOD_COORDS: Record<string, [number, number]> = {
-  // Lagos Island / Lekki
-  'lekki phase 1':    [3.4783,  6.4387], 'lekki phase 2':   [3.5133,  6.4348],
-  'lekki':            [3.4900,  6.4400], 'ikoyi':           [3.4253,  6.4474],
-  'victoria island':  [3.4163,  6.4281], 'vi':              [3.4163,  6.4281],
-  'eko atlantic':     [3.3900,  6.4150], 'banana island':   [3.4330,  6.4600],
-  'ajah':             [3.5725,  6.4667], 'chevron':         [3.5300,  6.4350],
-  'ikota':            [3.5500,  6.4400], 'sangotedo':       [3.6000,  6.4500],
-  'osapa london':     [3.5200,  6.4250], 'badore':          [3.5600,  6.4667],
-  'ogombo':           [3.5850,  6.4600], 'oniru':           [3.4600,  6.4400],
-  // Lagos Mainland
-  'gbagada':          [3.3917,  6.5500], 'yaba':            [3.3700,  6.5100],
-  'ikeja':            [3.3400,  6.6000], 'ikeja gra':       [3.3500,  6.6100],
-  'surulere':         [3.3600,  6.4900], 'magodo':          [3.3800,  6.6200],
-  'maryland':         [3.3600,  6.5750], 'ogba':            [3.3400,  6.5900],
-  'festac':           [3.3800,  6.4600], 'palmgrove':       [3.3550,  6.5600],
-  // Abuja
-  'maitama':          [7.5130,  9.0740], 'asokoro':         [7.5300,  9.0600],
-  'wuse 2':           [7.4900,  9.0700], 'wuse':            [7.4800,  9.0650],
-  'garki':            [7.4900,  9.0500], 'gwarinpa':        [7.4700,  9.0300],
-  'life camp':        [7.5200,  9.0400], 'utako':           [7.5000,  9.0550],
-  'jabi':             [7.5200,  9.0250], 'katampe':         [7.5450,  9.0350],
-  'kado':             [7.5350,  9.0450], 'apo':             [7.5600,  9.0650],
-  'kubwa':            [7.4600,  9.0200], 'wuye':            [7.4700,  9.0550],
-  // Port Harcourt
-  'gra':              [7.0336,  4.8242], 'old gra':         [7.0400,  4.8400],
-  'rumuola':          [7.0500,  4.8500], 'trans-amadi':     [7.0200,  4.8100],
-  'eliozu':           [7.0700,  4.8600],
-  // Accra
-  'east legon':       [-0.1551, 5.6408], 'cantonments':     [-0.1880, 5.5700],
-  'labone':           [-0.2000, 5.5600], 'airport residential': [-0.2100, 5.5500],
-  'north legon':      [-0.1800, 5.6100], 'roman ridge':     [-0.2200, 5.5900],
-  'dzorwulu':         [-0.1700, 5.5750], 'osu':             [-0.2300, 5.5650],
-  // Nairobi
-  'westlands':        [36.8084, -1.2697], 'karen':          [36.7172, -1.3389],
-  'kilimani':         [36.7900, -1.2900], 'parklands':      [36.8000, -1.2600],
-  'muthaiga':         [36.7800, -1.2500], 'lavington':      [36.7500, -1.3000],
-  'kileleshwa':       [36.7800, -1.3200], 'langata':        [36.7900, -1.3600],
+  'lekki phase 1': [3.4783, 6.4387], 'lekki phase 2': [3.5133, 6.4348],
+  'lekki': [3.4900, 6.4400], 'ikoyi': [3.4253, 6.4474],
+  'victoria island': [3.4163, 6.4281], 'vi': [3.4163, 6.4281],
+  'eko atlantic': [3.3900, 6.4150], 'banana island': [3.4330, 6.4600],
+  'ajah': [3.5725, 6.4667], 'chevron': [3.5300, 6.4350],
+  'ikota': [3.5500, 6.4400], 'sangotedo': [3.6000, 6.4500],
+  'osapa london': [3.5200, 6.4250], 'badore': [3.5600, 6.4667],
+  'ogombo': [3.5850, 6.4600], 'oniru': [3.4600, 6.4400],
+  'gbagada': [3.3917, 6.5500], 'yaba': [3.3700, 6.5100],
+  'ikeja': [3.3400, 6.6000], 'ikeja gra': [3.3500, 6.6100],
+  'surulere': [3.3600, 6.4900], 'magodo': [3.3800, 6.6200],
+  'maryland': [3.3600, 6.5750], 'ogba': [3.3400, 6.5900],
+  'festac': [3.3800, 6.4600], 'palmgrove': [3.3550, 6.5600],
+  'maitama': [7.5130, 9.0740], 'asokoro': [7.5300, 9.0600],
+  'wuse 2': [7.4900, 9.0700], 'wuse': [7.4800, 9.0650],
+  'garki': [7.4900, 9.0500], 'gwarinpa': [7.4700, 9.0300],
+  'life camp': [7.5200, 9.0400], 'utako': [7.5000, 9.0550],
+  'jabi': [7.5200, 9.0250], 'katampe': [7.5450, 9.0350],
+  'kado': [7.5350, 9.0450], 'apo': [7.5600, 9.0650],
+  'kubwa': [7.4600, 9.0200], 'wuye': [7.4700, 9.0550],
+  'gra': [7.0336, 4.8242], 'old gra': [7.0400, 4.8400],
+  'rumuola': [7.0500, 4.8500], 'trans-amadi': [7.0200, 4.8100],
+  'eliozu': [7.0700, 4.8600],
+  'east legon': [-0.1551, 5.6408], 'cantonments': [-0.1880, 5.5700],
+  'labone': [-0.2000, 5.5600], 'airport residential': [-0.2100, 5.5500],
+  'north legon': [-0.1800, 5.6100], 'roman ridge': [-0.2200, 5.5900],
+  'dzorwulu': [-0.1700, 5.5750], 'osu': [-0.2300, 5.5650],
+  'westlands': [36.8084, -1.2697], 'karen': [36.7172, -1.3389],
+  'kilimani': [36.7900, -1.2900], 'parklands': [36.8000, -1.2600],
+  'muthaiga': [36.7800, -1.2500], 'lavington': [36.7500, -1.3000],
+  'kileleshwa': [36.7800, -1.3200], 'langata': [36.7900, -1.3600],
 }
 
-// City fallbacks
 const CITY_COORDS: Record<string, [number, number]> = {
   lagos: [3.3792, 6.5244], abuja: [7.3986, 9.0765],
   accra: [-0.1870, 5.6037], nairobi: [36.8219, -1.2921],
@@ -75,15 +68,9 @@ const CITY_COORDS: Record<string, [number, number]> = {
 
 function getCoords(neighborhood: string, city: string): { lat: number; lng: number } | null {
   const hood = neighborhood.toLowerCase().trim()
-  if (HOOD_COORDS[hood]) {
-    const [lng, lat] = HOOD_COORDS[hood]
-    return { lat, lng }
-  }
+  if (HOOD_COORDS[hood]) { const [lng, lat] = HOOD_COORDS[hood]; return { lat, lng } }
   const c = city.toLowerCase().trim()
-  if (CITY_COORDS[c]) {
-    const [lng, lat] = CITY_COORDS[c]
-    return { lat, lng }
-  }
+  if (CITY_COORDS[c]) { const [lng, lat] = CITY_COORDS[c]; return { lat, lng } }
   return null
 }
 
@@ -99,7 +86,6 @@ function fmtNGN(n: number | null): string {
   return `₦${Math.round(n / 1000)}K`
 }
 
-// ─── Types ────────────────────────────────────────────────────
 interface Partner {
   id: string; name: string; contact_email: string | null; cities: string[] | null
   mape_score: number | null; mape_m: number | null; mape_a: number | null
@@ -126,63 +112,454 @@ const BADGE_CONFIG: Record<string, { label: string; icon: string; color: string;
 }
 
 const NEIGHBORHOODS = [
-  // Lagos
   'Lekki Phase 1','Lekki Phase 2','Ikoyi','Victoria Island','Eko Atlantic','Banana Island',
   'Ajah','Chevron','Oniru','Osapa London','Ikota','Sangotedo','Badore',
   'Gbagada','Yaba','Ikeja','Ikeja GRA','Surulere','Magodo','Maryland','Ogba','Festac Town','Palmgrove',
-  // Abuja
   'Maitama','Asokoro','Wuse 2','Wuse','Garki','Gwarinpa','Life Camp','Utako','Jabi','Katampe','Kado','Apo','Wuye',
-  // Port Harcourt
   'GRA','Old GRA','Rumuola','Trans-Amadi','Eliozu',
-  // Accra
   'East Legon','Cantonments','Labone','Airport Residential','North Legon','Roman Ridge','Dzorwulu','Osu',
-  // Nairobi
   'Westlands','Karen','Kilimani','Parklands','Muthaiga','Lavington','Kileleshwa','Langata',
 ]
 
 const PROP_TYPES  = ['Apartment','Duplex','Bungalow','Terraced House','Semi-Detached','Detached House','Land','Commercial','Penthouse','Studio']
 const TITLE_DOCS  = ['C of O','Governor\'s Consent','Deed of Assignment','Excision','Freehold Title','Gazette','Right of Occupancy','Survey Plan']
 
-// ─── Professional bodies (Nigeria, Ghana, Kenya) ──────────────
 const PROFESSIONAL_BODIES = [
-  { code: 'NIESV',   label: 'NIESV',   full: 'Nigerian Institution of Estate Surveyors and Valuers' },
-  { code: 'ESVARBON',label: 'ESVARBON',full: 'Estate Surveyors and Valuers Registration Board of Nigeria' },
-  { code: 'EANS',    label: 'EANS',    full: 'Estate Agents and Auctioneers Association of Nigeria' },
-  { code: 'ISKAN',   label: 'ISKAN',   full: 'International Society of Kijani Appraisers (Nigeria)' },
-  { code: 'LASREA',  label: 'LASREA',  full: 'Lagos State Real Estate Regulatory Authority' },
-  { code: 'ABUSREA', label: 'ABUSREA', full: 'Abuja Real Estate Regulatory Authority' },
-  { code: 'RECON',   label: 'RECON',   full: 'Real Estate Council of Nigeria' },
-  { code: 'GHANA_GIS',label:'GIS Ghana',full:'Ghana Institution of Surveyors' },
-  { code: 'GHANA_GREA',label:'GREA',   full:'Ghana Real Estate Association' },
-  { code: 'ISK',     label: 'ISK Kenya',full:'Institution of Surveyors of Kenya' },
-  { code: 'OTHER',   label: 'Other',   full: 'Other professional body' },
+  { code: 'NIESV',    label: 'NIESV',     full: 'Nigerian Institution of Estate Surveyors and Valuers' },
+  { code: 'ESVARBON', label: 'ESVARBON',  full: 'Estate Surveyors and Valuers Registration Board of Nigeria' },
+  { code: 'EANS',     label: 'EANS',      full: 'Estate Agents and Auctioneers Association of Nigeria' },
+  { code: 'ISKAN',    label: 'ISKAN',     full: 'International Society of Kijani Appraisers (Nigeria)' },
+  { code: 'LASREA',   label: 'LASREA',    full: 'Lagos State Real Estate Regulatory Authority' },
+  { code: 'ABUSREA',  label: 'ABUSREA',   full: 'Abuja Real Estate Regulatory Authority' },
+  { code: 'RECON',    label: 'RECON',     full: 'Real Estate Council of Nigeria' },
+  { code: 'AEAN',     label: 'AEAN',      full: 'Association of Estate Agents in Nigeria' },
+  { code: 'GHANA_GIS',label: 'GIS Ghana', full: 'Ghana Institution of Surveyors' },
+  { code: 'GHANA_GREA',label: 'GREA',     full: 'Ghana Real Estate Association' },
+  { code: 'ISK',      label: 'ISK Kenya', full: 'Institution of Surveyors of Kenya' },
+  { code: 'OTHER',    label: 'Other',     full: 'Other professional body' },
 ]
 
 // ─────────────────────────────────────────────────────────────
-// SUB-COMPONENTS
+// VerificationTab — association number + professional body + CAC
 // ─────────────────────────────────────────────────────────────
+function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onStatusChange }: {
+  partner: Partner; dark: boolean; border: string
+  text: string; text2: string; text3: string; bg3: string
+  onStatusChange: (status: string) => void
+}) {
+  const [method,           setMethod]           = useState<'body' | 'cac' | 'both'>('body')
+  const [bodyCode,         setBodyCode]         = useState('')
+  const [bodyNumber,       setBodyNumber]       = useState('')
+  const [bodyYear,         setBodyYear]         = useState('')
+  // ── NEW: association membership number ──────────────────────
+  // This is the key field for the AEAN pilot.
+  // When an agency submits their AEAN/NIESV number, Manop cross-checks
+  // it against the association's membership records.
+  const [assocNumber,      setAssocNumber]      = useState('')
+  const [assocName,        setAssocName]        = useState('')
+  // ───────────────────────────────────────────────────────────
+  const [cacNumber,        setCacNumber]        = useState('')
+  const [officeAddr,       setOfficeAddr]       = useState('')
+  const [phone,            setPhone]            = useState('')
+  const [docUrl,           setDocUrl]           = useState('')
+  const [submitting,       setSubmitting]       = useState(false)
+  const [submitted,        setSubmitted]        = useState(false)
+  const [error,            setError]            = useState('')
 
-// ── AddListingForm — writes lat/lng ───────────────────────────
+  const vStatus = partner.verification_status || 'not_started'
+
+  const INP: React.CSSProperties = {
+    width: '100%', background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+    border: `1px solid ${border}`, borderRadius: 9, color: text,
+    fontSize: '0.875rem', padding: '0.7rem 0.9rem', outline: 'none',
+    fontFamily: 'inherit', boxSizing: 'border-box' as const,
+  }
+  const LBL: React.CSSProperties = {
+    fontSize: '0.7rem', color: text2, fontWeight: 500,
+    display: 'block', marginBottom: '0.3rem',
+  }
+
+  async function handleSubmit() {
+    const needsBody = method === 'body' || method === 'both'
+    const needsCAC  = method === 'cac'  || method === 'both'
+
+    if (needsBody && !bodyCode)   { setError('Select your professional body'); return }
+    if (needsBody && !bodyNumber) { setError('Enter your membership number'); return }
+    if (needsCAC  && !cacNumber)  { setError('Enter your CAC registration number'); return }
+    if (!officeAddr.trim())       { setError('Office address is required'); return }
+
+    setSubmitting(true); setError('')
+    try {
+      const verificationPayload = {
+        method,
+        professional_body: needsBody ? {
+          code:              bodyCode,
+          membership_number: bodyNumber,
+          year_joined:       bodyYear || null,
+        } : null,
+        // Association membership — the AEAN pilot field
+        // Manop uses this to cross-check membership status
+        association_membership: assocNumber ? {
+          association_name:   assocName || bodyCode,
+          membership_number:  assocNumber,
+          submitted_at:       new Date().toISOString(),
+        } : null,
+        cac_number:     needsCAC ? cacNumber.trim() : null,
+        office_address: officeAddr.trim(),
+        contact_phone:  phone.trim() || null,
+        doc_url:        docUrl.trim() || null,
+        submitted_at:   new Date().toISOString(),
+      }
+
+      const { error: dbErr } = await sb.from('data_partners').update({
+        verification_status: 'pending',
+        notes: JSON.stringify({ verification_request: verificationPayload }),
+      }).eq('id', partner.id)
+
+      if (dbErr) throw new Error(dbErr.message)
+
+      // Log signal for admin to pick up
+      fetch('/api/signals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signal_type: 'verification_requested',
+          metadata: {
+            partner_id:         partner.id,
+            agency:             partner.name,
+            method,
+            body_code:          bodyCode || null,
+            association_number: assocNumber || null,
+          },
+        }),
+      }).catch(() => {})
+
+      setSubmitted(true)
+      onStatusChange('pending')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Submission failed. Email partners@manopintel.com')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (vStatus === 'verified') return (
+    <div style={{ background: bg3, border: '1px solid rgba(20,184,166,0.3)', borderRadius: 14, padding: '2rem', textAlign: 'center' as const }}>
+      <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>◇</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: '#14B8A6', marginBottom: 8 }}>Verified</div>
+      <div style={{ fontSize: 13, color: text2, lineHeight: 1.6, maxWidth: 360, margin: '0 auto' }}>
+        Your agency is verified on Manop. The Verified badge is visible on all your listings.
+        Keep building your MAPE score to reach Trust and Elite.
+      </div>
+    </div>
+  )
+
+  if (vStatus === 'pending' || submitted) return (
+    <div style={{ background: bg3, border: '1px solid rgba(245,158,11,0.3)', borderRadius: 14, padding: '2rem', textAlign: 'center' as const }}>
+      <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', fontSize: '1.5rem' }}>⏱</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: '#F59E0B', marginBottom: 8 }}>Under review — 24–48 hours</div>
+      <div style={{ fontSize: 13, color: text2, lineHeight: 1.6 }}>
+        Questions? <span style={{ color: '#14B8A6' }}>partners@manopintel.com</span>
+      </div>
+    </div>
+  )
+
+  return (
+    <div>
+      {/* What verification unlocks */}
+      <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', marginBottom: 14 }}>
+        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: '0.875rem' }}>
+          What verification unlocks
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {[
+            { icon: '◇', label: 'Verified badge on all listings',      color: '#60A5FA' },
+            { icon: '↑', label: '+40 MAPE Ethics points',               color: '#22C55E' },
+            { icon: '✓', label: 'Unlimited listings (removes 3 cap)',   color: '#5B2EFF' },
+            { icon: '◈', label: 'Eligible for Trust and Elite badges',  color: '#F59E0B' },
+          ].map(w => (
+            <div key={w.label} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0.6rem 0.875rem', background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${border}`, borderRadius: 9 }}>
+              <span style={{ color: w.color, fontSize: '0.85rem', flexShrink: 0, fontWeight: 700 }}>{w.icon}</span>
+              <span style={{ fontSize: '0.75rem', color: text2, lineHeight: 1.4 }}>{w.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.75rem' }}>
+        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#5B2EFF', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: '1.25rem' }}>
+          Verification method
+        </div>
+
+        {/* Method selector */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: '1.5rem' }}>
+          {([
+            { key: 'body', label: 'Professional body', desc: 'NIESV, AEAN, GIS, ISK etc.' },
+            { key: 'cac',  label: 'CAC registration',  desc: 'Nigeria companies only' },
+            { key: 'both', label: 'Both',               desc: 'Strongest verification' },
+          ] as const).map(m => (
+            <div key={m.key} onClick={() => setMethod(m.key)}
+              style={{ padding: '0.875rem', borderRadius: 10, cursor: 'pointer', border: `1.5px solid ${method === m.key ? '#5B2EFF' : border}`, background: method === m.key ? 'rgba(91,46,255,0.08)' : 'transparent', transition: 'all 0.12s' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: method === m.key ? '#7C5FFF' : text, marginBottom: 3 }}>{m.label}</div>
+              <div style={{ fontSize: '0.68rem', color: text3, lineHeight: 1.4 }}>{m.desc}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 14 }}>
+
+          {/* ── ASSOCIATION MEMBERSHIP NUMBER — the AEAN pilot anchor ── */}
+          <div style={{
+            background: dark ? 'rgba(20,184,166,0.06)' : 'rgba(20,184,166,0.04)',
+            border: '1px solid rgba(20,184,166,0.2)',
+            borderRadius: 10, padding: '1rem',
+          }}>
+            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#14B8A6', marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>
+              Association membership
+            </div>
+            <div style={{ fontSize: '0.72rem', color: text2, lineHeight: 1.6, marginBottom: 10 }}>
+              If you are a member of AEAN, NIESV, LASREA, or any registered association,
+              enter your membership number here. Manop cross-checks this with the association.
+              This is the fastest route to verification.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={LBL}>Association name</label>
+                <select
+                  style={{ ...INP, cursor: 'pointer', appearance: 'none' as const }}
+                  value={assocName}
+                  onChange={e => setAssocName(e.target.value)}
+                >
+                  <option value="">Select association</option>
+                  {PROFESSIONAL_BODIES.map(b => (
+                    <option key={b.code} value={b.code}>{b.label} — {b.full}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={LBL}>Membership / registration number</label>
+                <input
+                  style={INP}
+                  placeholder="e.g. AEAN/2019/00123"
+                  value={assocNumber}
+                  onChange={e => { setAssocNumber(e.target.value); setError('') }}
+                />
+              </div>
+            </div>
+            {assocNumber && (
+              <div style={{ marginTop: 8, fontSize: '0.68rem', color: '#14B8A6', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span>✓</span>
+                <span>Manop will cross-check this number with {assocName || 'the association'} records within 24 hours</span>
+              </div>
+            )}
+          </div>
+
+          {/* Professional body fields */}
+          {(method === 'body' || method === 'both') && (
+            <div style={{ background: dark ? 'rgba(91,46,255,0.05)' : 'rgba(91,46,255,0.03)', border: '1px solid rgba(91,46,255,0.15)', borderRadius: 10, padding: '1rem' }}>
+              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#7C5FFF', marginBottom: 10, textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>
+                Professional body membership
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+                <div>
+                  <label style={LBL}>Professional body *</label>
+                  <select style={{ ...INP, cursor: 'pointer', appearance: 'none' as const }} value={bodyCode} onChange={e => setBodyCode(e.target.value)}>
+                    <option value="">Select body</option>
+                    {PROFESSIONAL_BODIES.map(b => (
+                      <option key={b.code} value={b.code}>{b.label} — {b.full}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={LBL}>Membership number *</label>
+                    <input style={INP} placeholder="e.g. NIESV/001234" value={bodyNumber}
+                      onChange={e => { setBodyNumber(e.target.value); setError('') }} />
+                  </div>
+                  <div>
+                    <label style={LBL}>Year joined (optional)</label>
+                    <input style={INP} placeholder="e.g. 2018" value={bodyYear} onChange={e => setBodyYear(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* CAC fields */}
+          {(method === 'cac' || method === 'both') && (
+            <div>
+              <label style={LBL}>CAC registration number *</label>
+              <input style={INP} placeholder="RC123456" value={cacNumber}
+                onChange={e => { setCacNumber(e.target.value); setError('') }} />
+            </div>
+          )}
+
+          {/* Common fields */}
+          <div>
+            <label style={LBL}>Office address *</label>
+            <input style={INP} placeholder="Full office address including state" value={officeAddr}
+              onChange={e => { setOfficeAddr(e.target.value); setError('') }} />
+          </div>
+          <div>
+            <label style={LBL}>Contact phone</label>
+            <input style={INP} type="tel" placeholder="+234 800 000 0000" value={phone} onChange={e => setPhone(e.target.value)} />
+          </div>
+          <div>
+            <label style={LBL}>
+              Document URL{' '}
+              <span style={{ color: text3, fontWeight: 400 }}>
+                (optional — membership certificate on Google Drive / Cloudinary)
+              </span>
+            </label>
+            <input style={INP} placeholder="https://drive.google.com/..." value={docUrl} onChange={e => setDocUrl(e.target.value)} />
+            <div style={{ fontSize: '0.68rem', color: text3, marginTop: 4, lineHeight: 1.55 }}>
+              Or email docs to{' '}
+              <span style={{ color: '#14B8A6' }}>partners@manopintel.com</span>
+              {' '}— Subject: "Verify — {partner.name}"
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '0.65rem', fontSize: 13, color: '#EF4444', marginTop: 14 }}>
+            {error}
+          </div>
+        )}
+
+        <button onClick={handleSubmit} disabled={submitting}
+          style={{ width: '100%', height: 48, background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 10, fontSize: '0.95rem', fontWeight: 700, cursor: submitting ? 'default' : 'pointer', fontFamily: 'inherit', marginTop: 16, opacity: submitting ? 0.75 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          {submitting ? (
+            <><div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Submitting…</>
+          ) : 'Submit for verification →'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// MAPEWidget — unchanged from original
+// ─────────────────────────────────────────────────────────────
+function MAPEWidget({ partner, listings, dark, border, text, text2, text3, bg3, onGoVerify }: {
+  partner: Partner; listings: Listing[]; dark: boolean
+  border: string; text: string; text2: string; text3: string; bg3: string
+  onGoVerify: () => void
+}) {
+  const badge     = partner.badge_level || 'listed'
+  const badgeConf = BADGE_CONFIG[badge] || BADGE_CONFIG.listed
+  const total     = Math.round(partner.mape_score || 0)
+  const scores    = {
+    m: Math.round(partner.mape_m || 0),
+    a: Math.round(partner.mape_a || 0),
+    p: Math.round(partner.mape_p || 0),
+    e: Math.round(partner.mape_e || 0),
+    i: Math.round(partner.mape_i || 0),
+  }
+  const vStatus = partner.verification_status || 'not_started'
+
+  function nextAction() {
+    if (vStatus === 'not_started' || vStatus === 'unsubmitted')
+      return { label: 'Submit your association or professional body membership. Unlocks +40 Ethics points and the Verified badge.', cta: 'Submit verification →', color: '#60A5FA', onClick: onGoVerify }
+    if (listings.length === 0)
+      return { label: 'Add your first listing. Each complete listing with photos earns up to 20 Market Quality points.', cta: null, color: '#5B2EFF' }
+    const withPhotos = listings.filter(l => {
+      const imgs = Array.isArray((l.raw_data as Record<string, unknown>)?.images) ? (l.raw_data as Record<string, unknown>).images as string[] : []
+      return imgs.length >= 3
+    }).length
+    if (withPhotos < listings.length * 0.5)
+      return { label: `Only ${withPhotos} of ${listings.length} listings have 3+ photos. Photos are the biggest driver of Market Quality points.`, cta: null, color: '#5B2EFF' }
+    if (scores.i < 30)
+      return { label: 'Submit your first closed sale. Each verified transaction earns +20 Intelligence points — permanent, never decay.', cta: null, color: '#F59E0B' }
+    return { label: 'Reply to new inquiries within 4 hours. Response speed is the biggest Performance score driver.', cta: null, color: '#22C55E' }
+  }
+
+  const next = nextAction()
+  const dims = [
+    { key: 'm', label: 'Market quality', max: 200, val: scores.m, color: '#5B2EFF' },
+    { key: 'a', label: 'Activity',       max: 150, val: scores.a, color: '#14B8A6' },
+    { key: 'p', label: 'Performance',    max: 250, val: scores.p, color: '#22C55E' },
+    { key: 'e', label: 'Ethics',         max: 100, val: scores.e, color: '#F59E0B' },
+    { key: 'i', label: 'Intelligence',   max: 300, val: scores.i, color: '#F59E0B' },
+  ]
+
+  return (
+    <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.25rem' }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: badgeConf.bg, border: `1px solid ${badgeConf.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', color: badgeConf.color, flexShrink: 0 }}>
+          {badgeConf.icon}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: badgeConf.color }}>{badgeConf.label}</span>
+            <span style={{ fontSize: 18, fontWeight: 800, color: text, letterSpacing: '-0.03em' }}>{total}</span>
+            <span style={{ fontSize: 11, color: text3 }}>/1000 pts</span>
+          </div>
+          <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>MAPE score — updated nightly</div>
+        </div>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {(['listed', 'verified', 'trust', 'elite'] as const).map(b => {
+            const bc = BADGE_CONFIG[b]; const isA = b === badge
+            return (
+              <div key={b} style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 2 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 7, background: isA ? bc.bg : 'transparent', border: `1px solid ${isA ? bc.border : border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: isA ? bc.color : text3 }}>{bc.icon}</div>
+                <div style={{ fontSize: '0.45rem', color: isA ? bc.color : text3, fontWeight: isA ? 700 : 400 }}>{bc.label}</div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, marginBottom: '1.25rem' }}>
+        {dims.map(d => (
+          <div key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: text3, textTransform: 'uppercase' as const, letterSpacing: '0.08em', width: 90, flexShrink: 0 }}>{d.label}</div>
+            <div style={{ flex: 1, height: 6, background: dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ width: `${Math.min(100, (d.val / d.max) * 100)}%`, height: '100%', background: d.color, borderRadius: 3, transition: 'width 0.6s ease' }} />
+            </div>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: text, width: 50, textAlign: 'right' as const, flexShrink: 0 }}>{d.val}/{d.max}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${border}`, borderRadius: 10, padding: '0.875rem 1rem' }}>
+        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: next.color, textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 6 }}>→ Highest impact next action</div>
+        <div style={{ fontSize: '0.8rem', color: text2, lineHeight: 1.65, marginBottom: next.onClick ? 10 : 0 }}>{next.label}</div>
+        {next.onClick && (
+          <button onClick={next.onClick}
+            style={{ fontSize: '0.78rem', fontWeight: 700, color: next.color, background: 'transparent', border: `1px solid ${next.color}30`, borderRadius: 7, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+            {next.cta}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// AddListingForm — original simple form (kept as fallback)
+// The main tab === 'add' now uses the new <ListingForm> component.
+// This is only used internally if needed.
+// ─────────────────────────────────────────────────────────────
 function AddListingForm({ partnerId, agencyName, dark, onSaved }: {
   partnerId: string; agencyName: string; dark: boolean; onSaved: () => void
 }) {
   const [neighborhood, setNeighborhood] = useState('')
-  const [propType,     setPropType]     = useState('Apartment')
-  const [listingType,  setListingType]  = useState('for-sale')
-  const [priceM,       setPriceM]       = useState('')
-  const [bedrooms,     setBedrooms]     = useState('3')
-  const [bathrooms,    setBathrooms]    = useState('2')
-  const [titleDoc,     setTitleDoc]     = useState('')
-  const [agentPhone,   setAgentPhone]   = useState('')
-  const [description,  setDescription]  = useState('')
-  const [imageUrls,    setImageUrls]    = useState<string[]>([])
-  const [saving,       setSaving]       = useState(false)
-  const [error,        setError]        = useState('')
-  const [success,      setSuccess]      = useState('')
+  const [propType, setPropType]         = useState('Apartment')
+  const [listingType, setListingType]   = useState('for-sale')
+  const [priceM, setPriceM]             = useState('')
+  const [bedrooms, setBedrooms]         = useState('3')
+  const [bathrooms, setBathrooms]       = useState('2')
+  const [titleDoc, setTitleDoc]         = useState('')
+  const [agentPhone, setAgentPhone]     = useState('')
+  const [description, setDescription]  = useState('')
+  const [imageUrls, setImageUrls]       = useState<string[]>([])
+  const [saving, setSaving]             = useState(false)
+  const [error, setError]               = useState('')
+  const [success, setSuccess]           = useState('')
 
-  const border = dark ? 'rgba(248,250,252,0.1)'  : 'rgba(15,23,42,0.1)'
-  const text   = dark ? '#F8FAFC'                : '#0F172A'
-  const text2  = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
+  const border = dark ? 'rgba(248,250,252,0.1)' : 'rgba(15,23,42,0.1)'
+  const text   = dark ? '#F8FAFC'               : '#0F172A'
+  const text2  = dark ? 'rgba(248,250,252,0.65)': 'rgba(15,23,42,0.65)'
   const INP: React.CSSProperties = {
     width: '100%', background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
     border: `1px solid ${border}`, borderRadius: 8, color: text,
@@ -195,9 +572,7 @@ function AddListingForm({ partnerId, agencyName, dark, onSaved }: {
     const price = parseMillion(priceM)
     if (!price) { setError('Enter a valid price in millions e.g. 85 for ₦85M'); return }
     setSaving(true); setError('')
-
     try {
-      // Live FX rate
       let ngnRate = 1570
       try {
         const ctrl = new AbortController()
@@ -207,7 +582,6 @@ function AddListingForm({ partnerId, agencyName, dark, onSaved }: {
         if (d?.rates?.NGN) ngnRate = d.rates.NGN
       } catch { /* use fallback */ }
 
-      // Resolve city from neighborhood selection
       const cityMap: Record<string, string> = {
         'Maitama': 'Abuja', 'Asokoro': 'Abuja', 'Wuse 2': 'Abuja', 'Wuse': 'Abuja',
         'Garki': 'Abuja', 'Gwarinpa': 'Abuja', 'Life Camp': 'Abuja', 'Utako': 'Abuja',
@@ -221,50 +595,31 @@ function AddListingForm({ partnerId, agencyName, dark, onSaved }: {
         'Parklands': 'Nairobi', 'Muthaiga': 'Nairobi', 'Lavington': 'Nairobi',
         'Kileleshwa': 'Nairobi', 'Langata': 'Nairobi',
       }
-      const city = cityMap[neighborhood] || 'Lagos'
+      const city        = cityMap[neighborhood] || 'Lagos'
       const countryCode = city === 'Accra' ? 'GH' : city === 'Nairobi' ? 'KE' : 'NG'
-
-      // ── KEY CHANGE: get coordinates so pin shows on map ──
-      const coords = getCoords(neighborhood, city)
+      const coords      = getCoords(neighborhood, city)
 
       const { error: dbErr } = await sb.from('properties').insert({
-        data_partner_id:     partnerId,
-        source_type:         'agency-direct',
-        country_code:        countryCode,
-        city,
-        neighborhood,
-        property_type:       propType.toLowerCase().replace(/ /g, '-'),
-        listing_type:        listingType,
-        bedrooms:            parseInt(bedrooms) || null,
-        bathrooms:           parseFloat(bathrooms) || null,
-        price_local:         price,
-        currency_code:       'NGN',
-        price_usd:           Math.round(price / ngnRate),
-        title_document_type: titleDoc || null,
-        agent_phone:         agentPhone || null,
-        confidence:          0.9,
-        // ── Coordinates — makes the pin appear on the map ──
-        lat:                 coords?.lat ?? null,
-        lng:                 coords?.lng ?? null,
+        data_partner_id: partnerId, source_type: 'agency-direct',
+        country_code: countryCode, city, neighborhood,
+        property_type: propType.toLowerCase().replace(/ /g, '-'),
+        listing_type: listingType,
+        bedrooms: parseInt(bedrooms) || null, bathrooms: parseFloat(bathrooms) || null,
+        price_local: price, currency_code: 'NGN',
+        price_usd: Math.round(price / ngnRate),
+        title_document_type: titleDoc || null, agent_phone: agentPhone || null,
+        confidence: 0.9, lat: coords?.lat ?? null, lng: coords?.lng ?? null,
         raw_data: {
-          source_agency: agencyName,
-          description:   description || null,
-          images:        imageUrls,
-          intel: {
-            price_usd:    Math.round(price / ngnRate),
-            fx_rate:      ngnRate,
-            computed_at:  new Date().toISOString(),
-          },
+          source_agency: agencyName, description: description || null,
+          images: imageUrls,
+          intel: { price_usd: Math.round(price / ngnRate), fx_rate: ngnRate, computed_at: new Date().toISOString() },
         },
       })
 
       if (dbErr) throw new Error(dbErr.message)
-
       setSuccess('Listing saved and live on Manop.')
       setTimeout(() => { setSuccess(''); onSaved() }, 1800)
-      setNeighborhood(''); setPriceM(''); setTitleDoc('')
-      setAgentPhone(''); setDescription(''); setImageUrls([])
-
+      setNeighborhood(''); setPriceM(''); setTitleDoc(''); setAgentPhone(''); setDescription(''); setImageUrls([])
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to save listing')
     } finally {
@@ -291,26 +646,17 @@ function AddListingForm({ partnerId, agencyName, dark, onSaved }: {
         <div>
           <label style={LBL}>Listing type *</label>
           <select style={{ ...INP, cursor: 'pointer' }} value={listingType} onChange={e => setListingType(e.target.value)}>
-            <option value="for-sale">For Sale</option>
-            <option value="for-rent">For Rent</option>
-            <option value="short-let">Short Let</option>
-            <option value="off-plan">Off Plan</option>
+            <option value="for-sale">For Sale</option><option value="for-rent">For Rent</option>
+            <option value="short-let">Short Let</option><option value="off-plan">Off Plan</option>
           </select>
         </div>
         <div>
           <label style={LBL}>Price (₦ millions) *</label>
-          <input style={INP} type="number" value={priceM} min="0.1" step="0.5"
-            onChange={e => setPriceM(e.target.value)} placeholder="e.g. 85" />
+          <input style={INP} type="number" value={priceM} min="0.1" step="0.5" onChange={e => setPriceM(e.target.value)} placeholder="e.g. 85" />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div>
-            <label style={LBL}>Beds</label>
-            <input style={INP} type="number" value={bedrooms} min="1" max="20" onChange={e => setBedrooms(e.target.value)} />
-          </div>
-          <div>
-            <label style={LBL}>Baths</label>
-            <input style={INP} type="number" value={bathrooms} min="1" step="0.5" onChange={e => setBathrooms(e.target.value)} />
-          </div>
+          <div><label style={LBL}>Beds</label><input style={INP} type="number" value={bedrooms} min="1" max="20" onChange={e => setBedrooms(e.target.value)} /></div>
+          <div><label style={LBL}>Baths</label><input style={INP} type="number" value={bathrooms} min="1" step="0.5" onChange={e => setBathrooms(e.target.value)} /></div>
         </div>
         <div>
           <label style={LBL}>Title document</label>
@@ -325,521 +671,19 @@ function AddListingForm({ partnerId, agencyName, dark, onSaved }: {
         </div>
         <div style={{ gridColumn: '1/-1' }}>
           <label style={LBL}>Description (optional)</label>
-          <textarea style={{ ...INP, minHeight: 72, resize: 'vertical' as const }} value={description}
-            onChange={e => setDescription(e.target.value)} placeholder="Key features, access notes, what makes this listing stand out…" />
+          <textarea style={{ ...INP, minHeight: 72, resize: 'vertical' as const }} value={description} onChange={e => setDescription(e.target.value)} placeholder="Key features, access notes…" />
         </div>
       </div>
-
       <div style={{ marginBottom: 12 }}>
         <label style={LBL}>Photos</label>
-        <ImageUploader onImagesChange={setImageUrls} maxImages={8} dark={dark}
-          label="Property photos" hint="JPG, PNG, WebP — First photo is cover image" />
+        <ImageUploader onImagesChange={setImageUrls} maxImages={8} dark={dark} label="Property photos" hint="JPG, PNG, WebP" />
       </div>
-
       {error   && <div style={{ background: 'rgba(239,68,68,0.1)',  border: '1px solid rgba(239,68,68,0.25)',  borderRadius: 8, padding: '0.6rem', fontSize: 13, color: '#EF4444', marginBottom: 10 }}>{error}</div>}
       {success && <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '0.6rem', fontSize: 13, color: '#22C55E', marginBottom: 10 }}>{success}</div>}
-
       <button onClick={handleSave} disabled={saving}
         style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 9, padding: '0.75rem 1.5rem', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.7 : 1, fontFamily: 'inherit' }}>
         {saving ? 'Saving…' : 'Save listing →'}
       </button>
-    </div>
-  )
-}
-
-// ── TransactionSubmission — with "verified by" field ──────────
-function TransactionSubmission({ partnerId, agencyName, dark }: {
-  partnerId: string; agencyName: string; dark: boolean
-}) {
-  const newRow = () => ({
-    id: Math.random().toString(36).slice(2), neighborhood: '', bedrooms: '3',
-    askingPriceM: '', soldPriceM: '', soldDate: '', daysOnMarket: '',
-    annualRentM: '', evidenceType: 'agent_confirmed',
-    verifiedByName: '', verifiedByRole: 'lawyer', paymentMethod: 'cash',
-  })
-
-  const [rows,    setRows]    = useState([newRow()])
-  const [saving,  setSaving]  = useState(false)
-  const [success, setSuccess] = useState(false)
-  const [error,   setError]   = useState('')
-
-  const border = dark ? 'rgba(248,250,252,0.1)'  : 'rgba(15,23,42,0.1)'
-  const text   = dark ? '#F8FAFC'                : '#0F172A'
-  const text2  = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
-  const text3  = dark ? 'rgba(248,250,252,0.35)' : 'rgba(15,23,42,0.35)'
-  const INP: React.CSSProperties = {
-    width: '100%', background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-    border: `1px solid ${border}`, borderRadius: 7, color: text,
-    fontSize: '0.78rem', padding: '0.45rem 0.65rem', outline: 'none', fontFamily: 'inherit',
-  }
-
-  function upd(id: string, f: string, v: string) {
-    setRows(prev => prev.map(r => r.id === id ? { ...r, [f]: v } : r))
-  }
-
-  async function handleSubmit() {
-    const valid = rows.filter(r => r.neighborhood && r.soldPriceM && r.soldDate && r.bedrooms)
-    if (!valid.length) { setError('Fill in at least one complete row — neighborhood, sold price, date, and bedrooms are required'); return }
-    setSaving(true); setError('')
-    try {
-      const inserts = valid.map(r => {
-        const city = r.neighborhood.includes('Abuja') ? 'Abuja'
-          : r.neighborhood.includes('Accra') ? 'Accra'
-          : r.neighborhood.includes('Nairobi') ? 'Nairobi'
-          : r.neighborhood.includes('Port Harcourt') || r.neighborhood === 'GRA' || r.neighborhood === 'Old GRA' ? 'Port Harcourt'
-          : 'Lagos'
-        return {
-          neighborhood:        r.neighborhood,
-          city,
-          country_code:        city === 'Accra' ? 'GH' : city === 'Nairobi' ? 'KE' : 'NG',
-          bedrooms:            parseInt(r.bedrooms) || null,
-          asking_price:        r.askingPriceM ? Math.round(parseFloat(r.askingPriceM) * 1e6) : null,
-          sold_price:          Math.round(parseFloat(r.soldPriceM) * 1e6),
-          currency_code:       'NGN',
-          sold_at:             r.soldDate,
-          days_on_market:      r.daysOnMarket ? parseInt(r.daysOnMarket) : null,
-          annual_rent:         r.annualRentM ? Math.round(parseFloat(r.annualRentM) * 1e6) : null,
-          submitted_by:        partnerId,
-          verification_status: 'pending',
-          evidence_type:       r.evidenceType,
-          raw_data: {
-            submitted_by_agency: agencyName,
-            submitted_at:        new Date().toISOString(),
-            payment_method:      r.paymentMethod,
-            // ── NEW: verified by ──
-            verified_by: r.verifiedByName ? {
-              name: r.verifiedByName.trim(),
-              role: r.verifiedByRole,
-            } : null,
-          },
-        }
-      })
-
-      const { error: dbErr } = await sb.from('market_transactions').insert(inserts)
-      if (dbErr) throw new Error(dbErr.message)
-
-      fetch('/api/signals', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signal_type: 'transaction_submitted', metadata: { agency: agencyName, count: inserts.length } }),
-      }).catch(() => {})
-
-      setSuccess(true)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Submission failed')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (success) return (
-    <div style={{ textAlign: 'center', padding: '2.5rem', color: '#22C55E' }}>
-      <div style={{ fontSize: '2rem', marginBottom: 12 }}>✓</div>
-      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Submitted — thank you</div>
-      <div style={{ fontSize: 13, color: text2, lineHeight: 1.6, maxWidth: 400, margin: '0 auto' }}>
-        Transactions under review. Verified within 24–48 hours. Verified data earns you permanent Intelligence (I) points — these never decay.
-      </div>
-      <button onClick={() => { setSuccess(false); setRows([newRow()]) }}
-        style={{ marginTop: 16, background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.6rem 1.25rem', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-        Submit more →
-      </button>
-    </div>
-  )
-
-  return (
-    <div>
-      <div style={{ background: dark ? 'rgba(91,46,255,0.07)' : 'rgba(91,46,255,0.04)', border: '1px solid rgba(91,46,255,0.18)', borderRadius: 10, padding: '1rem', marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#7C5FFF', marginBottom: 6 }}>Why submit closed sales?</div>
-        <div style={{ fontSize: 12, color: text2, lineHeight: 1.65 }}>
-          Each verified transaction earns <strong style={{ color: '#F59E0B' }}>+20 Intelligence (I) points</strong> — permanent, never decay.
-          I points are the fastest path to Trust and Elite badges. Data is kept confidential — only neighbourhood-level aggregates are ever shown publicly.
-          Adding a <strong>lawyer or surveyor witness</strong> doubles the confidence weight of your submission.
-        </div>
-      </div>
-
-      {/* Headers */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.4fr 0.7fr 0.7fr 0.7fr 0.9fr 1fr 1fr auto', gap: 5, marginBottom: 6 }}>
-        {['Neighborhood','Beds','Asking ₦M','Sold ₦M *','Date sold *','Payment','Evidence','Verified by',''].map(h => (
-          <div key={h} style={{ fontSize: '0.58rem', fontWeight: 700, color: text3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</div>
-        ))}
-      </div>
-
-      {rows.map(row => (
-        <div key={row.id}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.4fr 0.7fr 0.7fr 0.7fr 0.9fr 1fr 1fr auto', gap: 5, marginBottom: 4, alignItems: 'center' }}>
-            <select style={{ ...INP, cursor: 'pointer' }} value={row.neighborhood} onChange={e => upd(row.id, 'neighborhood', e.target.value)}>
-              <option value="">Select</option>
-              {NEIGHBORHOODS.map(n => <option key={n}>{n}</option>)}
-            </select>
-            <select style={{ ...INP, cursor: 'pointer' }} value={row.bedrooms} onChange={e => upd(row.id, 'bedrooms', e.target.value)}>
-              {['1','2','3','4','5','6','7'].map(n => <option key={n}>{n}</option>)}
-            </select>
-            <input style={INP} type="number" placeholder="e.g. 300" value={row.askingPriceM}
-              onChange={e => upd(row.id, 'askingPriceM', e.target.value)} />
-            <input style={{ ...INP, border: `1px solid ${row.soldPriceM ? border : 'rgba(239,68,68,0.4)'}` }}
-              type="number" placeholder="e.g. 260 *" value={row.soldPriceM}
-              onChange={e => upd(row.id, 'soldPriceM', e.target.value)} />
-            <input style={{ ...INP, border: `1px solid ${row.soldDate ? border : 'rgba(239,68,68,0.4)'}` }}
-              type="date" value={row.soldDate} onChange={e => upd(row.id, 'soldDate', e.target.value)} />
-            <select style={{ ...INP, cursor: 'pointer' }} value={row.paymentMethod} onChange={e => upd(row.id, 'paymentMethod', e.target.value)}>
-              <option value="cash">Cash</option>
-              <option value="mortgage">Mortgage</option>
-              <option value="installment">Installment</option>
-              <option value="mixed">Mixed</option>
-            </select>
-            <select style={{ ...INP, cursor: 'pointer' }} value={row.evidenceType} onChange={e => upd(row.id, 'evidenceType', e.target.value)}>
-              <option value="agent_confirmed">Agent confirmed</option>
-              <option value="deed_of_assignment">Deed of Assignment</option>
-              <option value="bank_confirmation">Bank confirmation</option>
-              <option value="client_testimony">Client testimony</option>
-              <option value="survey_report">Survey report</option>
-            </select>
-            {/* ── Verified by — lawyer / surveyor name ── */}
-            <div style={{ display: 'flex', gap: 3 }}>
-              <input style={{ ...INP, flex: 1 }} placeholder="Name (optional)" value={row.verifiedByName}
-                onChange={e => upd(row.id, 'verifiedByName', e.target.value)} />
-              <select style={{ ...INP, width: 80, flexShrink: 0, cursor: 'pointer' }} value={row.verifiedByRole}
-                onChange={e => upd(row.id, 'verifiedByRole', e.target.value)}>
-                <option value="lawyer">Lawyer</option>
-                <option value="surveyor">Surveyor</option>
-                <option value="valuer">Valuer</option>
-                <option value="agent">Agent</option>
-              </select>
-            </div>
-            <button onClick={() => setRows(prev => prev.filter(r => r.id !== row.id))} disabled={rows.length === 1}
-              style={{ background: 'transparent', border: `1px solid ${border}`, borderRadius: 6, color: '#EF4444', cursor: 'pointer', padding: '0.4rem 0.55rem', fontSize: 13 }}>×</button>
-          </div>
-        </div>
-      ))}
-
-      <button onClick={() => setRows(prev => [...prev, newRow()])}
-        style={{ fontSize: 12, color: '#14B8A6', background: 'transparent', border: '1px solid rgba(20,184,166,0.3)', borderRadius: 7, padding: '0.4rem 0.875rem', cursor: 'pointer', marginBottom: 16 }}>
-        + Add another transaction
-      </button>
-
-      {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '0.65rem', fontSize: 13, color: '#EF4444', marginBottom: 10 }}>{error}</div>}
-
-      <button onClick={handleSubmit} disabled={saving}
-        style={{ width: '100%', background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 10, padding: '0.875rem', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-        {saving ? 'Submitting…' : `Submit ${rows.filter(r => r.neighborhood && r.soldPriceM).length} transaction${rows.filter(r => r.neighborhood && r.soldPriceM).length !== 1 ? 's' : ''} for review →`}
-      </button>
-      <p style={{ fontSize: 11, color: text3, marginTop: 10, lineHeight: 1.6, textAlign: 'center' as const }}>
-        * Required. All data confidential. Only neighbourhood-level aggregates shown publicly. Every submission reviewed by Manop before it enters the intelligence layer.
-      </p>
-    </div>
-  )
-}
-
-// ── VerificationTab — professional bodies + CAC ───────────────
-function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onStatusChange }: {
-  partner: Partner; dark: boolean; border: string
-  text: string; text2: string; text3: string; bg3: string
-  onStatusChange: (status: string) => void
-}) {
-  const [method,      setMethod]      = useState<'body' | 'cac' | 'both'>('body')
-  const [bodyCode,    setBodyCode]    = useState('')
-  const [bodyNumber,  setBodyNumber]  = useState('')
-  const [bodyYear,    setBodyYear]    = useState('')
-  const [cacNumber,   setCacNumber]   = useState('')
-  const [officeAddr,  setOfficeAddr]  = useState('')
-  const [phone,       setPhone]       = useState('')
-  const [docUrl,      setDocUrl]      = useState('')
-  const [submitting,  setSubmitting]  = useState(false)
-  const [submitted,   setSubmitted]   = useState(false)
-  const [error,       setError]       = useState('')
-
-  const vStatus = partner.verification_status || 'not_started'
-
-  const INP: React.CSSProperties = {
-    width: '100%', background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-    border: `1px solid ${border}`, borderRadius: 9, color: text,
-    fontSize: '0.875rem', padding: '0.7rem 0.9rem', outline: 'none',
-    fontFamily: 'inherit', boxSizing: 'border-box' as const,
-  }
-  const LBL: React.CSSProperties = { fontSize: '0.7rem', color: text2, fontWeight: 500, display: 'block', marginBottom: '0.3rem' }
-
-  async function handleSubmit() {
-    const needsBody = method === 'body' || method === 'both'
-    const needsCAC  = method === 'cac'  || method === 'both'
-
-    if (needsBody && !bodyCode)   { setError('Select your professional body'); return }
-    if (needsBody && !bodyNumber) { setError('Enter your membership number'); return }
-    if (needsCAC  && !cacNumber)  { setError('Enter your CAC registration number'); return }
-    if (!officeAddr.trim())       { setError('Office address is required'); return }
-
-    setSubmitting(true); setError('')
-    try {
-      const verificationPayload = {
-        method,
-        professional_body:    needsBody ? { code: bodyCode, membership_number: bodyNumber, year_joined: bodyYear || null } : null,
-        cac_number:           needsCAC ? cacNumber.trim() : null,
-        office_address:       officeAddr.trim(),
-        contact_phone:        phone.trim() || null,
-        doc_url:              docUrl.trim() || null,
-        submitted_at:         new Date().toISOString(),
-      }
-
-      const { error: dbErr } = await sb.from('data_partners').update({
-        verification_status: 'pending',
-        notes: JSON.stringify({ verification_request: verificationPayload }),
-      }).eq('id', partner.id)
-
-      if (dbErr) throw new Error(dbErr.message)
-
-      fetch('/api/signals', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          signal_type: 'verification_requested',
-          metadata: { partner_id: partner.id, agency: partner.name, method, body_code: bodyCode || null },
-        }),
-      }).catch(() => {})
-
-      setSubmitted(true)
-      onStatusChange('pending')
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Submission failed. Email partners@manopintel.com')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  if (vStatus === 'verified') return (
-    <div style={{ background: bg3, border: '1px solid rgba(20,184,166,0.3)', borderRadius: 14, padding: '2rem', textAlign: 'center' as const }}>
-      <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>◇</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: '#14B8A6', marginBottom: 8 }}>Verified</div>
-      <div style={{ fontSize: 13, color: text2, lineHeight: 1.6, maxWidth: 360, margin: '0 auto' }}>
-        Your agency is verified on Manop. The Verified badge is visible on all your listings. Keep building your MAPE score to reach Trust and Elite.
-      </div>
-    </div>
-  )
-
-  if (vStatus === 'pending' || submitted) return (
-    <div style={{ background: bg3, border: '1px solid rgba(245,158,11,0.3)', borderRadius: 14, padding: '2rem', textAlign: 'center' as const }}>
-      <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', fontSize: '1.5rem' }}>⏱</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: '#F59E0B', marginBottom: 8 }}>Under review — 24–48 hours</div>
-      <div style={{ fontSize: 13, color: text2, lineHeight: 1.6 }}>Questions? <span style={{ color: '#14B8A6' }}>partners@manopintel.com</span></div>
-    </div>
-  )
-
-  return (
-    <div>
-      {/* What verification unlocks */}
-      <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', marginBottom: 14 }}>
-        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '0.875rem' }}>
-          What verification unlocks
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {[
-            { icon: '◇', label: 'Verified badge on all listings', color: '#60A5FA' },
-            { icon: '↑', label: '+40 MAPE Ethics points', color: '#22C55E' },
-            { icon: '✓', label: 'Higher ranking in search results', color: '#5B2EFF' },
-            { icon: '◈', label: 'Eligible for Trust and Elite badges', color: '#F59E0B' },
-          ].map(w => (
-            <div key={w.label} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0.6rem 0.875rem', background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${border}`, borderRadius: 9 }}>
-              <span style={{ color: w.color, fontSize: '0.85rem', flexShrink: 0, fontWeight: 700 }}>{w.icon}</span>
-              <span style={{ fontSize: '0.75rem', color: text2, lineHeight: 1.4 }}>{w.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.75rem' }}>
-        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#5B2EFF', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '1.25rem' }}>
-          Verification method
-        </div>
-
-        {/* Method selector */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: '1.5rem' }}>
-          {([
-            { key: 'body', label: 'Professional body', desc: 'NIESV, EANS, GIS, ISK etc.' },
-            { key: 'cac',  label: 'CAC registration', desc: 'Nigeria companies only' },
-            { key: 'both', label: 'Both', desc: 'Strongest verification' },
-          ] as const).map(m => (
-            <div key={m.key} onClick={() => setMethod(m.key)}
-              style={{ padding: '0.875rem', borderRadius: 10, cursor: 'pointer', border: `1.5px solid ${method === m.key ? '#5B2EFF' : border}`, background: method === m.key ? 'rgba(91,46,255,0.08)' : 'transparent', transition: 'all 0.12s' }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: method === m.key ? '#7C5FFF' : text, marginBottom: 3 }}>{m.label}</div>
-              <div style={{ fontSize: '0.68rem', color: text3, lineHeight: 1.4 }}>{m.desc}</div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 14 }}>
-
-          {/* Professional body fields */}
-          {(method === 'body' || method === 'both') && (
-            <div style={{ background: dark ? 'rgba(91,46,255,0.05)' : 'rgba(91,46,255,0.03)', border: '1px solid rgba(91,46,255,0.15)', borderRadius: 10, padding: '1rem' }}>
-              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#7C5FFF', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                Professional body membership
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
-                <div>
-                  <label style={LBL}>Professional body *</label>
-                  <select style={{ ...INP, cursor: 'pointer' }} value={bodyCode} onChange={e => setBodyCode(e.target.value)}>
-                    <option value="">Select body</option>
-                    {PROFESSIONAL_BODIES.map(b => (
-                      <option key={b.code} value={b.code}>{b.label} — {b.full}</option>
-                    ))}
-                  </select>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div>
-                    <label style={LBL}>Membership number *</label>
-                    <input style={INP} placeholder="e.g. NIESV/001234" value={bodyNumber}
-                      onChange={e => { setBodyNumber(e.target.value); setError('') }} />
-                  </div>
-                  <div>
-                    <label style={LBL}>Year joined (optional)</label>
-                    <input style={INP} placeholder="e.g. 2018" value={bodyYear}
-                      onChange={e => setBodyYear(e.target.value)} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* CAC fields */}
-          {(method === 'cac' || method === 'both') && (
-            <div>
-              <label style={LBL}>CAC registration number *</label>
-              <input style={INP} placeholder="RC123456" value={cacNumber}
-                onChange={e => { setCacNumber(e.target.value); setError('') }} />
-            </div>
-          )}
-
-          {/* Common fields */}
-          <div>
-            <label style={LBL}>Office address *</label>
-            <input style={INP} placeholder="Full office address including state" value={officeAddr}
-              onChange={e => { setOfficeAddr(e.target.value); setError('') }} />
-          </div>
-          <div>
-            <label style={LBL}>Contact phone</label>
-            <input style={INP} type="tel" placeholder="+234 800 000 0000" value={phone}
-              onChange={e => setPhone(e.target.value)} />
-          </div>
-          <div>
-            <label style={LBL}>
-              Document URL <span style={{ color: text3, fontWeight: 400 }}>(optional — membership certificate or CAC cert on Google Drive/Cloudinary)</span>
-            </label>
-            <input style={INP} placeholder="https://drive.google.com/..." value={docUrl}
-              onChange={e => setDocUrl(e.target.value)} />
-            <div style={{ fontSize: '0.68rem', color: text3, marginTop: 4, lineHeight: 1.55 }}>
-              Or email docs to <span style={{ color: '#14B8A6' }}>partners@manopintel.com</span> — Subject: "Verify — {partner.name}"
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '0.65rem', fontSize: 13, color: '#EF4444', marginTop: 14 }}>
-            {error}
-          </div>
-        )}
-
-        <button onClick={handleSubmit} disabled={submitting}
-          style={{ width: '100%', height: 48, background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 10, fontSize: '0.95rem', fontWeight: 700, cursor: submitting ? 'default' : 'pointer', fontFamily: 'inherit', marginTop: 16, opacity: submitting ? 0.75 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          {submitting ? (
-            <><div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Submitting…</>
-          ) : 'Submit for verification →'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── MAPE Widget ───────────────────────────────────────────────
-function MAPEWidget({ partner, listings, dark, border, text, text2, text3, bg3, onGoVerify }: {
-  partner: Partner; listings: Listing[]; dark: boolean
-  border: string; text: string; text2: string; text3: string; bg3: string
-  onGoVerify: () => void
-}) {
-  const badge      = partner.badge_level || 'listed'
-  const badgeConf  = BADGE_CONFIG[badge] || BADGE_CONFIG.listed
-  const total      = Math.round(partner.mape_score || 0)
-  const scores     = {
-    m: Math.round(partner.mape_m || 0),
-    a: Math.round(partner.mape_a || 0),
-    p: Math.round(partner.mape_p || 0),
-    e: Math.round(partner.mape_e || 0),
-    i: Math.round(partner.mape_i || 0),
-  }
-  const vStatus = partner.verification_status || 'not_started'
-
-  function nextAction() {
-    if (vStatus === 'not_started' || vStatus === 'unsubmitted')
-      return { label: 'Submit your professional body membership or CAC docs. Unlocks +40 Ethics points and the Verified badge.', cta: 'Submit verification →', color: '#60A5FA', onClick: onGoVerify }
-    if (listings.length === 0)
-      return { label: 'Add your first listing. Each complete listing with photos earns up to 20 Market Quality points.', cta: 'Add a listing →', color: '#5B2EFF' }
-    const withPhotos = listings.filter(l => {
-      const imgs = Array.isArray((l.raw_data as any)?.images) ? (l.raw_data as any).images : []
-      return imgs.length >= 3
-    }).length
-    if (withPhotos < listings.length * 0.5)
-      return { label: `Only ${withPhotos} of ${listings.length} listings have 3+ photos. Photos are the biggest driver of Market Quality points.`, cta: 'Edit listings →', color: '#5B2EFF' }
-    if (scores.i < 30)
-      return { label: 'Submit your first closed sale. Each verified transaction earns +20 Intelligence points — permanent, never decay.', cta: 'Submit a sale →', color: '#F59E0B' }
-    return { label: 'Reply to new inquiries within 4 hours. Response speed is the biggest Performance score driver.', cta: 'Check leads →', color: '#22C55E' }
-  }
-
-  const next = nextAction()
-  const dims = [
-    { key: 'm', label: 'Market quality', max: 200, val: scores.m, color: '#5B2EFF' },
-    { key: 'a', label: 'Activity',       max: 150, val: scores.a, color: '#14B8A6' },
-    { key: 'p', label: 'Performance',    max: 250, val: scores.p, color: '#22C55E' },
-    { key: 'e', label: 'Ethics',         max: 100, val: scores.e, color: '#F59E0B' },
-    { key: 'i', label: 'Intelligence',   max: 300, val: scores.i, color: '#F59E0B' },
-  ]
-
-  return (
-    <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.25rem' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: badgeConf.bg, border: `1px solid ${badgeConf.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', color: badgeConf.color, flexShrink: 0 }}>
-          {badgeConf.icon}
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: badgeConf.color }}>{badgeConf.label}</span>
-            <span style={{ fontSize: 18, fontWeight: 800, color: text, letterSpacing: '-0.03em' }}>{total}</span>
-            <span style={{ fontSize: 11, color: text3 }}>/1000 pts</span>
-          </div>
-          <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>MAPE score — updated nightly</div>
-        </div>
-        {/* Badge ladder */}
-        <div style={{ display: 'flex', gap: 5 }}>
-          {(['listed', 'verified', 'trust', 'elite'] as const).map(b => {
-            const bc = BADGE_CONFIG[b]; const isA = b === badge
-            return (
-              <div key={b} style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 2 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 7, background: isA ? bc.bg : 'transparent', border: `1px solid ${isA ? bc.border : border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: isA ? bc.color : text3 }}>{bc.icon}</div>
-                <div style={{ fontSize: '0.45rem', color: isA ? bc.color : text3, fontWeight: isA ? 700 : 400 }}>{bc.label}</div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Dimension bars */}
-      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, marginBottom: '1.25rem' }}>
-        {dims.map(d => (
-          <div key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: text3, textTransform: 'uppercase' as const, letterSpacing: '0.08em', width: 90, flexShrink: 0 }}>{d.label}</div>
-            <div style={{ flex: 1, height: 6, background: dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: `${Math.min(100, (d.val / d.max) * 100)}%`, height: '100%', background: d.color, borderRadius: 3, transition: 'width 0.6s ease' }} />
-            </div>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: text, width: 50, textAlign: 'right' as const, flexShrink: 0 }}>{d.val}/{d.max}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Next action card */}
-      <div style={{ background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${border}`, borderRadius: 10, padding: '0.875rem 1rem' }}>
-        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: next.color, textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 6 }}>→ Highest impact next action</div>
-        <div style={{ fontSize: '0.8rem', color: text2, lineHeight: 1.65, marginBottom: next.onClick ? 10 : 0 }}>{next.label}</div>
-        {next.onClick && (
-          <button onClick={next.onClick}
-            style={{ fontSize: '0.78rem', fontWeight: 700, color: next.color, background: 'transparent', border: `1px solid ${next.color}30`, borderRadius: 7, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
-            {next.cta}
-          </button>
-        )}
-      </div>
     </div>
   )
 }
@@ -849,14 +693,18 @@ function MAPEWidget({ partner, listings, dark, border, text, text2, text3, bg3, 
 // ─────────────────────────────────────────────────────────────
 export default function AgencyDashboard() {
   const { user, checking } = useAuth('agency')
-  const [dark, setDark] = useState(true)
-  const [partner,  setPartner]  = useState<Partner | null>(null)
+  const [dark, setDark]         = useState(true)
+  const [partner, setPartner]   = useState<Partner | null>(null)
   const [listings, setListings] = useState<Listing[]>([])
-  const [tab,      setTab]      = useState<Tab>('overview')
-  const [loading,  setLoading]  = useState(false)
-  const [editId,   setEditId]   = useState<string | null>(null)
-  const [editPrice,setEditPrice] = useState('')
-  const [saveMsg,  setSaveMsg]  = useState('')
+  const [tab, setTab]           = useState<Tab>('overview')
+  const [loading, setLoading]   = useState(false)
+  const [editId, setEditId]     = useState<string | null>(null)
+  const [editPrice, setEditPrice] = useState('')
+  const [saveMsg, setSaveMsg]   = useState('')
+
+  // ── FIX: state variables that were missing (caused TS2304 errors) ──
+  const [showTxPrompt,   setShowTxPrompt]   = useState(false)
+  const [txNeighborhood, setTxNeighborhood] = useState('')
 
   useEffect(() => { setDark(getInitialDark()); return listenTheme(d => setDark(d)) }, [])
 
@@ -871,13 +719,38 @@ export default function AgencyDashboard() {
 
   useEffect(() => {
     if (!user) return
-    sb.from('data_partners')
-      .select('id,name,contact_email,cities,mape_score,mape_m,mape_a,mape_p,mape_e,mape_i,badge_level,verification_status,trust_level,partner_type')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) { setPartner(data as Partner); loadListings(data.id) }
-      })
+    async function loadPartner() {
+      try {
+        const { data: byAuthId } = await sb.from('data_partners')
+          .select('id,name,contact_email,cities,mape_score,mape_m,mape_a,mape_p,mape_e,mape_i,badge_level,verification_status,trust_level,partner_type')
+          .eq('auth_user_id', user.id)
+          .maybeSingle()
+
+        if (byAuthId?.id) {
+          setPartner(byAuthId as Partner)
+          loadListings(byAuthId.id)
+          return
+        }
+
+        const cleanEmail = (user.email || '').trim().toLowerCase()
+        if (!cleanEmail) return
+
+        const { data: byEmail } = await sb.from('data_partners')
+          .select('id,name,contact_email,cities,mape_score,mape_m,mape_a,mape_p,mape_e,mape_i,badge_level,verification_status,trust_level,partner_type')
+          .ilike('contact_email', cleanEmail)
+          .limit(1)
+
+        const emailPartner = Array.isArray(byEmail) ? byEmail[0] : null
+        if (emailPartner?.id) {
+          setPartner(emailPartner as Partner)
+          loadListings(emailPartner.id)
+          return
+        }
+      } catch (err) {
+        console.error('[Dashboard] loadPartner:', err)
+      }
+    }
+    loadPartner()
   }, [user, loadListings])
 
   async function signOut() { await sb.auth.signOut() }
@@ -903,13 +776,19 @@ export default function AgencyDashboard() {
   }
 
   const bg     = dark ? '#0A0F1E' : '#F4F6FB'
-  const bg2    = dark ? '#111827' : '#F1F5F9'
+  const bg2    = dark ? '#111827' : '#F8FAFC'
   const bg3    = dark ? '#162032' : '#FFFFFF'
   const text   = dark ? '#F8FAFC' : '#0F172A'
-  const text2  = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
-  const text3  = dark ? 'rgba(248,250,252,0.35)' : 'rgba(15,23,42,0.35)'
-  const border = dark ? 'rgba(248,250,252,0.08)' : 'rgba(15,23,42,0.08)'
-  const INP: React.CSSProperties = { background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: `1px solid ${border}`, borderRadius: 8, color: text, fontSize: '0.85rem', outline: 'none', padding: '0.65rem 0.875rem', fontFamily: 'inherit', width: '100%' }
+  const text2  = dark ? 'rgba(248,250,252,0.75)' : 'rgba(15,23,42,0.72)'
+  const text3  = dark ? 'rgba(248,250,252,0.45)' : 'rgba(15,23,42,0.58)'
+  const border = dark ? 'rgba(248,250,252,0.08)' : 'rgba(15,23,42,0.16)'
+  const cardShadow = dark ? 'none' : '0 1px 2px rgba(15,23,42,0.08)'
+  const INP: React.CSSProperties = {
+    background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.04)',
+    border: `1px solid ${border}`, borderRadius: 8, color: text,
+    fontSize: '0.85rem', outline: 'none', padding: '0.65rem 0.875rem',
+    fontFamily: 'inherit', width: '100%',
+  }
 
   const totalValue = listings.reduce((s, l) => s + (l.price_local || 0), 0)
   const forSale    = listings.filter(l => l.listing_type === 'for-sale').length
@@ -917,6 +796,11 @@ export default function AgencyDashboard() {
   const badge      = partner?.badge_level || 'listed'
   const badgeConf  = BADGE_CONFIG[badge] || BADGE_CONFIG.listed
   const vStatus    = partner?.verification_status || 'not_started'
+
+  // Listing cap check
+  const isVerified = vStatus === 'verified' || vStatus === 'approved' ||
+                     badge === 'verified' || badge === 'trust' || badge === 'elite'
+  const atCap      = !isVerified && listings.length >= 3
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'overview',     label: 'Overview' },
@@ -932,7 +816,7 @@ export default function AgencyDashboard() {
     <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' as const }}>
         <div style={{ width: 24, height: 24, border: '3px solid rgba(91,46,255,0.2)', borderTopColor: '#5B2EFF', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-        <div style={{ fontSize: 13, color: text3 }}>Loading your dashboard…</div>
+        <div style={{ fontSize: 13, color: '#94A3B8' }}>Loading your dashboard…</div>
       </div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
@@ -953,12 +837,14 @@ export default function AgencyDashboard() {
   return (
     <div style={{ background: bg, minHeight: '100vh', color: text }}>
 
-      {/* Top bar */}
+      {/* ── Top bar ── */}
       <div style={{ background: bg2, borderBottom: `1px solid ${border}`, padding: '0.875rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' as const, gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Link href="/" style={{ textDecoration: 'none' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#5B2EFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: 14 }}>M</div>
+          {/* Real logo — replaces purple M square */}
+          <Link href="/" style={{ display: 'flex', textDecoration: 'none' }}>
+            <ManopLogoSVG height={80} dark={dark} showText={false} />
           </Link>
+          <div style={{ width: 1, height: 20, background: border }} />
           <div>
             <div style={{ fontWeight: 700, color: text, fontSize: 14 }}>{partner?.name}</div>
             <div style={{ fontSize: 11, color: text3 }}>{(partner?.cities || []).join(', ')}</div>
@@ -977,11 +863,19 @@ export default function AgencyDashboard() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* ── Tabs ── */}
       <div style={{ background: bg2, borderBottom: `1px solid ${border}`, padding: '0 1.5rem', display: 'flex', overflowX: 'auto' as const }}>
         {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            style={{ padding: '0.75rem 1rem', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.key ? '#5B2EFF' : 'transparent'}`, color: tab === t.key ? text : text3, fontSize: '0.8rem', fontWeight: tab === t.key ? 700 : 400, cursor: 'pointer', whiteSpace: 'nowrap' as const, fontFamily: 'inherit' }}>
+          <button key={t.key}
+            onClick={() => {
+              if (t.key === 'add' && atCap) {
+                alert('You have reached the 3-listing limit for unverified agencies. Verify your identity to publish unlimited listings.')
+                setTab('verify')
+                return
+              }
+              setTab(t.key)
+            }}
+            style={{ padding: '0.75rem 1rem', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.key ? '#5B2EFF' : 'transparent'}`, color: tab === t.key ? text : (t.key === 'add' && atCap ? text3 : text3), fontSize: '0.8rem', fontWeight: tab === t.key ? 700 : 400, cursor: 'pointer', whiteSpace: 'nowrap' as const, fontFamily: 'inherit', opacity: t.key === 'add' && atCap ? 0.5 : 1 }}>
             {t.label}
           </button>
         ))}
@@ -995,6 +889,7 @@ export default function AgencyDashboard() {
 
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5rem' }}>
 
+        {/* ── Overview ── */}
         {tab === 'overview' && partner && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: '1.25rem' }}>
@@ -1004,7 +899,7 @@ export default function AgencyDashboard() {
                 { label: 'For rent / STR',  value: forRent,            color: '#14B8A6' },
                 { label: 'Portfolio value', value: fmtNGN(totalValue), color: '#22C55E' },
               ].map(s => (
-                <div key={s.label} style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '1rem' }}>
+                <div key={s.label} style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', boxShadow: cardShadow }}>
                   <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 8 }}>{s.label}</div>
                   <div style={{ fontSize: '1.6rem', fontWeight: 800, color: s.color, letterSpacing: '-0.03em' }}>{s.value}</div>
                 </div>
@@ -1012,6 +907,19 @@ export default function AgencyDashboard() {
             </div>
 
             <MAPEWidget partner={partner} listings={listings} dark={dark} border={border} text={text} text2={text2} text3={text3} bg3={bg3} onGoVerify={() => setTab('verify')} />
+
+            {/* Listing cap warning on overview */}
+            {atCap && (
+              <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, padding: '0.875rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '0.78rem', color: '#F59E0B' }}>
+                  <strong>{listings.length}/3 listings</strong> used — verify your identity to publish unlimited listings
+                </div>
+                <button onClick={() => setTab('verify')}
+                  style={{ background: '#F59E0B', color: '#0F172A', border: 'none', borderRadius: 7, padding: '0.35rem 0.875rem', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Verify now →
+                </button>
+              </div>
+            )}
 
             <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Recent listings</div>
             {listings.length === 0 ? (
@@ -1022,10 +930,10 @@ export default function AgencyDashboard() {
                 </button>
               </div>
             ) : listings.slice(0, 5).map(l => {
-              const raw = (l.raw_data || {}) as Record<string, unknown>
+              const raw    = (l.raw_data || {}) as Record<string, unknown>
               const images = Array.isArray(raw.images) ? raw.images as string[] : []
               return (
-                <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.75rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 6 }}>
+                <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.75rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 6, boxShadow: cardShadow }}>
                   <div style={{ width: 52, height: 42, borderRadius: 7, overflow: 'hidden', background: bg2, flexShrink: 0 }}>
                     {images[0] ? <img src={images[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => (e.target as HTMLImageElement).style.display = 'none'} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🏠</div>}
                   </div>
@@ -1045,11 +953,17 @@ export default function AgencyDashboard() {
           </>
         )}
 
+        {/* ── Listings ── */}
         {tab === 'listings' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em' }}>All listings ({listings.length})</div>
-              <button onClick={() => setTab('add')} style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.5rem 1rem', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Add listing</button>
+              <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em' }}>
+                All listings ({listings.length}{!isVerified ? '/3 max until verified' : ''})
+              </div>
+              <button onClick={() => atCap ? (alert('Verify your identity to add more listings.'), setTab('verify')) : setTab('add')}
+                style={{ background: atCap ? 'rgba(245,158,11,0.1)' : '#5B2EFF', color: atCap ? '#F59E0B' : '#fff', border: atCap ? '1px solid rgba(245,158,11,0.3)' : 'none', borderRadius: 8, padding: '0.5rem 1rem', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                {atCap ? 'Verify to add more →' : '+ Add listing'}
+              </button>
             </div>
             {listings.map(l => {
               const raw    = (l.raw_data || {}) as Record<string, unknown>
@@ -1057,7 +971,7 @@ export default function AgencyDashboard() {
               const status = (raw.status as string) || 'active'
               const isEdit = editId === l.id
               return (
-                <div key={l.id} style={{ background: bg3, border: `1px solid ${isEdit ? 'rgba(91,46,255,0.4)' : border}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+                <div key={l.id} style={{ background: bg3, border: `1px solid ${isEdit ? 'rgba(91,46,255,0.4)' : border}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden', boxShadow: cardShadow }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.875rem 1rem', flexWrap: 'wrap' as const }}>
                     <div style={{ width: 60, height: 48, borderRadius: 7, overflow: 'hidden', background: bg2, flexShrink: 0 }}>
                       {images[0] ? <img src={images[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => (e.target as HTMLImageElement).style.display = 'none'} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, opacity: 0.4 }}>🏠</div>}
@@ -1090,31 +1004,47 @@ export default function AgencyDashboard() {
           </>
         )}
 
+        {/* ── Add listing ── uses new ListingForm with geocoding + MAPE bar ── */}
         {tab === 'add' && partner && (
-          <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem' }}>
-            <AddListingForm partnerId={partner.id} agencyName={partner.name} dark={dark} onSaved={() => { loadListings(partner.id); setTab('listings') }} />
+          <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', boxShadow: cardShadow }}>
+            <ListingForm
+              partnerId={partner.id}
+              dark={dark}
+              onSuccess={() => {
+                loadListings(partner.id)
+                setTab('listings')
+                const hood = partner.cities?.[0] || ''
+                setTxNeighborhood(hood)
+                setShowTxPrompt(true)
+              }}
+              onCancel={() => setTab('listings')}
+            />
           </div>
         )}
 
+        {/* ── Leads ── */}
         {tab === 'leads' && partner && (
-          <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', color: text2, textAlign: 'center' as const }}>
+          <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', color: text2, textAlign: 'center' as const, boxShadow: cardShadow }}>
             <div style={{ fontSize: '1.5rem', marginBottom: 10 }}>📬</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 6 }}>Leads tab</div>
-            <div style={{ fontSize: 13, lineHeight: 1.65 }}>Buyer inquiries submitted via the Message agency button appear here. Check the inquiries table in your Supabase dashboard.</div>
+            <div style={{ fontSize: 13, lineHeight: 1.65 }}>Buyer inquiries submitted via the Message agency button appear here.</div>
           </div>
         )}
 
+        {/* ── Sales history ── */}
         {tab === 'transactions' && partner && (
           <>
             <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>
               Sales history — contribute transaction data
             </div>
-            <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem' }}>
-              <TransactionSubmission partnerId={partner.id} agencyName={partner.name} dark={dark} />
+            <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', color: text2, fontSize: 13, lineHeight: 1.65, boxShadow: cardShadow }}>
+              Use the transaction submission form to log your closed deals.
+              Each verified transaction earns +20 Intelligence points.
             </div>
           </>
         )}
 
+        {/* ── Verify ── */}
         {tab === 'verify' && partner && (
           <>
             <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Verification</div>
@@ -1128,6 +1058,7 @@ export default function AgencyDashboard() {
           </>
         )}
 
+        {/* ── Settings ── */}
         {tab === 'settings' && partner && (
           <>
             <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Agency profile</div>
@@ -1144,6 +1075,23 @@ export default function AgencyDashboard() {
           </>
         )}
       </div>
+
+      {/*
+        ── FIX: TransactionPromptModal moved OUTSIDE the tab div ──
+        This ensures it renders as a proper full-screen overlay
+        regardless of which tab is active when it fires.
+        Was incorrectly nested inside tab === 'add' before.
+      */}
+      {showTxPrompt && partner && (
+        <TransactionPromptModal
+          partnerId={partner.id}
+          neighborhood={txNeighborhood}
+          city={partner.cities?.[0] || ''}
+          dark={dark}
+          onClose={() => setShowTxPrompt(false)}
+        />
+      )}
+
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )

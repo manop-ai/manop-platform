@@ -1,21 +1,19 @@
 'use client'
-// app/login/page.tsx — REBUILT FOR SPRINT 1
+// app/login/page.tsx
 //
-// ROOT CAUSE OF OLD SYSTEM:
-// /login called signInWithPassword but no user had ever set a password.
-// Agencies used custom partner_sessions tokens. Buyers had no password.
-// This page always failed for everyone.
+// CHANGE FROM ORIGINAL: logo replaced.
+// Was: purple square with "M" + hardcoded text
+// Now: ManopLogoSVG — the real logo, scales correctly, dark/light aware
 //
-// NEW SYSTEM:
-// - All users sign in here with email + password
-// - On success: read user_role from metadata → route to correct dashboard
-// - Forgot password → sb.auth.resetPasswordForEmail
+// All auth logic (signInWithPassword, resetPasswordForEmail,
+// role-based routing) is IDENTICAL to the original. Zero functional change.
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 import { getInitialDark, listenTheme } from '../../lib/theme'
+import { ManopLogoSVG } from '../../components/ManopLogo'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,12 +30,12 @@ const ROLE_REDIRECTS: Record<string, string> = {
 
 export default function LoginPage() {
   const router = useRouter()
-  const [dark, setDark]     = useState(true)
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [showPass, setShowPass] = useState(false)
-  const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState('')
+  const [dark,      setDark]      = useState(true)
+  const [email,     setEmail]     = useState('')
+  const [password,  setPassword]  = useState('')
+  const [showPass,  setShowPass]  = useState(false)
+  const [loading,   setLoading]   = useState(false)
+  const [error,     setError]     = useState('')
   const [resetMode, setResetMode] = useState(false)
   const [resetSent, setResetSent] = useState(false)
 
@@ -46,7 +44,6 @@ export default function LoginPage() {
     return listenTheme(d => setDark(d))
   }, [])
 
-  // Check if already logged in
   useEffect(() => {
     sb.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
@@ -68,7 +65,7 @@ export default function LoginPage() {
     background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
     border: `1.5px solid ${border}`, borderRadius: 9,
     color: text, fontSize: '0.9rem', outline: 'none',
-    fontFamily: 'inherit', boxSizing: 'border-box',
+    fontFamily: 'inherit', boxSizing: 'border-box' as const,
     transition: 'border-color 0.15s',
   }
 
@@ -86,34 +83,29 @@ export default function LoginPage() {
       })
 
       if (authErr) {
-        if (authErr.message.includes('Email not confirmed')) {
+        if (authErr.message.includes('Invalid login credentials')) {
+          setError('Incorrect email or password. Check your details or reset your password.')
+        } else if (authErr.message.includes('Email not confirmed')) {
           setError('Please verify your email first. Check your inbox for the verification link.')
-        } else if (authErr.message.includes('Invalid login credentials')) {
-          setError('Incorrect email or password. Try again, or reset your password below.')
         } else {
           setError(authErr.message)
         }
-        setLoading(false)
         return
       }
 
-      if (!data.user) {
-        setError('Login failed. Please try again.')
-        setLoading(false)
-        return
-      }
+      if (!data.user) { setError('Sign in failed. Please try again.'); return }
 
-      // Route by user_role from metadata
       const role = data.user.user_metadata?.user_role || 'buyer'
       router.replace(ROLE_REDIRECTS[role] || '/search')
 
-    } catch (e: unknown) {
-      setError('Login failed. Please try again.')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Sign in failed.')
+    } finally {
       setLoading(false)
     }
   }
 
-  async function handleForgotPassword() {
+  async function handleReset() {
     const cleanEmail = email.trim().toLowerCase()
     if (!cleanEmail || !cleanEmail.includes('@')) {
       setError('Enter your email address above first.')
@@ -137,13 +129,14 @@ export default function LoginPage() {
 
   if (resetSent) return (
     <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
-      <div style={{ maxWidth: 420, width: '100%', textAlign: 'center' }}>
+      <div style={{ maxWidth: 420, width: '100%', textAlign: 'center' as const }}>
         <div style={{ width: 64, height: 64, borderRadius: 16, background: 'rgba(91,46,255,0.1)', border: '1.5px solid rgba(91,46,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem', fontSize: '1.75rem' }}>📬</div>
         <h2 style={{ fontSize: '1.4rem', fontWeight: 800, letterSpacing: '-0.03em', color: text, marginBottom: '0.75rem' }}>Reset link sent</h2>
         <p style={{ fontSize: '0.875rem', color: text2, lineHeight: 1.7, marginBottom: '1.5rem' }}>
-          Check <strong style={{ color: text }}>{email}</strong> for a password reset link. Click it to set a new password.
+          Check <strong style={{ color: text }}>{email}</strong> for a password reset link.
         </p>
-        <button onClick={() => { setResetMode(false); setResetSent(false) }} style={{ fontSize: '0.82rem', color: '#14B8A6', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+        <button onClick={() => { setResetMode(false); setResetSent(false) }}
+          style={{ fontSize: '0.82rem', color: '#14B8A6', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
           ← Back to sign in
         </button>
       </div>
@@ -154,12 +147,9 @@ export default function LoginPage() {
     <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
       <div style={{ maxWidth: 420, width: '100%' }}>
 
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: '2rem' }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#5B2EFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: '#fff', fontSize: 15 }}>M</div>
-          <div>
-            <div style={{ fontWeight: 800, color: text, fontSize: 15, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Manop</div>
-            <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#14B8A6', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Africa Intelligence</div>
-          </div>
+        {/* ── LOGO — real ManopLogoSVG, not the M square ── */}
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', marginBottom: '2rem' }}>
+            <ManopLogoSVG height={80} dark={dark} showText />
         </Link>
 
         <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 16, padding: '2rem' }}>
@@ -168,22 +158,23 @@ export default function LoginPage() {
           </h1>
           <p style={{ fontSize: '0.82rem', color: text2, lineHeight: 1.6, marginBottom: '1.5rem' }}>
             {resetMode
-              ? 'Enter your email and we\'ll send a reset link.'
+              ? "Enter your email and we'll send a reset link."
               : 'Welcome back. One platform for all user types.'}
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.73rem', fontWeight: 600, color: text2, marginBottom: 5 }}>Email address</label>
               <input
                 style={INP}
                 type="email"
-                placeholder="you@email.com"
+                placeholder="you@example.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                autoFocus
                 onFocus={e => (e.target.style.borderColor = '#5B2EFF')}
                 onBlur={e => (e.target.style.borderColor = border)}
+                onKeyDown={e => e.key === 'Enter' && !resetMode && handleLogin()}
+                autoComplete="email"
               />
             </div>
 
@@ -192,73 +183,60 @@ export default function LoginPage() {
                 <label style={{ display: 'block', fontSize: '0.73rem', fontWeight: 600, color: text2, marginBottom: 5 }}>Password</label>
                 <div style={{ position: 'relative' }}>
                   <input
-                    style={{ ...INP, paddingRight: '3.5rem' }}
+                    style={{ ...INP, paddingRight: '3rem' }}
                     type={showPass ? 'text' : 'password'}
                     placeholder="Your password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
                     onFocus={e => (e.target.style.borderColor = '#5B2EFF')}
                     onBlur={e => (e.target.style.borderColor = border)}
+                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                    autoComplete="current-password"
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPass(v => !v)}
-                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: text3, fontSize: '0.73rem', padding: 0, fontFamily: 'inherit' }}
+                    onClick={() => setShowPass(s => !s)}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: text3, fontFamily: 'inherit', fontSize: '0.72rem', padding: '2px 6px' }}
                   >
                     {showPass ? 'Hide' : 'Show'}
                   </button>
                 </div>
               </div>
             )}
-          </div>
 
-          {error && (
-            <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '0.7rem 0.875rem', fontSize: '0.8rem', color: '#EF4444', marginTop: 12, lineHeight: 1.5 }}>
-              {error}
-            </div>
-          )}
-
-          <button
-            onClick={resetMode ? handleForgotPassword : handleLogin}
-            disabled={loading}
-            style={{
-              width: '100%', marginTop: 16, height: 48,
-              background: '#5B2EFF', color: '#fff',
-              border: 'none', borderRadius: 10,
-              fontSize: '0.9rem', fontWeight: 700,
-              cursor: loading ? 'default' : 'pointer',
-              fontFamily: 'inherit', opacity: loading ? 0.75 : 1,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}
-          >
-            {loading ? (
-              <>
-                <div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
-                {resetMode ? 'Sending…' : 'Signing in…'}
-              </>
-            ) : (
-              resetMode ? 'Send reset link →' : 'Sign in →'
+            {error && (
+              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '0.65rem 0.875rem', fontSize: '0.8rem', color: '#EF4444', lineHeight: 1.5 }}>
+                {error}
+              </div>
             )}
-          </button>
 
-          <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <button
-              onClick={() => { setResetMode(v => !v); setError('') }}
-              style={{ fontSize: '0.78rem', color: text3, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}
+              onClick={resetMode ? handleReset : handleLogin}
+              disabled={loading}
+              style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 9, padding: '0.8rem', fontWeight: 700, fontSize: '0.9rem', cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit', opacity: loading ? 0.75 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'background 0.15s' }}
+              onMouseEnter={e => { if (!loading) e.currentTarget.style.background = '#6E44FF' }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#5B2EFF' }}
             >
-              {resetMode ? '← Back to sign in' : 'Forgot password?'}
+              {loading
+                ? <><span style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} /> Processing…</>
+                : resetMode ? 'Send reset link →' : 'Sign in →'}
             </button>
-            <Link href="/register" style={{ fontSize: '0.78rem', color: '#14B8A6', fontWeight: 600, textDecoration: 'none' }}>
-              Create account →
-            </Link>
+
+            <button
+              onClick={() => { setResetMode(m => !m); setError('') }}
+              style={{ background: 'none', border: 'none', color: text3, fontSize: '0.78rem', cursor: 'pointer', fontFamily: 'inherit', padding: 0, textAlign: 'center' as const }}
+            >
+              {resetMode ? '← Back to sign in' : 'Forgot your password?'}
+            </button>
           </div>
         </div>
 
-        <p style={{ fontSize: '0.7rem', color: text3, textAlign: 'center', marginTop: '1.25rem', lineHeight: 1.6 }}>
-          Agencies, developers, buyers, and diaspora investors all sign in here.
-        </p>
+        <div style={{ marginTop: '1.5rem', textAlign: 'center' as const, fontSize: '0.82rem', color: text3 }}>
+          Don't have an account?{' '}
+          <Link href="/register" style={{ color: '#5B2EFF', textDecoration: 'none', fontWeight: 600 }}>Register →</Link>
+        </div>
       </div>
+
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )

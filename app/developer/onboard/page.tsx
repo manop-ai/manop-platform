@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
+import { ManopLogoSVG } from '@/components/ManopLogo'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -82,7 +83,7 @@ export default function DeveloperOnboardPage() {
 
     setSaving(true)
     try {
-      const { error: updateErr } = await sb.from('developer_accounts')
+      const { data: updated, error: updateErr } = await sb.from('developer_accounts')
         .update({
           company_name:   companyName.trim(),
           contact_name:   contactName.trim(),
@@ -96,9 +97,14 @@ export default function DeveloperOnboardPage() {
           updated_at:     new Date().toISOString(),
         })
         .eq('auth_user_id', user.id)
+        .select('id')
+        .maybeSingle()
 
       if (updateErr) {
-        // Insert if update found no rows
+        throw new Error(updateErr.message)
+      }
+
+      if (!updated) {
         const { error: insertErr } = await sb.from('developer_accounts').insert({
           auth_user_id:   user.id,
           company_name:   companyName.trim(),
@@ -144,12 +150,9 @@ export default function DeveloperOnboardPage() {
     <div style={{ background: bg, minHeight: '100vh', color: text }}>
       <div style={{ maxWidth: 580, margin: '0 auto', padding: '2rem 1rem 5rem' }}>
 
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: '2.5rem' }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F59E0B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: '#fff', fontSize: 15 }}>M</div>
-          <div>
-            <div style={{ fontWeight: 800, color: text, fontSize: 15, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Manop</div>
-            <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#14B8A6', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Africa Intelligence</div>
-          </div>
+        {/* LOGO — real SVG, not the purple M square */}
+        <Link href="/" style={{ display: 'inline-flex', textDecoration: 'none', marginBottom: '2.5rem' }}>
+          <ManopLogoSVG height={80} dark={dark} showText />
         </Link>
 
         <div style={{ marginBottom: '2rem' }}>

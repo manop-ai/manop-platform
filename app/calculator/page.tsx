@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { getInitialDark, listenTheme } from '../../lib/theme'
+import { ManopLogoSVG } from '../../components/ManopLogo'
 
 // ─── UNIT CONVENTION ─────────────────────────────────────────
 // ALL internal values are in ACTUAL NAIRA
@@ -142,7 +143,7 @@ function LoginGate({ onSuccess, dark, onClose }: { onSuccess: (email: string) =>
         {/* Header */}
         <div style={{ background: '#5B2EFF', padding: '1.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <div style={{ width: 32, height: 32, background: 'rgba(255,255,255,0.2)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: 14 }}>M</div>
+              <ManopLogoSVG height={72} dark showText={false} />
             <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>Manop</div>
           </div>
           <h2 style={{ color: '#fff', fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Get your deal report</h2>
@@ -245,8 +246,7 @@ function generatePDF(a: Analysis, userName: string) {
   .header { background: #5B2EFF; color: #fff; padding: 32px 40px 24px; }
   .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
   .logo { display: flex; align-items: center; gap: 10px; }
-  .logo-box { width: 36px; height: 36px; background: rgba(255,255,255,0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; }
-  .logo-text { font-weight: 700; font-size: 16px; }
+  .logo img { display: block; width: auto; height: 42px; }
   .logo-sub { font-size: 9px; opacity: 0.7; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 1px; }
   .header-meta { text-align: right; font-size: 11px; opacity: 0.7; line-height: 1.6; }
   .header h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 4px; }
@@ -319,11 +319,8 @@ function generatePDF(a: Analysis, userName: string) {
   <div class="header">
     <div class="header-top">
       <div class="logo">
-        <div class="logo-box">M</div>
-        <div>
-          <div class="logo-text">Manop</div>
-          <div class="logo-sub">Africa Property Intelligence</div>
-        </div>
+        <img src="/logos/manop-full-light.svg" alt="Manop" />
+        <div class="logo-sub">Africa Property Intelligence</div>
       </div>
       <div class="header-meta">
         Deal Report<br>

@@ -1,20 +1,16 @@
 'use client'
 // components/ManopMap.tsx
 //
-// ROOT CAUSE OF INFINITE SPINNER — now permanently fixed:
+// PIN STACKING FIX:
+// The previous version mutated el.style.zIndex on mouseenter/leave.
+// When multiple pins are close together, Mapbox renders them all in
+// a single DOM layer. Mutating z-index on one element causes the
+// browser to restack siblings, making pins "jump to top" visually.
 //
-// The CSP header in next.config.js was missing:
-//   worker-src blob;   ← mapbox-gl v3 creates its worker via blob: URL
-//   child-src blob:    ← fallback for older browsers
-//   connect-src blob:  ← tile fetch path
-//
-// The browser silently killed the Mapbox Web Worker.
-// No worker = no tile decoding = 'load' event never fires = spinner loops.
-// Fix is in next.config.js. This file adds a 15s timeout as a safety net
-// so the spinner NEVER loops forever regardless of what blocks the map.
-//
-// Additional guard: initialised.current never resets in cleanup,
-// preventing React StrictMode double-init race.
+// FIX: Use CSS classes for hover state. Set pointer-events on the
+// Marker wrapper (which Mapbox controls) rather than the custom element.
+// Use mapboxgl.Marker's built-in z-index: the marker with an open popup
+// is automatically raised. Don't fight Mapbox's own stacking.
 
 import { useEffect, useRef, useState } from 'react'
 
@@ -33,11 +29,11 @@ export interface PropertyPin {
 }
 
 interface ManopMapProps {
-  center?:       [number, number]
+  center?:       [number, number]  // [lng, lat]
   zoom?:         number
   pins?:         PropertyPin[]
   mapStyle?:     'satellite-streets' | 'satellite' | 'dark' | 'light'
-  height:        number
+  height:        number            // ALWAYS explicit pixels
   className?:    string
   showControls?: boolean
 }
@@ -50,16 +46,53 @@ const MAP_STYLES: Record<string, string> = {
 }
 
 const VERDICT_BG: Record<string, string> = {
-  buy: '#22C55E', negotiate: '#F59E0B', watch: '#14B8A6',
-  wait: '#94A3B8', default: '#5B2EFF',
+  buy: '#22C55E', negotiate: '#F59E0B',
+  watch: '#14B8A6', wait: '#94A3B8', default: '#5B2EFF',
 }
 const BADGE_BORDER: Record<string, string> = {
   elite: '#F59E0B', trust: '#14B8A6', verified: '#60A5FA',
   listed: 'rgba(255,255,255,0.5)', default: 'rgba(255,255,255,0.5)',
 }
 const VERDICT_LABEL: Record<string, string> = {
-  buy: '✓ BUY', negotiate: '⟳ NEGOTIATE', watch: '◉ WATCH', wait: '— WAIT',
+  buy: '✓ BUY', negotiate: '⟳ NEGOTIATE',
+  watch: '◉ WATCH', wait: '— WAIT',
 }
+
+// Global CSS injected once — handles hover without JS z-index mutation
+const PIN_CSS = `
+  .manop-pin {
+    display: flex; align-items: center; gap: 4px;
+    border-radius: 20px; padding: 3px 8px 3px 5px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    white-space: nowrap; user-select: none;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    will-change: transform;
+  }
+  .manop-pin:hover {
+    transform: scale(1.1) translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+  }
+  .manop-pin:active {
+    transform: scale(0.97);
+  }
+  .manop-popup .mapboxgl-popup-content {
+    background: transparent !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border-radius: 10px !important;
+  }
+  .manop-popup .mapboxgl-popup-tip { border-top-color: #0F172A !important; }
+  .manop-popup .mapboxgl-popup-close-button {
+    color: rgba(255,255,255,0.5) !important;
+    font-size: 16px !important;
+    top: 6px !important; right: 8px !important;
+    background: none !important; border: none !important;
+  }
+  .manop-popup .mapboxgl-popup-close-button:hover { color: #fff !important; }
+  @keyframes mmSpin { to { transform: rotate(360deg); } }
+`
 
 export default function ManopMap({
   center       = [3.3792, 6.5244],
@@ -75,40 +108,41 @@ export default function ManopMap({
   const markersRef   = useRef<any[]>([])
   const popupRef     = useRef<any>(null)
   const initialised  = useRef(false)
+
   const [loaded,      setLoaded]      = useState(false)
   const [error,       setError]       = useState<string | null>(null)
   const [activeStyle, setActiveStyle] = useState(mapStyle)
 
+  // ── Inject global CSS once ────────────────────────────────────
+  useEffect(() => {
+    if (document.getElementById('manop-map-css')) return
+    const style = document.createElement('style')
+    style.id = 'manop-map-css'
+    style.textContent = PIN_CSS
+    document.head.appendChild(style)
+  }, [])
+
+  // ── Init map ──────────────────────────────────────────────────
   useEffect(() => {
     if (initialised.current || !containerRef.current) return
     initialised.current = true
 
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
     if (!token) {
-      const msg = 'NEXT_PUBLIC_MAPBOX_TOKEN missing — add it to .env.local (free token at mapbox.com/account)'
+      const msg = 'NEXT_PUBLIC_MAPBOX_TOKEN missing — add to .env.local (free token at mapbox.com/account)'
       console.error('[ManopMap]', msg)
       setError(msg)
       return
     }
 
-    console.log('[ManopMap] Init — token:', token.slice(0, 14) + '…')
-
-    // Safety timeout — if 'load' hasn't fired in 15s something is blocking it
-    // Most likely cause: CSP blocking the worker or tiles
     const loadTimeout = setTimeout(() => {
-      if (!loaded) {
-        const msg = 'Map timed out loading (15s). Check browser console for CSP errors or verify NEXT_PUBLIC_MAPBOX_TOKEN is valid.'
-        console.error('[ManopMap] TIMEOUT —', msg)
-        console.error('[ManopMap] Check: Application tab → Frames → top → Content-Security-Policy')
-        console.error('[ManopMap] Mapbox GL v3 requires worker-src blob: and connect-src blob: in CSP')
-        setError(msg)
-      }
+      console.error('[ManopMap] Timeout — map did not load in 15s. Check CSP: worker-src blob; connect-src blob:')
+      setError('Map timed out loading. Check browser console (F12) for CSP errors.')
     }, 15_000)
 
     import('mapbox-gl')
       .then(({ default: mapboxgl }) => {
         if (!containerRef.current || mapRef.current) {
-          console.warn('[ManopMap] Skipping — container gone or already mounted')
           clearTimeout(loadTimeout)
           return
         }
@@ -132,8 +166,8 @@ export default function ManopMap({
         map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left')
 
         map.on('load', () => {
-          console.log('[ManopMap] ✓ Map loaded')
           clearTimeout(loadTimeout)
+          console.log('[ManopMap] ✓ Loaded')
           map.resize()
           setLoaded(true)
         })
@@ -143,38 +177,36 @@ export default function ManopMap({
         })
 
         map.on('error', (e: any) => {
-          const msg = e?.error?.message || String(e)
+          const msg = e?.error?.message || ''
           if (!msg.includes('404') && !msg.includes('tile') && !msg.includes('source')) {
             console.error('[ManopMap] Error:', msg)
           }
         })
 
         mapRef.current = map
-        console.log('[ManopMap] Instance created — waiting for load event')
       })
       .catch(err => {
         clearTimeout(loadTimeout)
-        console.error('[ManopMap] Failed to import mapbox-gl:', err)
-        setError(`Failed to load map library: ${err.message}`)
+        console.error('[ManopMap] Import failed:', err)
+        setError(`Map failed to load: ${err.message}`)
       })
 
     return () => {
-      clearTimeout(loadTimeout)
       markersRef.current.forEach(m => m.remove())
       markersRef.current = []
       if (popupRef.current) { popupRef.current.remove(); popupRef.current = null }
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null }
-      // intentionally NOT resetting initialised.current — prevents StrictMode double-init
+      // intentionally NOT resetting initialised.current
     }
   }, []) // eslint-disable-line
 
-  // Fly when center/zoom changes (filter change)
+  // ── Fly when center/zoom changes ──────────────────────────────
   useEffect(() => {
     if (!mapRef.current || !loaded) return
     mapRef.current.flyTo({ center, zoom, duration: 900, essential: true })
   }, [center[0], center[1], zoom, loaded]) // eslint-disable-line
 
-  // Re-render pins when list changes
+  // ── Render pins ───────────────────────────────────────────────
   useEffect(() => {
     if (!loaded || !mapRef.current) return
 
@@ -187,19 +219,11 @@ export default function ManopMap({
         const bg     = VERDICT_BG[pin.verdict || 'default']
         const border = BADGE_BORDER[pin.badge  || 'default']
 
+        // ── Pin element — uses CSS class, no JS z-index mutation ──
         const el = document.createElement('div')
-        el.style.cssText = [
-          'display:flex;align-items:center;gap:4px',
-          `background:${bg}`,
-          `border:2px solid ${border}`,
-          'border-radius:20px;padding:3px 8px 3px 5px',
-          'cursor:pointer',
-          'box-shadow:0 2px 10px rgba(0,0,0,0.5)',
-          'font-family:-apple-system,BlinkMacSystemFont,sans-serif',
-          'white-space:nowrap;user-select:none',
-          'transition:transform 0.12s,box-shadow 0.12s',
-          'z-index:1',
-        ].join(';')
+        el.className = 'manop-pin'
+        el.style.background = bg
+        el.style.border = `2px solid ${border}`
 
         if (pin.beds) {
           const dot = document.createElement('div')
@@ -215,22 +239,12 @@ export default function ManopMap({
 
         if (pin.yield) {
           const y = document.createElement('span')
-          y.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.75);margin-left:2px'
+          y.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.8);margin-left:2px'
           y.textContent = pin.yield
           el.appendChild(y)
         }
 
-        el.addEventListener('mouseenter', () => {
-          el.style.transform = 'scale(1.12) translateY(-2px)'
-          el.style.boxShadow = '0 6px 18px rgba(0,0,0,0.65)'
-          el.style.zIndex    = '10'
-        })
-        el.addEventListener('mouseleave', () => {
-          el.style.transform = 'none'
-          el.style.boxShadow = '0 2px 10px rgba(0,0,0,0.5)'
-          el.style.zIndex    = '1'
-        })
-
+        // ── Click → popup ─────────────────────────────────────────
         el.addEventListener('click', (e) => {
           e.stopPropagation()
           if (popupRef.current) { popupRef.current.remove(); popupRef.current = null }
@@ -248,14 +262,22 @@ export default function ManopMap({
               </div>
               ${pin.yield ? `<div style="font-size:10px;color:#22C55E;font-weight:600;margin-bottom:6px;">~${pin.yield} est. yield</div>` : ''}
               ${badgeTxt ? `<div style="display:inline-block;font-size:8px;font-weight:700;border-radius:20px;padding:1px 7px;border:1px solid ${border};color:${border};margin-bottom:6px;">◈ ${badgeTxt}</div>` : ''}
-              <div id="manop-view-${pin.id}" style="background:rgba(91,46,255,0.2);border:1px solid rgba(91,46,255,0.4);border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;color:#A78BFA;cursor:pointer;text-align:center;margin-top:4px;">View property →</div>
+              <div id="manop-view-${pin.id}" style="background:rgba(91,46,255,0.2);border:1px solid rgba(91,46,255,0.4);border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;color:#A78BFA;cursor:pointer;text-align:center;margin-top:4px;">
+                View property →
+              </div>
             </div>
           `
 
           const popup = new mapboxgl.Popup({
-            closeButton: true, closeOnClick: false,
-            maxWidth: '240px', offset: [0, -12], className: 'manop-popup',
-          }).setLngLat([pin.lng, pin.lat]).setHTML(html).addTo(mapRef.current)
+            closeButton:  true,
+            closeOnClick: false,
+            maxWidth:     '240px',
+            offset:       [0, -6],
+            className:    'manop-popup',
+          })
+            .setLngLat([pin.lng, pin.lat])
+            .setHTML(html)
+            .addTo(mapRef.current)
 
           popupRef.current = popup
 
@@ -274,6 +296,7 @@ export default function ManopMap({
         const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
           .setLngLat([pin.lng, pin.lat])
           .addTo(mapRef.current)
+
         markersRef.current.push(marker)
       })
 
@@ -281,14 +304,14 @@ export default function ManopMap({
     })
   }, [loaded, pins]) // eslint-disable-line
 
-  // Style toggle
+  // ── Style toggle ──────────────────────────────────────────────
   function switchStyle(s: string) {
     if (!mapRef.current) return
     setActiveStyle(s as any)
     mapRef.current.setStyle(MAP_STYLES[s])
   }
 
-  // ResizeObserver
+  // ── ResizeObserver ────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return
     const ro = new ResizeObserver(() => { if (mapRef.current) mapRef.current.resize() })
@@ -299,53 +322,46 @@ export default function ManopMap({
   if (error) return (
     <div style={{ height, borderRadius: 12, background: '#0A0F1E', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '1.5rem' }}>
       <span style={{ fontSize: '1.5rem' }}>🗺️</span>
-      <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', textAlign: 'center', maxWidth: 300, lineHeight: 1.65 }}>
+      <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.45)', textAlign: 'center', maxWidth: 300, lineHeight: 1.65 }}>
         {error}
       </span>
-      <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.25)', textAlign: 'center', lineHeight: 1.5 }}>
-        Check browser console (F12) for details
+      <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.25)', textAlign: 'center' }}>
+        Open browser DevTools (F12) → Console for details
       </span>
     </div>
   )
 
   return (
-    <>
-      <style>{`
-        .manop-popup .mapboxgl-popup-content{background:transparent!important;padding:0!important;box-shadow:none!important;border-radius:10px!important}
-        .manop-popup .mapboxgl-popup-tip{border-top-color:#0F172A!important}
-        .manop-popup .mapboxgl-popup-close-button{color:rgba(255,255,255,0.5)!important;font-size:16px!important;top:6px!important;right:8px!important;background:none!important}
-        .manop-popup .mapboxgl-popup-close-button:hover{color:#fff!important}
-        @keyframes mmSpin{to{transform:rotate(360deg)}}
-      `}</style>
+    <div className={className} style={{ position: 'relative', height, borderRadius: 12, overflow: 'hidden' }}>
 
-      <div className={className} style={{ position: 'relative', height, borderRadius: 12, overflow: 'hidden' }}>
+      {!loaded && !error && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: 'linear-gradient(135deg,#0A0F1E,#111827)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <div style={{ width: 30, height: 30, border: '3px solid rgba(91,46,255,0.2)', borderTopColor: '#5B2EFF', borderRadius: '50%', animation: 'mmSpin 0.75s linear infinite' }} />
+          <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.38)' }}>Loading map…</span>
+        </div>
+      )}
 
-        {!loaded && !error && (
-          <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: 'linear-gradient(135deg,#0A0F1E,#111827)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-            <div style={{ width: 30, height: 30, border: '3px solid rgba(91,46,255,0.2)', borderTopColor: '#5B2EFF', borderRadius: '50%', animation: 'mmSpin 0.75s linear infinite' }} />
-            <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.38)' }}>Loading map…</span>
-          </div>
-        )}
+      {loaded && pins.length > 0 && (
+        <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 5, background: 'rgba(10,15,30,0.82)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 20, padding: '4px 12px', fontSize: '0.7rem', fontWeight: 700, color: 'rgba(255,255,255,0.8)', pointerEvents: 'none' }}>
+          {pins.length} propert{pins.length === 1 ? 'y' : 'ies'}
+        </div>
+      )}
 
-        {loaded && pins.length > 0 && (
-          <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 5, background: 'rgba(10,15,30,0.82)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 20, padding: '4px 12px', fontSize: '0.7rem', fontWeight: 700, color: 'rgba(255,255,255,0.8)', pointerEvents: 'none' }}>
-            {pins.length} propert{pins.length === 1 ? 'y' : 'ies'}
-          </div>
-        )}
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-
-        {loaded && (
-          <div style={{ position: 'absolute', bottom: 36, right: 10, zIndex: 2, display: 'flex', gap: 3 }}>
-            {[{ label: '🛰 Satellite', val: 'satellite-streets' }, { label: '🗺 Streets', val: 'dark' }].map(s => (
-              <button key={s.val} onClick={() => switchStyle(s.val)}
-                style={{ fontSize: '0.62rem', fontWeight: 600, padding: '4px 8px', borderRadius: 7, background: activeStyle === s.val ? 'rgba(255,255,255,0.92)' : 'rgba(15,23,42,0.75)', color: activeStyle === s.val ? '#0F172A' : 'rgba(255,255,255,0.75)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', backdropFilter: 'blur(4px)', fontFamily: 'inherit' }}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </>
+      {loaded && (
+        <div style={{ position: 'absolute', bottom: 36, right: 10, zIndex: 2, display: 'flex', gap: 3 }}>
+          {[
+            { label: '🛰 Satellite', val: 'satellite-streets' },
+            { label: '🗺 Streets',   val: 'dark' },
+          ].map(s => (
+            <button key={s.val} onClick={() => switchStyle(s.val)}
+              style={{ fontSize: '0.62rem', fontWeight: 600, padding: '4px 8px', borderRadius: 7, background: activeStyle === s.val ? 'rgba(255,255,255,0.92)' : 'rgba(15,23,42,0.75)', color: activeStyle === s.val ? '#0F172A' : 'rgba(255,255,255,0.75)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', backdropFilter: 'blur(4px)', fontFamily: 'inherit' }}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

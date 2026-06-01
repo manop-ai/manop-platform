@@ -30,7 +30,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { getInitialDark, listenTheme } from '../lib/theme'
-
+import ManopLogo from '../components/ManopLogo'
 // ─── Hero background slides ───────────────────────────────────────────────────
 const SLIDES = [
   {
@@ -183,6 +183,9 @@ export default function Home() {
           maxWidth: CX, margin: '0 auto', width: '100%',
           padding: 'clamp(6rem,11vw,9rem) clamp(1.25rem,4vw,2.5rem) clamp(5rem,9vw,7rem)',
         }}>
+          <div style={{ marginBottom: '2.5rem' }}>
+            <ManopLogo height={96} dark={true} />
+          </div>
 
           {/* Beta label */}
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.28)', borderRadius: 4, padding: '3px 10px', marginBottom: '2rem' }}>
@@ -580,56 +583,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      {/* ─────────────────────────────────────────────────
-          FOOTER
-      ───────────────────────────────────────────────── */}
-      <footer style={{ background: dark ? '#050710' : '#0A0F1E', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ maxWidth: CX, margin: '0 auto', padding: 'clamp(2rem,4vw,3.5rem) clamp(1.25rem,4vw,2.5rem)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
-
-            {/* Brand column */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '0.875rem' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 7, background: '#5B2EFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: '#fff', fontSize: '0.85rem' }}>M</div>
-                <span style={{ fontWeight: 800, color: '#fff', fontSize: '0.92rem', letterSpacing: '-0.02em' }}>Manop</span>
-                <span style={{ fontSize: '0.44rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.28)', color: '#F59E0B', borderRadius: 3, padding: '1px 5px' }}>BETA</span>
-              </div>
-              <p style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', lineHeight: 1.65, margin: '0 0 0.75rem', maxWidth: 200 }}>
-                Property decisions, backed by data. Nigeria, Ghana, Kenya.
-              </p>
-              <p style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.18)' }}>Not financial advice.</p>
-            </div>
-
-            {/* Footer link columns */}
-            {[
-              { title: 'Platform', links: [{ l: 'Properties', h: '/search' }, { l: 'Markets', h: '/markets' }, { l: 'Calculator', h: '/calculator' }, { l: 'Compare', h: '/compare' }] },
-              { title: 'Account', links: [{ l: 'Register', h: '/register' }, { l: 'Login', h: '/login' }, { l: 'Agency partner', h: '/agency/onboard' }, { l: 'Developer', h: '/developer/onboard' }] },
-              { title: 'Markets', links: [{ l: 'Lekki Phase 1', h: '/neighborhood/lekki-phase-1' }, { l: 'Ikoyi', h: '/neighborhood/ikoyi' }, { l: 'Victoria Island', h: '/neighborhood/victoria-island' }, { l: 'East Legon', h: '/neighborhood/east-legon' }] },
-            ].map(col => (
-              <div key={col.title}>
-                <p style={{ fontSize: '0.58rem', fontWeight: 700, color: 'rgba(255,255,255,0.22)', textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 0.875rem' }}>{col.title}</p>
-                {col.links.map(l => (
-                  <Link
-                    key={l.h}
-                    href={l.h}
-                    style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.38)', textDecoration: 'none', marginBottom: '0.4rem' }}
-                    onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
-                    onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.38)')}
-                  >
-                    {l.l}
-                  </Link>
-                ))}
-              </div>
-            ))}
-          </div>
-
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.18)' }}>© 2025 Manop.</span>
-            <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.18)' }}>support@manopintel.com</span>
-          </div>
-        </div>
-      </footer>
 
       <style>{`
         @keyframes dot { 0%,100%{opacity:1} 50%{opacity:0.35} }

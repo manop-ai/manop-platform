@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import NavBar from '../components/NavBar'
+import ManopFooter from '../components/ManopFooter'
 
 export const metadata: Metadata = {
   title: 'Manop — Africa Property Intelligence',
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <NavBar />
         {children}
+        <ManopFooter />
       </body>
     </html>
   )
