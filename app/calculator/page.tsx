@@ -244,10 +244,11 @@ function generatePDF(a: Analysis, userName: string) {
 
   /* Header */
   .header { background: #5B2EFF; color: #fff; padding: 32px 40px 24px; }
-  .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-  .logo { display: flex; align-items: center; }
-  .logo img { display: block; width: auto; height: 42px; }
-  .header-meta { text-align: right; font-size: 11px; opacity: 0.7; line-height: 1.6; }
+  .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+  .logo { display: flex; align-items: center; gap: 14px; }
+  .logo img { display: block; width: auto; height: 64px; }
+  .logo-text { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.85); }
+  .header-meta { text-align: right; font-size: 11px; opacity: 0.8; line-height: 1.6; }
   .header h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 4px; }
   .header .subtitle { opacity: 0.8; font-size: 14px; }
 
@@ -319,6 +320,7 @@ function generatePDF(a: Analysis, userName: string) {
     <div class="header-top">
       <div class="logo">
         <img src="/logos/manop-icon-mono.svg" alt="Manop" />
+        <div class="logo-text">African Property Intelligence</div>
       </div>
       <div class="header-meta">
         Deal Report<br>
