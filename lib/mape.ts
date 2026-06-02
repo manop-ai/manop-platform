@@ -1,61 +1,77 @@
-// lib/mape.ts — MAPE v2
+// lib/mape.ts — MAPE v3 (Activity-Weighted Redesign)
 // ═══════════════════════════════════════════════════════════════
-// MAPE = Manop Agency Performance Engine
-// Total: 1000 points
+// MAPE = Manop Agency Performance Engine (Redesigned)
+// Total: 1000 points | All points EARNED through real activity
+//
+// CORE PRINCIPLE: Reputation must be built, not granted.
+// No free points for signing up. Every badge requires proof of work.
 //
 // WEIGHT PHILOSOPHY (why these allocations):
 //
-// T = Transaction Intelligence  (0–350 pts) ← #1 most important
-//   Sales records submitted to market_transactions / property_transactions
-//   are the CORE data asset of MANOP. Every confirmed sale makes our
-//   neighborhood benchmarks more accurate. An agency that submits
-//   verified sales is giving Manop irreplaceable intelligence.
-//   This is weighted heaviest to incentivise the right behaviour.
+// I = Intelligence / Market Data  (0–350 pts) ← #1 MOST CRITICAL (35%)
+//   Verified transactions submitted to market_transactions / property_transactions
+//   are MANOP's irreplaceable data asset. Every confirmed sale makes our
+//   neighborhood benchmarks more accurate. An agency that submits real,
+//   verified sales is giving Manop competitive advantage.
+//   WEIGHTED HEAVIEST to incentivize the single most valuable contribution.
+//   1 verified transaction = 20 points (need 18 for full)
+//   Cannot be faked — requires cross-verification by buyer's agency or Manop team.
 //
-// P = Performance / Conversion  (0–250 pts) ← #2
-//   Did leads actually convert? Did viewings happen? Did deals close?
-//   This is the proof that an agency delivers for buyers.
-//   High weight because it's the hardest to fake and most meaningful
-//   to users deciding who to trust.
+// P = Performance / Conversion    (0–250 pts) ← #2 (25%)
+//   Did leads actually convert? Buyers contacted → viewed → made offers → closed deals?
+//   This is proof of sales capability. Only grows through real buyer interactions.
+//   Hardest to fake, most meaningful to users trusting your listings.
+//   + Reply rate (100 pts) ← responsiveness
+//   + Lead advancement (100 pts) ← moving through pipeline
+//   + Deal closure (50 pts) ← ultimate proof of sales skill
 //
-// M = Market Quality            (0–200 pts) ← #3
-//   Are listings accurate, complete, well-photographed, realistically priced?
-//   Important for user experience and data integrity.
+// M = Market Quality             (0–200 pts) ← #3 (20%)
+//   Are listings professional? Photos, complete data, realistic pricing, title docs?
+//   Affects user experience and platform reputation.
+//   Rewards consistent effort across many listings, not just lucky one.
 //
-// A = Activity                  (0–120 pts) ← #4
-//   Login frequency, listing freshness, response speed.
-//   Important but can be gamed more easily than T and P,
-//   so weighted lower than real-world outcomes.
+// A = Activity                   (0–100 pts) ← #4 (10%) [REDUCED from 120]
+//   Is the agency USING the platform? Logins and regular updates matter.
+//   Lower weight than transaction/performance/quality because easier to game.
+//   But still required — abandoned accounts shouldn't rank high.
 //
-// E = Ethics / Excellence       (0–80 pts)  ← #5
-//   Complaints, fake listings, verification status.
-//   Acts as a floor — bad ethics tanks the total via penalties.
-//   Lower base weight because it's more binary (clean record = max).
+// E = Ethics / Trust             (0–100 pts) ← #5 (10%) [REDESIGNED, INCREASED from 80]
+//   COMPLETELY REDESIGNED to require activity.
+//   No free points for "not being bad". All ethics points must be EARNED:
+//   + 20 pts for ≥1 verified transaction (prove you exist in market)
+//   + 15 pts for verification docs (legal compliance)
+//   + 15 pts for ≥50% fee disclosure (transparency)
+//   + 15 pts for ≥50% title docs (data completeness)
+//   + 15 pts for zero complaints in 180d (reliable)
+//   + 10 pts for zero fake listing flags (honest)
+//   + 10 pts for professionalism rating (admin trust)
+//   PENALTIES: −20 per complaint (can push E negative, floored at 0)
 //
-// BADGE THRESHOLDS (out of 1000):
-//   Listed   0–399    (just signed up)
-//   Verified 400–599  (approved + active)
-//   Trust    600–799  (earned through consistent delivery)
-//   Elite    800–1000 (top tier — exceptional across all dimensions)
+// BADGE THRESHOLDS (NEW ACTIVITY-GATED):
+//   Listed   (0–399):    No gates. Default state. Points come ONLY from activity.
+//   Verified (400–599):  GATES: (I ≥ 40 [2 txns] OR M ≥ 120) + E ≥ 30
+//   Trust    (600–799):  GATES: I ≥ 150 [8 txns] + E ≥ 50 + P ≥ 50
+//   Elite    (800–1000): GATES: I ≥ 280 [14 txns] + M ≥ 180 + E ≥ 80 + P ≥ 100
+//
+// WHY THESE GATES?
+//   - No badges without transactions (I requirement)
+//   - No Trust without active lead handling (P requirement)
+//   - No Elite without ethical track record + market contribution (E + M)
+//   - Can't "buy" badges with volume in one dimension
 // ═══════════════════════════════════════════════════════════════
 
 export type MAPEBadge = 'listed' | 'verified' | 'trust' | 'elite'
 
 export interface MAPEInput {
-
-  // ── T: Transaction Intelligence (0–350) ──────────────────────
-  // The crown jewel. Sales submitted to market_transactions table.
-  transactions_submitted_90d:      number   // verified closed deals submitted
-  transactions_verified_90d:       number   // subset that passed Manop verification
-  transaction_quality_pct:         number   // % with price + date + evidence (0–1)
-  unique_neighborhoods_covered:    number   // breadth of market data contributed
+  // ── I: Intelligence / Transaction Data (0–350) ────────────────
+  transactions_verified_90d:       number   // verified closed deals submitted
+  unique_neighborhoods_covered:    number   // breadth of market data (bonus: 10 pts per neighborhood, cap 50)
 
   // ── P: Performance / Conversion (0–250) ──────────────────────
   leads_received_90d:              number
   leads_replied_90d:               number
-  viewings_booked_90d:             number
-  deals_closed_90d:                number   // self-reported via pipeline stage
-  median_reply_hours:              number | null
+  leads_advanced_90d:              number   // moved to viewing/negotiation/offer/closed
+  deals_closed_90d:                number
 
   // ── M: Market Quality (0–200) ────────────────────────────────
   listings_total:                  number
@@ -64,34 +80,38 @@ export interface MAPEInput {
   listings_with_beds:              number   // count with bedrooms filled
   listings_with_desc:              number   // count with description ≥50 chars
   listings_with_title_doc:         number   // count with land title specified
-  listings_price_flagged:          number   // count with unrealistic price flag
-  listings_duplicates:             number   // admin-detected duplicates
-
-  // ── A: Activity (0–120) ──────────────────────────────────────
-  logins_last_30d:                 number
   listings_updated_30d:            number   // count updated in last 30d
 
-  // ── E: Ethics (0–80) ─────────────────────────────────────────
+  // ── A: Activity (0–100) ──────────────────────────────────────
+  logins_last_30d:                 number
+  days_since_last_login:           number
+
+  // ── E: Ethics (0–100) - ALL POINTS REQUIRE ACTIVITY ────────────
+  transactions_verified_any:       number   // have ANY txn? (gates some E points)
+  fee_disclosure_pct:              number   // % listings with agency fee disclosed (0–1)
+  title_doc_pct:                   number   // % listings with title doc specified (0–1)
   complaints_count_180d:           number
   fake_listing_flags:              number
-  verification_status:             'pending' | 'verified' | 'rejected'
-  professionalism_rating:          number   // admin score 0–5
+  verification_status:             'pending' | 'verified' | 'approved' | 'rejected'
+  association_membership:          boolean
+  professionalism_rating:          number   // 0–5 admin score
 }
 
 export interface MAPEResult {
-  score_t:     number   // 0–350
-  score_p:     number   // 0–250
-  score_m:     number   // 0–200
-  score_a:     number   // 0–120
-  score_e:     number   // 0–80
+  score_i:     number   // 0–350 Intelligence
+  score_p:     number   // 0–250 Performance
+  score_m:     number   // 0–200 Market Quality
+  score_a:     number   // 0–100 Activity
+  score_e:     number   // 0–100 Ethics
   total:       number   // 0–1000
   badge:       MAPEBadge
   tips:        string[] // top 3 actionable improvements
   next_badge:  MAPEBadge | null
   pts_to_next: number
+  breakdown: Record<string, number>
 }
 
-// ── Badge thresholds ──────────────────────────────────────────
+// ── Badge thresholds & qualification gates ────────────────────
 export const BADGE_THRESHOLDS: Record<MAPEBadge, number> = {
   listed:   0,
   verified: 400,
@@ -99,10 +119,34 @@ export const BADGE_THRESHOLDS: Record<MAPEBadge, number> = {
   elite:    800,
 }
 
-export function scoreToBadge(total: number): MAPEBadge {
-  if (total >= 800) return 'elite'
-  if (total >= 600) return 'trust'
-  if (total >= 400) return 'verified'
+export function scoreToBadge(
+  total: number,
+  score_i: number,
+  score_p: number,
+  score_m: number,
+  score_e: number,
+  hasVerification: boolean
+): MAPEBadge {
+  // Elite (800+): 14+ transactions + strong market quality + ethics + performance
+  if (total >= 800 && score_i >= 280 && score_m >= 180 && score_e >= 80 && score_p >= 100) {
+    return 'elite'
+  }
+  
+  // Trust (600+): 8+ transactions + decent ethics + some performance
+  if (total >= 600 && score_i >= 150 && score_e >= 50 && score_p >= 50) {
+    return 'trust'
+  }
+  
+  // Verified by CAC/legal approval: legal verification should be reflected as soon as the agency has a minimum ethics floor.
+  if (hasVerification && score_e >= 30) {
+    return 'verified'
+  }
+
+  // Verified by activity gates: alternate path for agencies with strong listings + documentation.
+  if (total >= 400 && (score_i >= 40 || score_m >= 120) && score_e >= 30 && hasVerification) {
+    return 'verified'
+  }
+  
   return 'listed'
 }
 
@@ -118,7 +162,7 @@ export const BADGE_CONFIG: Record<MAPEBadge, {
   listed: {
     label: 'Listed', icon: '○', color: '#94A3B8', points: 0,
     bg: 'rgba(148,163,184,0.1)', border: 'rgba(148,163,184,0.2)',
-    description: 'Basic account. Start listing properties and submitting market data to progress.',
+    description: 'Active account. Submit transactions, respond to leads, and improve listings to earn trust.',
   },
   verified: {
     label: 'Verified', icon: '◇', color: '#60A5FA', points: 400,
@@ -128,205 +172,301 @@ export const BADGE_CONFIG: Record<MAPEBadge, {
   trust: {
     label: 'Trust', icon: '◈', color: '#14B8A6', points: 600,
     bg: 'rgba(20,184,166,0.1)', border: 'rgba(20,184,166,0.2)',
-    description: 'Earned through consistent quality, response speed, and real deal closures.',
+    description: 'Earned through consistent performance, real deal closures, and proven market data contributions.',
   },
   elite: {
     label: 'Elite', icon: '◆', color: '#F59E0B', points: 800,
     bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.2)',
-    description: 'Top tier on Manop. Exceptional across all dimensions. Prioritised in all search results.',
+    description: 'Top tier. Exceptional intelligence contribution, market quality, and buyer satisfaction. Prioritised in all search results.',
   },
 }
 
 // ══════════════════════════════════════════════════════════════
-// MAIN SCORING FUNCTION
+// MAIN SCORING FUNCTION — ACTIVITY-WEIGHTED V3
 // ══════════════════════════════════════════════════════════════
 export function computeMAPE(input: MAPEInput): MAPEResult {
   const tips: string[] = []
+  let breakdown: Record<string, number> = {}
 
   // ──────────────────────────────────────────────────────────
-  // T: TRANSACTION INTELLIGENCE — 0 to 350 pts
+  // I: INTELLIGENCE — 0 to 350 pts (35% of total)
   // ──────────────────────────────────────────────────────────
+  // ONLY earned through verified transactions
+  // 1 verified transaction = 20 points (18 txns = full 360, capped at 350)
+  // Cannot be faked — requires Manop verification
+  //
   // Sub-components:
-  //   Volume score     (0–120): raw count of transactions submitted
-  //   Verified score   (0–100): subset that passed Manop verification
-  //   Quality score    (0–80):  completeness of each submission
-  //   Breadth score    (0–50):  number of distinct neighborhoods covered
-  let score_t = 0
+  //   Volume    (0–280): 20 pts per verified transaction
+  //   Breadth   (0–70):  10 pts per unique neighborhood, cap at 70 (7 neighborhoods)
+  let score_i = 0
 
-  // Volume: 1 transaction = 15 pts, cap at 120 (8 txns = full volume score)
-  const volumeScore = Math.min(120, input.transactions_submitted_90d * 15)
-  score_t += volumeScore
+  // Volume: 20 pts per verified transaction (18 = full)
+  const transactionScore = Math.min(280, input.transactions_verified_90d * 20)
+  score_i += transactionScore
+  breakdown.verified_transactions = input.transactions_verified_90d
+  breakdown.transaction_points = transactionScore
 
-  // Verified: 1 verified txn = 20 pts, cap at 100 (5 verified = full)
-  const verifiedScore = Math.min(100, input.transactions_verified_90d * 20)
-  score_t += verifiedScore
+  // Breadth: 10 pts per unique neighborhood, cap 70
+  const breadthScore = Math.min(70, input.unique_neighborhoods_covered * 10)
+  score_i += breadthScore
+  breakdown.unique_neighborhoods = input.unique_neighborhoods_covered
+  breakdown.breadth_points = breadthScore
 
-  // Quality: % of submissions with complete fields
-  const qualityScore = Math.round(input.transaction_quality_pct * 80)
-  score_t += qualityScore
-
-  // Breadth: each unique neighborhood = 10 pts, cap at 50
-  const breadthScore = Math.min(50, input.unique_neighborhoods_covered * 10)
-  score_t += breadthScore
-
-  // Tips
-  if (input.transactions_submitted_90d === 0) {
-    tips.push('Submit your first closed sale to market_transactions. This is the single highest-impact action for your Manop score — 15 points per verified transaction.')
-  } else if (input.transactions_verified_90d < input.transactions_submitted_90d) {
-    const unverified = input.transactions_submitted_90d - input.transactions_verified_90d
-    tips.push(`${unverified} transaction submission(s) still pending verification. Attach deed of assignment or bank confirmation to fast-track approval (+${unverified * 20} pts).`)
-  }
-  if (input.transaction_quality_pct < 0.7 && input.transactions_submitted_90d > 0) {
-    tips.push('Improve transaction submission quality: include exact sale date, evidence type, and size (sqm) to maximise your quality score.')
+  // Tips for Intelligence
+  if (input.transactions_verified_90d === 0) {
+    tips.push('Submit your first verified transaction — this is the highest-impact action for your Manop score (20 points per transaction). Attach property deed and bank proof.')
+  } else {
+    tips.push(`Keep submitting verified transactions (${input.transactions_verified_90d} so far). Each one strengthens your market intelligence profile.`)
   }
 
-  score_t = Math.min(350, Math.max(0, score_t))
+  score_i = Math.min(350, Math.max(0, score_i))
 
   // ──────────────────────────────────────────────────────────
-  // P: PERFORMANCE / CONVERSION — 0 to 250 pts
+  // P: PERFORMANCE — 0 to 250 pts (25% of total)
   // ──────────────────────────────────────────────────────────
+  // ONLY earned through real buyer interactions
+  // Cannot grow until buyers actually contact you through Manop
+  //
   // Sub-components:
-  //   Reply rate      (0–80):  leads replied / leads received
-  //   Response speed  (0–60):  how fast replies arrive
-  //   Viewings        (0–60):  viewings booked signals intent conversion
-  //   Deals closed    (0–50):  deals in pipeline → closed_won stage
+  //   Reply rate       (0–100): % of leads that got a reply
+  //   Advancement rate (0–100): % of leads that moved beyond "new" status
+  //   Deal closure     (0–50):  final proof of sales skill
   let score_p = 0
 
-  // Reply rate
+  // Reply rate: 100 pts for replying to all leads
   if (input.leads_received_90d > 0) {
     const replyRate = input.leads_replied_90d / input.leads_received_90d
-    score_p += Math.round(Math.min(1, replyRate) * 80)
-    if (replyRate < 0.6) {
-      tips.push(`You replied to only ${Math.round(replyRate * 100)}% of inquiries. Reply to all leads to earn up to 80 performance points and prevent buyers from going to competitors.`)
+    const replyScore = Math.round(Math.min(1, replyRate) * 100)
+    score_p += replyScore
+    breakdown.reply_rate = Math.round(replyRate * 100)
+    breakdown.reply_points = replyScore
+
+    if (replyRate < 1.0) {
+      const missed = input.leads_received_90d - input.leads_replied_90d
+      tips.push(`You missed ${missed} lead(s) without a reply. Respond to ALL inquiries to earn full 100 performance points.`)
     }
   } else {
-    tips.push('No leads received yet. Ensure your listings have complete contact details and competitive pricing to attract inquiries.')
+    breakdown.reply_rate = 0
+    breakdown.reply_points = 0
+    tips.push('No inquiries received yet. Ensure all listings have photos, complete data, and realistic pricing to attract buyers.')
   }
 
-  // Response speed
-  if (input.median_reply_hours !== null) {
-    if      (input.median_reply_hours <= 2)   score_p += 60
-    else if (input.median_reply_hours <= 6)   score_p += 50
-    else if (input.median_reply_hours <= 24)  score_p += 35
-    else if (input.median_reply_hours <= 72)  { score_p += 15; tips.push('Your median response time is over 24 hours. Enable notifications — buyers move fast.') }
-    else { tips.push('Response time is critically slow. Under 6 hours is the standard for Trust and Elite agencies.') }
+  // Lead advancement: 100 pts for moving leads through pipeline
+  if (input.leads_received_90d > 0) {
+    const advancementRate = input.leads_advanced_90d / input.leads_received_90d
+    const advancementScore = Math.round(Math.min(1, advancementRate) * 100)
+    score_p += advancementScore
+    breakdown.advancement_rate = Math.round(advancementRate * 100)
+    breakdown.advancement_points = advancementScore
+
+    if (advancementRate < 0.5) {
+      tips.push(`Only ${Math.round(advancementRate * 100)}% of leads moved to viewing/offer stage. Follow up actively to move deals forward.`)
+    }
   } else {
-    tips.push('Start responding to inquiries inside Manop. Your response time will appear on your profile once measured.')
+    breakdown.advancement_rate = 0
+    breakdown.advancement_points = 0
   }
 
-  // Viewings booked (1 viewing = 10 pts, cap at 60)
-  score_p += Math.min(60, input.viewings_booked_90d * 10)
-
-  // Deals closed (1 deal = 10 pts, cap at 50)
-  score_p += Math.min(50, input.deals_closed_90d * 10)
+  // Deal closure: 50 pts for closed deals (1 deal = 10 pts, cap at 50)
+  const dealScore = Math.min(50, input.deals_closed_90d * 10)
+  score_p += dealScore
+  breakdown.deals_closed = input.deals_closed_90d
+  breakdown.deal_points = dealScore
 
   score_p = Math.min(250, Math.max(0, score_p))
 
   // ──────────────────────────────────────────────────────────
-  // M: MARKET QUALITY — 0 to 200 pts
+  // M: MARKET QUALITY — 0 to 200 pts (20% of total)
   // ──────────────────────────────────────────────────────────
-  // Sub-components:
-  //   Images          (0–60):  % of listings with ≥3 images
-  //   Data completeness(0–60): price + beds + description all filled
-  //   Title document  (0–30):  % with land title specified
-  //   Pricing realism (0–30):  inverse of flagged-price ratio
-  //   Duplicate penalty        -10 per 5 duplicates detected
+  // Rewards consistent professionalism across all listings
+  // Points awarded as percentages of total listings
   let score_m = 0
 
   if (input.listings_total > 0) {
-    // Images (0–60): 70%+ with images = full score
+    // Images: 70%+ listings with 3+ photos = full 60 pts
     const imgPct = input.listings_with_images / input.listings_total
-    score_m += Math.round(Math.min(1, imgPct / 0.7) * 60)
-    if (imgPct < 0.5) tips.push(`Only ${Math.round(imgPct * 100)}% of your listings have photos. Add at least 3 images per listing — listings with photos get 3× more views.`)
+    const imageScore = Math.round(Math.min(1, imgPct / 0.7) * 60)
+    score_m += imageScore
+    breakdown.image_percentage = Math.round(imgPct * 100)
+    breakdown.image_points = imageScore
 
-    // Data completeness (0–60): average of price%, beds%, desc%
+    if (imgPct < 0.5) {
+      tips.push(`Only ${Math.round(imgPct * 100)}% of listings have 3+ photos. Add photos — they increase views by 3×.`)
+    }
+
+    // Data completeness: average of (price% + beds% + description%)
     const pricePct = input.listings_with_price / input.listings_total
-    const bedsPct  = input.listings_with_beds  / input.listings_total
-    const descPct  = input.listings_with_desc  / input.listings_total
-    const dataAvg  = (pricePct + bedsPct + descPct) / 3
-    score_m += Math.round(dataAvg * 60)
-    if (dataAvg < 0.7) tips.push('Incomplete listing data detected. Ensure every listing has price, bedrooms, and a description of at least 50 characters.')
+    const bedsPct = input.listings_with_beds / input.listings_total
+    const descPct = input.listings_with_desc / input.listings_total
+    const dataCompleteAvg = (pricePct + bedsPct + descPct) / 3
+    const dataScore = Math.round(dataCompleteAvg * 60)
+    score_m += dataScore
+    breakdown.data_complete_avg = Math.round(dataCompleteAvg * 100)
+    breakdown.data_points = dataScore
 
-    // Title document (0–30)
+    // Title documentation: % with title doc specified = 40 pts
     const titlePct = input.listings_with_title_doc / input.listings_total
-    score_m += Math.round(titlePct * 30)
+    const titleScore = Math.round(titlePct * 40)
+    score_m += titleScore
+    breakdown.title_doc_percentage = Math.round(titlePct * 100)
+    breakdown.title_points = titleScore
 
-    // Pricing realism (0–30): 0 flagged = 30, each 10% flagged = -3
-    const flagPct = input.listings_price_flagged / input.listings_total
-    score_m += Math.max(0, Math.round((1 - flagPct * 3) * 30))
-    if (flagPct > 0.15) tips.push(`${Math.round(flagPct * 100)}% of your listings have flagged prices. Review and correct these to improve your Market Quality score.`)
+    // Freshness: 50%+ updated in 30d = full 60 pts
+    const freshPct = input.listings_updated_30d / input.listings_total
+    const freshScore = Math.round(Math.min(1, (freshPct / 0.5)) * 60)
+    score_m += freshScore
+    breakdown.freshness_percentage = Math.round(freshPct * 100)
+    breakdown.freshness_points = freshScore
 
-    // Duplicate penalty
-    const dupPenalty = Math.floor(input.listings_duplicates / 5) * 10
-    if (dupPenalty > 0) {
-      score_m = Math.max(0, score_m - dupPenalty)
-      tips.push(`${input.listings_duplicates} duplicate listings detected. Remove them to recover ${dupPenalty} Market Quality points.`)
+    if (freshPct < 0.25) {
+      tips.push(`Only ${Math.round(freshPct * 100)}% of listings updated in 30 days. Mark sold properties and refresh prices monthly.`)
     }
   } else {
-    tips.push('Add your first listings to start building your Market Quality score.')
+    tips.push('Add your first listings to start earning Market Quality points.')
   }
 
   score_m = Math.min(200, Math.max(0, score_m))
 
   // ──────────────────────────────────────────────────────────
-  // A: ACTIVITY — 0 to 120 pts
+  // A: ACTIVITY — 0 to 100 pts (10% of total) [REDUCED from 120]
   // ──────────────────────────────────────────────────────────
-  // Sub-components:
-  //   Login frequency (0–40):  logins in last 30d
-  //   Listing freshness(0–80): % of listings updated in last 30d
+  // Platform engagement signal
+  // Lower weight because easier to game than I/P/M
   let score_a = 0
 
-  // Login frequency: 15+ logins/month = full 40 pts
-  score_a += Math.min(40, Math.round((input.logins_last_30d / 15) * 40))
-  if (input.logins_last_30d < 5) tips.push('Log in more frequently. Active agencies rank higher in search results and receive more leads.')
+  // Logins: 1+ login every 2 days = full 50 pts
+  // (15 logins in 30d ÷ 2 = 7-8 days average = healthy)
+  const loginScore = Math.min(50, Math.round((input.logins_last_30d / 15) * 50))
+  score_a += loginScore
+  breakdown.logins_30d = input.logins_last_30d
+  breakdown.login_points = loginScore
 
-  // Listing freshness: 50%+ listings updated in 30d = full 80 pts
-  if (input.listings_total > 0) {
-    const freshPct = input.listings_updated_30d / input.listings_total
-    score_a += Math.min(80, Math.round((freshPct / 0.5) * 80))
-    if (freshPct < 0.25) tips.push(`Only ${Math.round(freshPct * 100)}% of your listings were updated in the last 30 days. Mark sold listings as sold and refresh prices regularly.`)
+  if (input.logins_last_30d === 0) {
+    tips.push('Log in at least weekly. Inactive accounts appear dormant to buyers even with old listings.')
   }
 
-  score_a = Math.min(120, Math.max(0, score_a))
+  // Days since last login: bonus 10 pts if logged in within 7 days
+  const lastLoginBonus = input.days_since_last_login <= 7 ? 10 : 0
+  score_a += lastLoginBonus
+  breakdown.days_since_last_login = input.days_since_last_login
+  breakdown.login_recency_bonus = lastLoginBonus
+
+  // Listing activity: 40 pts for maintaining listings (already counted in M freshness)
+  // Using updated_30d from M calculation
+  const updateScore = (input.listings_updated_30d > 0) ? 40 : 0
+  score_a += updateScore
+  breakdown.updates_last_30d = input.listings_updated_30d
+  breakdown.update_points = updateScore
+
+  score_a = Math.min(100, Math.max(0, score_a))
 
   // ──────────────────────────────────────────────────────────
-  // E: ETHICS — 0 to 80 pts
-  // Acts as a multiplier floor: serious violations tank the total
+  // E: ETHICS — 0 to 100 pts (10% of total) [REDESIGNED]
   // ──────────────────────────────────────────────────────────
+  // COMPLETELY REDESIGNED: NO free points for "not being bad"
+  // ALL ethics points must be EARNED through activity
+  //
   // Sub-components:
-  //   Complaint-free  (0–30):  0 complaints = 30, each complaint = -10
-  //   No fake flags   (0–30):  0 fake flags = 30, each flag = -15
-  //   Verification    (0–15):  verified docs = 15
-  //   Professionalism (0–5):   admin-assigned 0–5
+  //   Transaction activity (20): ≥1 verified transaction
+  //   Verification docs (15): legal approval
+  //   Fee disclosure (15): ≥50% listings disclose agency fee
+  //   Title documentation (15): ≥50% listings specify title doc
+  //   Clean record 180d (15): zero complaints
+  //   No fake flags (10): zero fake listing flags
+  //   Professionalism (10): admin-assigned 0–5 score
   let score_e = 0
 
-  // Complaints
-  score_e += Math.max(0, 30 - (input.complaints_count_180d * 10))
-  if (input.complaints_count_180d > 0) tips.push(`${input.complaints_count_180d} complaint(s) on record. Resolve these directly with affected parties. Unresolved complaints permanently affect your Ethics score.`)
-
-  // Fake listing flags
-  score_e += Math.max(0, 30 - (input.fake_listing_flags * 15))
-  if (input.fake_listing_flags > 0) tips.push(`${input.fake_listing_flags} fake listing flag(s). Remove or correct these listings immediately. Fake listings can result in permanent badge downgrade.`)
-
-  // Verification
-  if (input.verification_status === 'verified') {
-    score_e += 15
-  } else if (input.verification_status === 'pending') {
-    tips.push('Your CAC documents are pending review. Verification unlocks 15 Ethics points and the Verified badge.')
-  } else if (input.verification_status === 'rejected') {
-    tips.push('Verification was rejected. Contact support@manopintel.com with updated documents.')
+  // +20: Must have at least 1 verified transaction
+  if (input.transactions_verified_any > 0) {
+    score_e += 20
+    breakdown.transaction_activity = 20
+  } else {
+    breakdown.transaction_activity = 0
+    if (input.transactions_verified_90d === 0) {
+      tips.push('Submit your first transaction to unlock Ethics points and trust credibility.')
+    }
   }
 
-  // Professionalism (0–5)
-  score_e += Math.round((input.professionalism_rating / 5) * 5)
+  // +15: Verification documents (legal approval)
+  if (input.verification_status === 'verified' || input.verification_status === 'approved') {
+    score_e += 15
+    breakdown.verification_points = 15
+  } else if (input.verification_status === 'pending') {
+    breakdown.verification_points = 0
+    // tips.push('Complete your verification documents for +15 Ethics points.')  // limit tips to 3
+  } else if (input.verification_status === 'rejected') {
+    breakdown.verification_points = 0
+    tips.push('Resubmit your verification documents. Contact support@manopintel.com for guidance.')
+  } else {
+    breakdown.verification_points = 0
+  }
 
-  score_e = Math.min(80, Math.max(0, score_e))
+  // +10: Association membership
+  if (input.association_membership) {
+    score_e += 10
+    breakdown.association_membership = 10
+  }
+
+  // +15: Fee disclosure transparency (≥50% of listings)
+  const feeDisclosureScore = input.fee_disclosure_pct >= 0.5 ? 15 : Math.round(input.fee_disclosure_pct * 15)
+  score_e += feeDisclosureScore
+  breakdown.fee_disclosure_pct = Math.round(input.fee_disclosure_pct * 100)
+  breakdown.fee_disclosure_points = feeDisclosureScore
+
+  // +15: Title documentation (≥50% of listings)
+  const titleDocScore = input.title_doc_pct >= 0.5 ? 15 : Math.round(input.title_doc_pct * 15)
+  score_e += titleDocScore
+  breakdown.title_disclosure_pct = Math.round(input.title_doc_pct * 100)
+  breakdown.title_disclosure_points = titleDocScore
+
+  // +15: Clean complaint record (180 days)
+  if (input.complaints_count_180d === 0) {
+    score_e += 15
+    breakdown.complaint_free_points = 15
+  } else {
+    breakdown.complaint_free_points = Math.max(0, 15 - (input.complaints_count_180d * 20))
+    const penalty = Math.min(15, input.complaints_count_180d * 20)
+    score_e -= penalty
+    if (input.complaints_count_180d > 0) {
+      tips.push(`${input.complaints_count_180d} complaint(s) on record. Resolve immediately — unresolved complaints reduce your Ethics score permanently.`)
+    }
+  }
+
+  // +10: No fake listing flags
+  if (input.fake_listing_flags === 0) {
+    score_e += 10
+    breakdown.fake_flag_points = 10
+  } else {
+    breakdown.fake_flag_points = Math.max(0, 10 - (input.fake_listing_flags * 25))
+    const flagPenalty = Math.min(10, input.fake_listing_flags * 25)
+    score_e -= flagPenalty
+    if (input.fake_listing_flags > 0) {
+      tips.push(`${input.fake_listing_flags} fake listing flag(s). Remove or correct these immediately — fake listings result in permanent badge suspension.`)
+    }
+  }
+
+  // +10: Professionalism rating (admin-assigned 0–5 score mapped to 0–10)
+  const professionScore = Math.round((input.professionalism_rating / 5) * 10)
+  score_e += professionScore
+  breakdown.professionalism_rating = input.professionalism_rating
+  breakdown.professionalism_points = professionScore
+
+  score_e = Math.min(100, Math.max(0, score_e))
 
   // ──────────────────────────────────────────────────────────
-  // TOTAL + BADGE
+  // TOTAL + INACTIVITY DECAY + BADGE
   // ──────────────────────────────────────────────────────────
-  const total = score_t + score_p + score_m + score_a + score_e
-  const badge = scoreToBadge(total)
+  const rawTotal = score_i + score_p + score_m + score_a + score_e
+  const inactivityPeriods = Math.floor(input.days_since_last_login / 90)
+  const inactivityDecayPct = Math.min(0.2, inactivityPeriods * 0.02)
+  const inactivityPenalty = Math.round((score_p + score_m + score_a + score_e) * inactivityDecayPct)
+  const total = Math.max(0, rawTotal - inactivityPenalty)
+  if (inactivityPenalty > 0) {
+    breakdown.inactivity_decay = -inactivityPenalty
+  }
+
+  const hasVerification = input.verification_status === 'verified' || input.verification_status === 'approved'
+  const badge = scoreToBadge(total, score_i, score_p, score_m, score_e, hasVerification)
 
   const badgeOrder: MAPEBadge[] = ['listed', 'verified', 'trust', 'elite']
   const currentIdx = badgeOrder.indexOf(badge)
@@ -335,13 +475,25 @@ export function computeMAPE(input: MAPEInput): MAPEResult {
     ? Math.max(0, BADGE_THRESHOLDS[next_badge] - total)
     : 0
 
+  breakdown.total_score = total
+  breakdown.score_i = score_i
+  breakdown.score_p = score_p
+  breakdown.score_m = score_m
+  breakdown.score_a = score_a
+  breakdown.score_e = score_e
+
   return {
-    score_t, score_p, score_m, score_a, score_e,
+    score_i,
+    score_p,
+    score_m,
+    score_a,
+    score_e,
     total,
     badge,
     tips: tips.slice(0, 3),
     next_badge,
     pts_to_next,
+    breakdown,
   }
 }
 
@@ -351,13 +503,13 @@ export function computeMAPE(input: MAPEInput): MAPEResult {
 // ══════════════════════════════════════════════════════════════
 export const SCORE_DIMENSIONS = [
   {
-    key: 'score_t' as const,
-    label: 'Transaction Intelligence',
-    abbr: 'T',
+    key: 'score_i' as const,
+    label: 'Intelligence',
+    abbr: 'I',
     max: 350,
     color: '#F59E0B',
     icon: '📊',
-    why: 'Verified sales submitted to Manop market data. The most valuable contribution you can make.',
+    why: 'Verified transactions submitted to Manop. The single highest-impact activity. Cannot be faked.',
   },
   {
     key: 'score_p' as const,
@@ -366,7 +518,7 @@ export const SCORE_DIMENSIONS = [
     max: 250,
     color: '#22C55E',
     icon: '🎯',
-    why: 'Lead reply rate, response speed, viewings booked, and deals closed.',
+    why: 'Real buyer interaction: reply rate, lead advancement, and deal closure. Proof of sales skill.',
   },
   {
     key: 'score_m' as const,
@@ -375,25 +527,25 @@ export const SCORE_DIMENSIONS = [
     max: 200,
     color: '#5B2EFF',
     icon: '🏠',
-    why: 'Listing completeness, images, realistic pricing, and title documentation.',
+    why: 'Professional listings: photos, complete data, title docs, and freshness. User experience signal.',
   },
   {
     key: 'score_a' as const,
     label: 'Activity',
     abbr: 'A',
-    max: 120,
+    max: 100,
     color: '#14B8A6',
     icon: '⚡',
-    why: 'Login frequency and listing freshness. Active agencies rank higher.',
+    why: 'Platform engagement: logins and listing updates. Shows active participation in Manop.',
   },
   {
     key: 'score_e' as const,
     label: 'Ethics',
     abbr: 'E',
-    max: 80,
+    max: 100,
     color: '#94A3B8',
     icon: '🔒',
-    why: 'Zero complaints, no fake listings, verification status. Acts as a floor on your total.',
+    why: 'Integrity: verified transactions, transparency, compliance, and clean record. Reputational foundation.',
   },
 ]
 
@@ -433,12 +585,13 @@ export function mapeToDbRow(agencyId: string, result: MAPEResult) {
   return {
     id:                agencyId,
     mape_score:        result.total,
-    mape_t:            result.score_t,
+    mape_i:            result.score_i,
     mape_p:            result.score_p,
     mape_m:            result.score_m,
     mape_a:            result.score_a,
     mape_e:            result.score_e,
     badge_level:       result.badge,
     mape_last_computed: new Date().toISOString(),
+    mape_breakdown:    result.breakdown,
   }
 }
