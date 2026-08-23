@@ -260,15 +260,13 @@ export function computeNextStep(verdict: DealVerdict, agentPhone: string | null)
   switch (verdict) {
     case 'buy':
       return {
-        primary:   { label: hasWhatsApp ? 'Contact agent on WhatsApp' : 'Send enquiry', action: hasWhatsApp ? 'whatsapp' : 'enquiry', icon: '💬' },
-        secondary: { label: 'Run full deal analysis', action: 'calculator', icon: '🧮' },
-        message:   'This deal meets the benchmarks. Contact the agent to confirm availability and arrange a viewing. Run the deal analysis before signing anything.',
+        primary: { label: 'Run full deal analysis', action: 'calculator', icon: '🧮' },
+        message: 'This deal meets the benchmarks. Run the deal analysis to confirm the offer price and compare it with your budget before moving forward.',
       }
     case 'negotiate':
       return {
-        primary:   { label: 'Run deal analysis first', action: 'calculator', icon: '🧮' },
-        secondary: { label: hasWhatsApp ? 'Contact agent' : 'Send enquiry', action: hasWhatsApp ? 'whatsapp' : 'enquiry', icon: '💬' },
-        message:   'Run the deal analysis to model your offer price. Then contact the agent with a clear counter-offer based on the yield numbers.',
+        primary: { label: 'Run deal analysis first', action: 'calculator', icon: '🧮' },
+        message: 'Run the deal analysis to model your offer price and compare the yield numbers before you act.',
       }
     case 'watch':
       return {

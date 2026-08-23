@@ -15,6 +15,7 @@ import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { formatNGN, formatUSD, calcDepreciation } from '../../../lib/fx'
 import DecisionPanel from '../../../components/DecisionPanel'
 import InquiryModal from '../../../components/InquiryModal'
+import FinancingModal from '../../../components/FinancingModal'
 
 const PriceTrendChart = dynamic(
   () => import('../../../components/PriceTrendChart'),
@@ -80,6 +81,7 @@ export default function PropertyDetailClient({ property: p, liveNGNRate, rateSou
   const [imgIdx, setImgIdx]           = useState(0)
   const [agencyName, setAgencyName]   = useState<string | null>(null)
   const [agencyBadge, setAgencyBadge] = useState<string | null>(null)
+  const [showFinancing, setShowFinancing] = useState(false)
 
   useEffect(() => {
     setDark(getInitialDark())
@@ -295,8 +297,47 @@ export default function PropertyDetailClient({ property: p, liveNGNRate, rateSou
             agencyName={sourceAgency}
             dark={dark}
           />
+
+          {!isRent && p.listing_type !== 'short-let' && (
+            <button
+              type="button"
+              onClick={() => setShowFinancing(true)}
+              style={{
+                width: '100%',
+                padding: '0.75rem 1rem',
+                marginTop: '1rem',
+                background: 'rgba(20,184,166,0.08)',
+                border: '1px solid rgba(20,184,166,0.25)',
+                borderRadius: 10,
+                color: '#14B8A6',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                fontFamily: 'inherit',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(20,184,166,0.14)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(20,184,166,0.08)')}
+            >
+              FINANCE
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Financing Modal */}
+      {showFinancing && p.price_local && (
+        <FinancingModal
+          propertyId={p.id}
+          propertyAddress={location}
+          estimatedPriceNgn={p.price_local}
+          onClose={() => setShowFinancing(false)}
+        />
+      )}
     </div>
   )
 }

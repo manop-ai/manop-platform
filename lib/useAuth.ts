@@ -1,14 +1,7 @@
-// lib/useAuth.ts — SPRINT 1
-// Shared session guard for all protected pages.
-//
-// ROOT CAUSE OF OLD DASHBOARDS:
-// Agency and developer dashboards checked localStorage for custom tokens.
-// Race condition between localStorage read and session validation → auth loop.
-//
-// NEW SYSTEM:
-// Single hook. Calls sb.auth.getSession(). If null → redirect to /login.
-// No localStorage tokens. No custom session tables.
-// This runs on every protected page load.
+// lib/useAuth.ts — UPDATED
+// Added association role support.
+// Now checks association_user_roles table in addition to user_metadata.
+// All other logic identical to original.
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -23,14 +16,33 @@ interface AuthState {
   user:     User | null
   role:     string | null
   checking: boolean
+  // New: association context
+  associationId:   string | null
+  associationRole: string | null
+}
+
+const ROLE_ROUTES: Record<string, string> = {
+  buyer:                      '/search',
+  diaspora:                   '/search',
+  investor:                   '/investor/dashboard',
+  agency:                     '/agency/dashboard',
+  developer:                  '/developer/dashboard',
+  admin:                      '/admin',
+  association_national_admin: '/association/dashboard',
+  chapter_admin:              '/association/dashboard',
+  super_admin:                '/admin',
+  country_admin:              '/association/dashboard',
+  analyst:                    '/association/dashboard',
 }
 
 export function useAuth(requiredRole?: string): AuthState {
   const router = useRouter()
   const [state, setState] = useState<AuthState>({
-    user:     null,
-    role:     null,
-    checking: true,
+    user:            null,
+    role:            null,
+    checking:        true,
+    associationId:   null,
+    associationRole: null,
   })
 
   useEffect(() => {
@@ -42,32 +54,45 @@ export function useAuth(requiredRole?: string): AuthState {
       if (!mounted) return
 
       if (!session?.user) {
-        // No session — redirect to login
         router.replace('/login')
         return
       }
 
-      const role = session.user.user_metadata?.user_role || 'buyer'
+      const metaRole = session.user.user_metadata?.user_role || 'buyer'
 
-      // Optional: enforce role — wrong role redirects to correct dashboard
-      if (requiredRole && role !== requiredRole && role !== 'admin') {
-        const ROLE_ROUTES: Record<string, string> = {
-          buyer:     '/search',
-          diaspora:  '/search',
-          agency:    '/agency/dashboard',
-          developer: '/developer/dashboard',
-          admin:     '/admin',
-        }
-        router.replace(ROLE_ROUTES[role] || '/search')
+      // Check association roles — these take priority
+      const { data: assocRole } = await sb
+        .from('association_user_roles')
+        .select('role, association_id')
+        .eq('user_id', session.user.id)
+        .eq('is_active', true)
+        .in('role', [
+          'super_admin', 'country_admin',
+          'association_national_admin', 'chapter_admin', 'analyst',
+        ])
+        .maybeSingle()
+
+      const resolvedRole = assocRole?.role ?? metaRole
+
+      // Wrong role for this page → redirect
+      if (requiredRole && resolvedRole !== requiredRole && resolvedRole !== 'admin' && resolvedRole !== 'super_admin') {
+        router.replace(ROLE_ROUTES[resolvedRole] || '/search')
         return
       }
 
-      setState({ user: session.user, role, checking: false })
+      if (mounted) {
+        setState({
+          user:            session.user,
+          role:            resolvedRole,
+          checking:        false,
+          associationId:   assocRole?.association_id ?? null,
+          associationRole: assocRole?.role ?? null,
+        })
+      }
     }
 
     checkSession()
 
-    // Subscribe to auth state changes (token refresh, sign out)
     const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
       if (!mounted) return
       if (event === 'SIGNED_OUT' || !session) {
@@ -89,4 +114,6 @@ export function useAuth(requiredRole?: string): AuthState {
 }
 
 // Convenience: get the supabase client (shared, anon key)
-export { sb }
+export function useSupabase() {
+  return sb
+}

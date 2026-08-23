@@ -94,6 +94,7 @@ export interface MAPEInput {
   fake_listing_flags:              number
   verification_status:             'pending' | 'verified' | 'approved' | 'rejected'
   association_membership:          boolean
+  association_verified?:           boolean
   professionalism_rating:          number   // 0–5 admin score
 }
 
@@ -401,10 +402,16 @@ export function computeMAPE(input: MAPEInput): MAPEResult {
     breakdown.verification_points = 0
   }
 
-  // +10: Association membership
-  if (input.association_membership) {
-    score_e += 10
-    breakdown.association_membership = 10
+  // +15: Association-verified membership, or +10 for an active self-declared association membership
+  const associationScore = input.association_verified
+    ? 15
+    : input.association_membership
+      ? 10
+      : 0
+
+  if (associationScore > 0) {
+    score_e += associationScore
+    breakdown.association_membership = associationScore
   }
 
   // +15: Fee disclosure transparency (≥50% of listings)

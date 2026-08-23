@@ -190,33 +190,57 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
 
     setSubmitting(true); setError('')
     try {
-      const verificationPayload = {
-        method,
-        professional_body: needsBody ? {
-          code:              bodyCode,
-          membership_number: bodyNumber,
-          year_joined:       bodyYear || null,
-        } : null,
-        // Association membership — the AEAN pilot field
-        // Manop uses this to cross-check membership status
-        association_membership: assocNumber ? {
-          association_name:   assocName || bodyCode,
-          membership_number:  assocNumber,
-          submitted_at:       new Date().toISOString(),
-        } : null,
-        cac_number:     needsCAC ? cacNumber.trim() : null,
+      const hasAssociation = Boolean(assocNumber.trim())
+      const verificationType = hasAssociation
+        ? 'association_membership'
+        : needsBody
+          ? 'professional_body'
+          : needsCAC
+            ? 'cac'
+            : 'manop_review'
+
+      const verReq: Record<string, unknown> = {
+        data_partner_id: partner.id,
+        verification_type: verificationType,
+        status: 'pending',
         office_address: officeAddr.trim(),
-        contact_phone:  phone.trim() || null,
-        doc_url:        docUrl.trim() || null,
-        submitted_at:   new Date().toISOString(),
+        contact_phone: phone.trim() || null,
       }
 
-      const { error: dbErr } = await sb.from('data_partners').update({
-        verification_status: 'pending',
-        notes: JSON.stringify({ verification_request: verificationPayload }),
-      }).eq('id', partner.id)
+      if (needsBody) {
+        verReq.body_code = bodyCode
+        verReq.membership_number = bodyNumber.trim()
+        verReq.year_joined = bodyYear || null
+      }
 
-      if (dbErr) throw new Error(dbErr.message)
+      if (hasAssociation) {
+        verReq.membership_number = assocNumber.trim()
+        verReq.body_code = assocName || bodyCode || null
+
+        const { data: assoc } = await sb
+          .from('associations')
+          .select('id')
+          .eq('short_code', assocName || bodyCode)
+          .maybeSingle()
+
+        if (assoc) verReq.association_id = assoc.id
+      }
+
+      if (needsCAC) {
+        verReq.cac_number = cacNumber.trim()
+        verReq.cac_doc_url = docUrl.trim() || null
+      }
+
+      const { error: insertErr } = await sb
+        .from('verification_requests')
+        .insert(verReq)
+
+      if (insertErr) throw new Error(insertErr.message)
+
+      await sb
+        .from('data_partners')
+        .update({ verification_status: 'pending' })
+        .eq('id', partner.id)
 
       // Log signal for admin to pick up
       fetch('/api/signals', {
@@ -1010,10 +1034,11 @@ export default function AgencyDashboard() {
             <ListingForm
               partnerId={partner.id}
               dark={dark}
-              onSuccess={() => {
+              onSuccess={(_id, meta) => {
                 loadListings(partner.id)
                 setTab('listings')
-                const hood = partner.cities?.[0] || ''
+                // Use the listing's actual neighborhood — not the agency's city
+                const hood = meta?.neighborhood || meta?.city || partner.cities?.[0] || ''
                 setTxNeighborhood(hood)
                 setShowTxPrompt(true)
               }}

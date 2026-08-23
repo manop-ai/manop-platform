@@ -23,6 +23,7 @@ lekki_property_data_template.*
 repomix-output.xml
 *.xml
 manop_ingest_cw.py
+MAPE_SCORING_GUIDE_V3.md
 
 # IDE and editor files
 .vscode/

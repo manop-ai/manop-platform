@@ -213,7 +213,7 @@ export default function DecisionPanel({ property: p, dark }: Props) {
     if (action === 'save')       { handleSave(); return }
     if (action === 'calculator') { window.open('/calculator', '_blank'); return }
     if (action === 'search')     { window.location.href = `/search?neighborhood=${encodeURIComponent(p.neighborhood || '')}`; return }
-    // 'whatsapp' deliberately removed — all contact via InquiryModal
+    if (action === 'whatsapp' || action === 'enquiry') { return }
   }
 
   // ── Loading ────────────────────────────────────────────────────────────────
@@ -342,7 +342,7 @@ export default function DecisionPanel({ property: p, dark }: Props) {
             {next.primary.label}
           </button>
 
-          {next.secondary && next.secondary.action !== 'save' && (
+          {next.secondary && next.secondary.action !== 'save' && next.secondary.action !== 'enquiry' && next.secondary.action !== 'whatsapp' && (
             <button
               onClick={() => handleAction(next.secondary!.action)}
               style={{ width: '100%', background: 'transparent', color: text2, border: `1px solid ${border}`, borderRadius: 9, padding: '0.65rem 1rem', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}

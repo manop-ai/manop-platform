@@ -1,25 +1,29 @@
-// app/api/insights/route.ts
-// Returns auto-generated market insight sentences for a neighborhood
+// app/api/insights/route.ts — FIXED v2
+// Returns market insight sentences for a neighborhood
 // GET /api/insights?slug=lekki-phase-1
+//
+// Priority:
+// 1. Live data from market_transactions + properties (verified)
+// 2. Pre-computed market_benchmarks table
+// 3. Hardcoded REAL_BENCHMARKS fallback (Lekki Phase 1 only)
+//
+// As agencies contribute transaction data, hardcoded data becomes unreachable.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { generateInsights } from '../../../lib/insights'
+import { getLiveInsights, generateInsights } from '../../../lib/insights'
 import { addCORSHeaders, handleCORSPreflight } from '../../../lib/cors'
 
-// Fetch live NGN rate (cached per request via Next.js fetch cache)
 async function getLiveNGNRate(): Promise<number> {
   try {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5s timeout
+    setTimeout(() => controller.abort(), 5000)
     const r = await fetch('https://open.er-api.com/v6/latest/USD', {
       next: { revalidate: 3600 },
       signal: controller.signal,
     })
-    clearTimeout(timeoutId)
     const d = await r.json()
     return d?.rates?.NGN || 1570
   } catch {
-    // Fallback rate if API fails (network issue in Nigeria, etc)
     return 1570
   }
 }
@@ -30,17 +34,32 @@ export async function OPTIONS() {
 
 export async function GET(req: NextRequest) {
   try {
-    const slug = req.nextUrl.searchParams.get('slug') || 'lekki-phase-1'
+    const slug    = req.nextUrl.searchParams.get('slug') || 'lekki-phase-1'
     const ngnRate = await getLiveNGNRate()
-    const insights = generateInsights(slug, ngnRate)
+
+    // Try live DB data first — falls back to hardcoded automatically
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+
+    let insights = await getLiveInsights(slug, ngnRate, supabaseUrl, supabaseKey)
+
+    // If getLiveInsights returned empty (no DB data, no hardcoded match),
+    // try generating from hardcoded as absolute last resort
+    if (!insights.length) {
+      insights = generateInsights(slug, ngnRate)
+    }
+
+    const hasLiveData = insights.some(i => !i.is_fallback)
 
     const response = NextResponse.json({
       slug,
-      ngn_rate: ngnRate,
-      count:    insights.length,
+      ngn_rate:     ngnRate,
+      count:        insights.length,
       insights,
+      data_source:  hasLiveData ? 'live' : 'fallback',
       generated_at: new Date().toISOString(),
     }, {
+      // Cache for 1 hour — live data refreshes on next cron run
       headers: { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=7200' },
     })
 

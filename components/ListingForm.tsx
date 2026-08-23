@@ -40,6 +40,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import ImageUploader from './ImageUploader'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -238,6 +239,8 @@ function MapeBar({ draft, theme }: { draft: ListingDraft; theme: typeof T }) {
   if (draft.service_charge)                   pts += MAPE.service_charge
   if (draft.size_sqm)                         pts += MAPE.size_sqm
   if (draft.description && draft.description.length > 30) pts += MAPE.description
+  // NOTE: imageUrls not accessible in MapeBar (separate component).
+  // Photo credit is shown inline in the image section below.
 
   const max  = 145
   const pct  = Math.min(100, Math.round((pts / max) * 100))
@@ -265,7 +268,7 @@ function MapeBar({ draft, theme }: { draft: ListingDraft; theme: typeof T }) {
 interface Props {
   partnerId:    string
   dark?:        boolean   // theme — matches the agency dashboard's dark prop
-  onSuccess?:   (propertyId: string) => void
+  onSuccess?:   (propertyId: string, meta?: { neighborhood?: string; city?: string }) => void
   onCancel?:    () => void
   initialData?: Partial<ListingDraft>
 }
@@ -299,6 +302,7 @@ export default function ListingForm({ partnerId, dark: darkProp, onSuccess, onCa
 
   const [draft,   setDraft]   = useState<ListingDraft>({ ...EMPTY, ...initialData })
   const [saving,  setSaving]  = useState(false)
+  const [imageUrls, setImageUrls] = useState<string[]>([])
   const [error,   setError]   = useState('')
   const [success, setSuccess] = useState('')
 
@@ -535,7 +539,7 @@ export default function ListingForm({ partnerId, dark: darkProp, onSuccess, onCa
           },
 
           description: draft.description || null,
-          images:      [],
+          images:      imageUrls,
 
           // MAPE tracking — cron reads this to award points without recomputing
           listing_mape_contribution: {
@@ -546,14 +550,15 @@ export default function ListingForm({ partnerId, dark: darkProp, onSuccess, onCa
             service_charge: draft.service_charge      ? 10 : 0,
             size:           draft.size_sqm            ? 10 : 0,
             description:    draft.description && draft.description.length > 30 ? 5 : 0,
-            photos:         0,   // updated when photos are added
+            photos:         imageUrls.length >= 5 ? MAPE.photos_5plus : Math.round(imageUrls.length / 5 * MAPE.photos_5plus),
             total_so_far:   draft.location.mape_pts
               + (draft.title_document_type ? 20 : 0)
               + (draft.agency_fee_pct      ? 15 : 0)
               + (draft.legal_fee_pct       ? 15 : 0)
               + (draft.service_charge      ? 10 : 0)
               + (draft.size_sqm            ? 10 : 0)
-              + (draft.description && draft.description.length > 30 ? 5 : 0),
+              + (draft.description && draft.description.length > 30 ? 5 : 0)
+              + (imageUrls.length >= 5 ? MAPE.photos_5plus : Math.round(imageUrls.length / 5 * MAPE.photos_5plus)),
           },
 
           listing_date:    new Date().toISOString(),
@@ -581,8 +586,12 @@ export default function ListingForm({ partnerId, dark: darkProp, onSuccess, onCa
         setDraft({ ...EMPTY })
         setGeoInput('')
         setGeoResults([])
+        setImageUrls([])
         setSuccess('')
-        if (data?.id) onSuccess?.(data.id)
+        if (data?.id) onSuccess?.(data.id, {
+          neighborhood: draft.location.neighborhood || undefined,
+          city:         cityObj?.label || undefined,
+        })
       }, 2200)
 
     } catch (e: unknown) {
@@ -858,11 +867,25 @@ export default function ListingForm({ partnerId, dark: darkProp, onSuccess, onCa
         />
       </div>
 
-      {/* Photos notice */}
-      <div style={{ background: theme.bg3, border: `1px dashed ${theme.border}`, borderRadius: 10, padding: '1rem', marginBottom: '1.5rem', textAlign: 'center' as const }}>
-        <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>📸</div>
-        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: theme.text, marginBottom: '0.25rem' }}>Minimum 5 photos for full MAPE credit</div>
-        <div style={{ fontSize: '0.68rem', color: theme.text3 }}>Add photos after saving via the Photos tab in your listing. +{MAPE.photos_5plus} MAPE pts when 5+ photos are uploaded.</div>
+      {/* Photos — upload directly during listing creation */}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <ImageUploader
+          onImagesChange={setImageUrls}
+          maxImages={10}
+          dark={isDark}
+          label="Property photos (add at least 5 for full MAPE credit)"
+          hint="JPG, PNG, or WebP — drag and drop or click to select"
+        />
+        {imageUrls.length > 0 && imageUrls.length < 5 && (
+          <div style={{ fontSize: 11, color: theme.amber, marginTop: 6 }}>
+            Add {5 - imageUrls.length} more photo{5 - imageUrls.length !== 1 ? 's' : ''} for full +{MAPE.photos_5plus} MAPE credit
+          </div>
+        )}
+        {imageUrls.length >= 5 && (
+          <div style={{ fontSize: 11, color: theme.green, marginTop: 6 }}>
+            ✓ {imageUrls.length} photos — full MAPE credit on next cron run
+          </div>
+        )}
       </div>
 
       {/* Errors / Success */}
