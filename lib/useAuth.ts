@@ -5,12 +5,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient, User } from '@supabase/supabase-js'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
+import { User } from '@supabase/supabase-js'
+import { supabase as sb } from './supabase'
 
 interface AuthState {
   user:     User | null
@@ -21,7 +17,7 @@ interface AuthState {
   associationRole: string | null
 }
 
-const ROLE_ROUTES: Record<string, string> = {
+export const ROLE_ROUTES: Record<string, string> = {
   buyer:                      '/search',
   diaspora:                   '/search',
   investor:                   '/investor/dashboard',

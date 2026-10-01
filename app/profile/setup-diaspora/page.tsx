@@ -34,7 +34,7 @@ function chip(val: string, active: boolean, color = '#14B8A6'): React.CSSPropert
 export default function SetupDiasporaPage() {
   const router = useRouter()
   const { user, checking } = useAuth()
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
 
   const [residence,  setResidence]  = useState('')
   const [currency,   setCurrency]   = useState('USD')
@@ -46,7 +46,6 @@ export default function SetupDiasporaPage() {
   const [error,      setError]      = useState('')
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 

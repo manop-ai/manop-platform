@@ -8,7 +8,7 @@
 // Everything else identical — filters, PropCard, signals, pagination
 
 import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { sb } from '../../lib/supabase/client'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { getInitialDark, listenTheme } from '../../lib/theme'
@@ -23,11 +23,6 @@ const ManopMap = dynamic(() => import('../../components/ManopMap'), {
     </div>
   ),
 })
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
 
 async function signal(type: string, meta: Record<string, unknown> = {}) {
   try {
@@ -264,7 +259,7 @@ function PropCard({ p, dark, highlighted }: { p: Property; dark: boolean; highli
 
 // ─── Main ─────────────────────────────────────────────────────
 export default function SearchPage() {
-  const [dark, setDark]             = useState(true)
+  const [dark, setDark]             = useState(getInitialDark)
   const [activeType, setActiveType] = useState('all')
   const [neighborhood, setNeigh]    = useState('')
   const [bedrooms, setBedrooms]     = useState('any')
@@ -277,7 +272,6 @@ export default function SearchPage() {
   const [highlighted, setHighlighted] = useState<string | null>(null)
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 

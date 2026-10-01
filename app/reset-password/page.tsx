@@ -7,17 +7,13 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { sb } from '../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../lib/theme'
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
 
 export default function ResetPasswordPage() {
   const router = useRouter()
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
   const [password, setPassword] = useState('')
   const [confirm,  setConfirm]  = useState('')
   const [showPass, setShowPass] = useState(false)
@@ -28,7 +24,6 @@ export default function ResetPasswordPage() {
   const [checking, setChecking] = useState(true)
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 

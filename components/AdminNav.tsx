@@ -5,20 +5,16 @@
 // Excludes the current page from options
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
 import { useRouter, usePathname } from 'next/navigation'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-)
+import { Settings, Globe, Building2, Construction, BarChart3, LayoutGrid, X, LogOut } from 'lucide-react'
+import { sb } from '../lib/supabase/client'
 
 const ALL_OPTIONS = [
-  { label: 'Admin Panel',           path: '/admin',                 icon: '⚙', roles: ['admin', 'super_admin'] },
-  { label: 'Association Dashboard', path: '/association/dashboard', icon: '🌍', roles: ['association_national_admin', 'chapter_admin', 'country_admin', 'analyst'] },
-  { label: 'Agency Dashboard',      path: '/agency/dashboard',      icon: '🏢', roles: ['agency'] },
-  { label: 'Developer Dashboard',   path: '/developer/dashboard',   icon: '🏗', roles: ['developer'] },
-  { label: 'Investor Dashboard',    path: '/investor/dashboard',    icon: '📊', roles: ['investor', 'diaspora'] },
+  { label: 'Admin Panel',           path: '/admin',                 icon: <Settings size={16} />, roles: ['admin', 'super_admin'] },
+  { label: 'Association Dashboard', path: '/association/dashboard', icon: <Globe size={16} />, roles: ['association_national_admin', 'chapter_admin', 'country_admin', 'analyst'] },
+  { label: 'Agency Dashboard',      path: '/agency/dashboard',      icon: <Building2 size={16} />, roles: ['agency'] },
+  { label: 'Developer Dashboard',   path: '/developer/dashboard',   icon: <Construction size={16} />, roles: ['developer'] },
+  { label: 'Investor Dashboard',    path: '/investor/dashboard',    icon: <BarChart3 size={16} />, roles: ['investor', 'diaspora'] },
 ]
 
 export default function AdminNav() {
@@ -80,20 +76,20 @@ export default function AdminNav() {
             {options.map(opt => (
               <button key={opt.path} className="anav-item"
                 onClick={() => { router.push(opt.path); setOpen(false) }}>
-                <span style={{fontSize:16,width:24,textAlign:'center'}}>{opt.icon}</span>
+                <span style={{width:24,display:'flex',justifyContent:'center'}}>{opt.icon}</span>
                 {opt.label}
               </button>
             ))}
             <div className="anav-div"/>
             <button className="anav-item anav-out"
               onClick={() => sb.auth.signOut().then(() => router.replace('/login'))}>
-              <span style={{fontSize:16,width:24,textAlign:'center'}}>←</span>
+              <span style={{width:24,display:'flex',justifyContent:'center'}}><LogOut size={16} /></span>
               Sign out
             </button>
           </div>
         )}
         <button className="anav-btn" onClick={() => setOpen(o => !o)} title="Switch dashboard">
-          {open ? '✕' : '⊞'}
+          {open ? <X size={20} /> : <LayoutGrid size={20} />}
         </button>
       </div>
     </>

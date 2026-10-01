@@ -7,12 +7,8 @@
 // account is still unclaimed — see relayed_to_developer_at.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SECRET_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
+import { sbAdmin as sb } from '../../../lib/supabase/admin'
+import { sendAdminNotification, notificationHtml } from '../../../lib/email'
 
 function cors(res: NextResponse): NextResponse {
   res.headers.set('Access-Control-Allow-Origin', '*')
@@ -41,6 +37,9 @@ export async function POST(req: NextRequest) {
       unit_interest,
       note,
       source = 'manop',
+      neighborhood,
+      city,
+      country_code = 'NG',
     } = body
 
     if (!developer_id) return cors(NextResponse.json({ error: 'developer_id required' }, { status: 400 }))
@@ -74,7 +73,9 @@ export async function POST(req: NextRequest) {
       return cors(NextResponse.json({ error: error.message }, { status: 500 }))
     }
 
-    // Fire-and-forget: stage log entry + activity log. Never blocks the response.
+    // Fire-and-forget: stage log entry + activity log + admin email.
+    // Never blocks the response — a slow or misconfigured email provider
+    // must never be the reason a real buyer's enquiry fails to save.
     void (async () => {
       try {
         await sb.from('lead_stage_log').insert({
@@ -85,11 +86,31 @@ export async function POST(req: NextRequest) {
           changed_by:    'system',
         })
         await sb.from('activity_log').insert({
-          event_type:  'developer_lead_created',
-          message:     `Development enquiry from ${name.trim()}`,
-          metadata:    { developer_id, project_id, is_diaspora, source },
+          event_type:      'enquiry_sent',
+          signal_category: 'demand',
+          signal_weight:   25,
+          message:         `Development enquiry from ${name.trim()}`,
+          neighborhood:    neighborhood || null,
+          city:            city || null,
+          country_code,
+          metadata:        { developer_id, project_id, is_diaspora, source, kind: 'development_enquiry' },
         })
       } catch { /* non-critical — ignore */ }
+
+      await sendAdminNotification(
+        `New development enquiry — ${name.trim()}`,
+        notificationHtml('New development enquiry', [
+          ['Name', name.trim()],
+          ['Email', email?.trim() || null],
+          ['Phone', phone?.trim() || null],
+          ['Country', country?.trim() || null],
+          ['Development', project_id],
+          ['Neighborhood', neighborhood],
+          ['City', city],
+          ['Note', note?.trim() || null],
+          ['MANOP Lead ID', data.manop_lead_id],
+        ]),
+      )
     })()
 
     return cors(NextResponse.json({ success: true, lead_id: data.id, manop_lead_id: data.manop_lead_id }))

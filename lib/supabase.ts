@@ -1,10 +1,10 @@
-// lib/supabase.ts — Manop reads from same Manop DB
-import { createClient } from '@supabase/supabase-js'
+// lib/supabase.ts — kept for backward compatibility with the 6 files
+// that already import `supabase` from here. New code should import
+// { sb } from 'lib/supabase/client' directly. This file now re-exports
+// the SAME singleton instance instead of creating a second one.
+import { sb } from './supabase/client'
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-
-export const supabase = createClient(url, key)
+export const supabase = sb
 
 export type ManopProperty = {
   id:                  string

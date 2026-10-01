@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { getInitialDark, listenTheme } from '../../lib/theme'
 import { ManopLogoSVG } from '../../components/ManopLogo'
+import { Download } from 'lucide-react'
 
 // ─── UNIT CONVENTION ─────────────────────────────────────────
 // ALL internal values are in ACTUAL NAIRA
@@ -181,6 +182,13 @@ function LoginGate({ onSuccess, dark, onClose }: { onSuccess: (email: string) =>
 
 // ─── PDF Generator ────────────────────────────────────────────
 function generatePDF(a: Analysis, userName: string) {
+  const VERDICT_ICON_SVG: Record<'viable'|'borderline'|'notviable', string> =
+    {
+      viable:     '<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>',
+      borderline: '<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+      notviable:  '<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>',
+    }
+
   // Build a clean HTML document and use browser print API
   // This produces a much cleaner PDF than canvas-based approaches
   const vs = VS[a.verdict]
@@ -340,7 +348,7 @@ function generatePDF(a: Analysis, userName: string) {
         <div class="verdict-label">Overall Assessment</div>
         <div class="verdict-badge">${VS[a.verdict].label}</div>
       </div>
-      <div class="verdict-stars">${a.verdict === 'viable' ? '✅' : a.verdict === 'borderline' ? '⚠️' : '❌'}</div>
+      <div class="verdict-stars">${VERDICT_ICON_SVG[a.verdict]}</div>
     </div>
     <div class="verdict-desc">${verdictDesc}</div>
   </div>
@@ -517,9 +525,8 @@ const LOCATIONS = [
 const PROP_TYPES = ['Apartment', 'Duplex', 'Detached house', 'Semi-detached', 'Bungalow', 'Land', 'Commercial']
 
 export default function CalculatorPage() {
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 
@@ -630,7 +637,7 @@ export default function CalculatorPage() {
       <div style={{ background: '#5B2EFF', padding: '1.5rem 1.25rem 2rem' }}>
         <div style={{ maxWidth: 680, margin: '0 auto' }}>
           <Link href="/" style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', textDecoration: 'none', display: 'block', marginBottom: 12 }}>← Manop</Link>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', marginBottom: 6 }}>Deal Analyzer v1</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', marginBottom: 6 }}>Investment Intelligence</h1>
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6, maxWidth: 480 }}>
             Is this deal viable? Enter any property and Manop analyses the numbers under cash, loan, or installment — then generates a shareable report. Less promises. More clarity.
           </p>
@@ -822,14 +829,14 @@ export default function CalculatorPage() {
 
             {/* Download button */}
             <button onClick={handleDownload} style={{ width: '100%', background: '#14B8A6', color: '#fff', border: 'none', borderRadius: 12, padding: '1rem', fontSize: '1rem', fontWeight: 700, cursor: 'pointer', marginBottom: 12, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              <span>⬇</span> Download deal report (PDF)
+              <Download size={17} /> Download deal report (PDF)
             </button>
 
             <div style={{ ...CARD, display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
               <div style={{ fontWeight: 700, color: text, fontSize: 14 }}>Find properties matching these numbers</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
                 <Link href="/search" style={{ flex: 1, background: '#5B2EFF', color: '#fff', padding: '0.6rem 1rem', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600, textAlign: 'center' as const, minWidth: 120 }}>Browse properties →</Link>
-                <Link href="/neighborhood/lekki-phase-1" style={{ flex: 1, background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: text, padding: '0.6rem 1rem', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600, textAlign: 'center' as const, minWidth: 120, border: `1px solid ${border}` }}>Lekki Ph 1 market →</Link>
+                <Link href="/markets?area=Lekki%20Phase%201" style={{ flex: 1, background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: text, padding: '0.6rem 1rem', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600, textAlign: 'center' as const, minWidth: 120, border: `1px solid ${border}` }}>Lekki Ph 1 market →</Link>
               </div>
             </div>
           </>

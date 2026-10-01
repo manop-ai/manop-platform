@@ -29,7 +29,7 @@ interface PendingPartner {
 
 export default function AdminVerificationPage() {
   const { user, role, checking } = useAuth('admin')
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
 
   const [partners, setPartners] = useState<PendingPartner[]>([])
   const [loading,  setLoading]  = useState(false)
@@ -37,7 +37,6 @@ export default function AdminVerificationPage() {
   const [msg,      setMsg]      = useState<{ id: string; text: string; ok: boolean } | null>(null)
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 

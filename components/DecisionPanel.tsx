@@ -1,45 +1,39 @@
 'use client'
 // components/DecisionPanel.tsx
 //
-// FIXES IN THIS VERSION:
+// FINANCE INTELLIGENCE PASS:
+// - decision.deal (DealAssessment/DealVerdict) is gone from lib/decision-engine —
+//   replaced by decision.market (MarketSignal), which reports facts (yield,
+//   price vs. median) with no verdict attached. Updated all field access
+//   below accordingly: decision.market.summary replaces decision.deal.headline/
+//   reasoning, and the verdict-colored "Manop verdict" card is now a neutral
+//   "Market signal" card with no suggested-offer block (that number no longer
+//   exists — it was part of the removed verdict logic).
+// - The dead 'enquiry'/'whatsapp' no-op action is gone along with the verdict
+//   branch that produced it; next.primary is now always "Run Investment
+//   Intelligence" and next.secondary is always "See similar properties".
+// - Switched from a locally-created Supabase client to the canonical
+//   singleton (lib/supabase/client.ts) — every 'use client' component should
+//   import { sb } from there rather than calling createClient() itself.
 //
-// FIX 1 — Pattern 3: fetchAgentTrustLevel not exported from lib/decision-engine
-//   Defined locally. Importing it from decision-engine breaks the build.
-//
-// FIX 2 — Pattern 1: .catch() on PromiseLike in watchlist useEffect
-//   Converted to async inner function + try/catch.
-//
-// FIX 3 (new errors) — PropertyDecision field mapping
-//   My previous rewrite destructured fields that do not exist on PropertyDecision.
-//   The actual interface from lib/decision-engine.ts:
-//
-//   interface PropertyDecision {
-//     trust:       TrustSignal       ← trust.level, trust.label, trust.color, trust.score, trust.explanation
-//     deal:        DealAssessment    ← deal.verdict, deal.label, deal.color, deal.headline, deal.reasoning
-//     next:        NextStep          ← next.primary, next.secondary, next.message
-//     demandScore: number
-//     demandLabel: string
-//     signals:     string[]
-//     confidence:  number            ← engine confidence 0-100 (NOT engineConfidence)
-//   }
-//
-//   WRONG (what I wrote):   decision.verdict, decision.priceVsMedian, decision.engineConfidence, decision.reasoning
-//   CORRECT (what exists):  decision.deal.verdict, decision.deal.reasoning, decision.confidence
-//
-//   All field accesses corrected below.
+// Trust scoring (trust.level/label/color/score/explanation) is UNCHANGED —
+// that part of the decision engine is being handled separately.
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { LineChart, Search, Bookmark, BookmarkCheck, ArrowRight, Check } from 'lucide-react'
+import { sb } from '../lib/supabase/client'
 import { buildPropertyDecision } from '../lib/decision-engine'
-import type { PropertyDecision, DealVerdict } from '../lib/decision-engine'
+import type { PropertyDecision, NextStepIcon } from '../lib/decision-engine'
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
+// Maps decision-engine's icon keys to real components — engine stays
+// framework-agnostic (no JSX import there), UI stays glyph-free here.
+const NEXT_STEP_ICONS: Record<NextStepIcon, typeof LineChart> = {
+  investment: LineChart,
+  search: Search,
+}
 
-// ── FIX 1: Local definition — NOT imported from lib/decision-engine ───────────
-// decision-engine does not export fetchAgentTrustLevel. Importing it = build fail.
+// ── Local definition — NOT imported from lib/decision-engine ───────────
+// decision-engine does not export fetchAgentTrustLevel.
 async function fetchAgentTrustLevel(agencyName: string | null | undefined): Promise<string | null> {
   if (!agencyName) return null
   try {
@@ -78,30 +72,6 @@ interface Property {
 interface Props {
   property: Property
   dark:     boolean
-}
-
-const VERDICT_ICONS: Record<DealVerdict, string> = {
-  buy:         '✓',
-  negotiate:   '↔',
-  watch:       '◎',
-  wait:        '⏳',
-  investigate: '?',
-}
-
-const VERDICT_COLOR: Record<DealVerdict, string> = {
-  buy:         '#22C55E',
-  negotiate:   '#14B8A6',
-  watch:       '#F59E0B',
-  wait:        '#EF4444',
-  investigate: '#7C5FFF',
-}
-
-const VERDICT_LABEL: Record<DealVerdict, string> = {
-  buy:         'Buy signal',
-  negotiate:   'Negotiate',
-  watch:       'Watch it',
-  wait:        'Hold off',
-  investigate: 'Investigate',
 }
 
 export default function DecisionPanel({ property: p, dark }: Props) {
@@ -197,7 +167,7 @@ export default function DecisionPanel({ property: p, dark }: Props) {
         }
       }
       setSaved(true)
-      setSaveMsg(session?.user ? '✓ Saved to your watchlist' : '✓ Saved — sign in to sync across devices')
+      setSaveMsg(session?.user ? 'Saved to your watchlist' : 'Saved — sign in to sync across devices')
       setTimeout(() => setSaveMsg(''), 3000)
     } catch (err) {
       console.error('[DecisionPanel] handleSave:', err)
@@ -211,9 +181,8 @@ export default function DecisionPanel({ property: p, dark }: Props) {
   // ── Actions ────────────────────────────────────────────────────────────────
   function handleAction(action: string) {
     if (action === 'save')       { handleSave(); return }
-    if (action === 'calculator') { window.open('/calculator', '_blank'); return }
+    if (action === 'investment-intelligence') { window.open('/calculator', '_blank'); return }
     if (action === 'search')     { window.location.href = `/search?neighborhood=${encodeURIComponent(p.neighborhood || '')}`; return }
-    if (action === 'whatsapp' || action === 'enquiry') { return }
   }
 
   // ── Loading ────────────────────────────────────────────────────────────────
@@ -225,65 +194,31 @@ export default function DecisionPanel({ property: p, dark }: Props) {
     </div>
   )
 
-  // FIX 3: Access the correct field paths on PropertyDecision
-  // decision.deal.verdict   NOT decision.verdict
-  // decision.deal.reasoning NOT decision.reasoning
-  // decision.confidence     NOT decision.engineConfidence
-  // decision.trust          (correct)
-  // decision.signals        (correct)
-  // decision.next           (correct)
-  const { trust, deal, next, signals, confidence: engineConf } = decision
-  const verdict = deal.verdict
-  const vc = VERDICT_COLOR[verdict]
+  const { trust, market, next, signals, confidence: engineConf } = decision
+  const mc = '#14B8A6' // neutral market-signal accent — no verdict color scale anymore
 
   return (
     <div style={{ marginBottom: '1rem' }}>
 
-      {/* ── VERDICT CARD ── */}
-      <div style={{ background: bg3, border: `1.5px solid ${vc}30`, borderRadius: 14, padding: '1.25rem 1.5rem', marginBottom: '0.875rem' }}>
+      {/* ── MARKET SIGNAL CARD ── */}
+      <div style={{ background: bg3, border: `1.5px solid ${mc}30`, borderRadius: 14, padding: '1.25rem 1.5rem', marginBottom: '0.875rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.875rem' }}>
-          <div>
-            <div style={{ fontSize: '0.58rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: '0.35rem' }}>
-              Manop verdict
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 7, background: `${vc}18`, border: `1px solid ${vc}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: vc, fontWeight: 700 }}>
-                {VERDICT_ICONS[verdict]}
-              </div>
-              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: vc, letterSpacing: '-0.02em' }}>
-                {VERDICT_LABEL[verdict]}
-              </div>
-            </div>
+          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em' }}>
+            Market signal
           </div>
           <div style={{ textAlign: 'right' as const }}>
             <div style={{ fontSize: '0.58rem', color: text3, marginBottom: 4 }}>Confidence</div>
             <div style={{ width: 42, height: 4, background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)', borderRadius: 2, overflow: 'hidden', marginLeft: 'auto' }}>
-              <div style={{ height: '100%', width: `${engineConf}%`, background: vc, borderRadius: 2 }} />
+              <div style={{ height: '100%', width: `${engineConf}%`, background: mc, borderRadius: 2 }} />
             </div>
-            <div style={{ fontSize: '0.6rem', color: vc, marginTop: 3, fontWeight: 600 }}>{engineConf}%</div>
+            <div style={{ fontSize: '0.6rem', color: mc, marginTop: 3, fontWeight: 600 }}>{engineConf}%</div>
           </div>
         </div>
 
-        {/* Deal headline */}
-        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: vc, marginBottom: '0.5rem', lineHeight: 1.4 }}>
-          {deal.headline}
-        </div>
-
-        {/* deal.reasoning — correct field path */}
+        {/* market.summary — neutral, descriptive, no verdict */}
         <div style={{ fontSize: '0.78rem', color: text2, lineHeight: 1.65 }}>
-          {deal.reasoning}
+          {market.summary}
         </div>
-
-        {/* Suggested offer if available */}
-        {deal.suggested_offer && (
-          <div style={{ marginTop: '0.75rem', background: dark ? 'rgba(20,184,166,0.06)' : 'rgba(20,184,166,0.04)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: 8, padding: '0.6rem 0.875rem' }}>
-            <div style={{ fontSize: '0.6rem', color: '#14B8A6', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 3 }}>Suggested offer</div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#14B8A6' }}>
-              ₦{(deal.suggested_offer / 1_000_000).toFixed(0)}M
-              {deal.yield_at_offer && <span style={{ fontSize: '0.75rem', fontWeight: 400, marginLeft: 8, color: text2 }}>→ {deal.yield_at_offer}% yield</span>}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── TRUST SIGNAL ── */}
@@ -317,7 +252,7 @@ export default function DecisionPanel({ property: p, dark }: Props) {
           </div>
           {signals.map((s, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: '0.78rem', color: text2, marginBottom: i < signals.length - 1 ? 5 : 0 }}>
-              <span style={{ color: '#14B8A6', flexShrink: 0, marginTop: 1 }}>→</span>
+              <ArrowRight size={13} style={{ color: '#14B8A6', flexShrink: 0, marginTop: 2 }} />
               <span>{s}</span>
             </div>
           ))}
@@ -338,16 +273,16 @@ export default function DecisionPanel({ property: p, dark }: Props) {
             onClick={() => handleAction(next.primary.action)}
             style={{ width: '100%', background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 9, padding: '0.7rem 1rem', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
           >
-            <span>{next.primary.icon}</span>
+            {(() => { const Icon = NEXT_STEP_ICONS[next.primary.icon]; return <Icon size={15} /> })()}
             {next.primary.label}
           </button>
 
-          {next.secondary && next.secondary.action !== 'save' && next.secondary.action !== 'enquiry' && next.secondary.action !== 'whatsapp' && (
+          {next.secondary && next.secondary.action !== 'save' && (
             <button
               onClick={() => handleAction(next.secondary!.action)}
               style={{ width: '100%', background: 'transparent', color: text2, border: `1px solid ${border}`, borderRadius: 9, padding: '0.65rem 1rem', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
             >
-              <span>{next.secondary.icon}</span>
+              {(() => { const Icon = NEXT_STEP_ICONS[next.secondary.icon]; return <Icon size={15} /> })()}
               {next.secondary.label}
             </button>
           )}
@@ -372,11 +307,15 @@ export default function DecisionPanel({ property: p, dark }: Props) {
                 <div style={{ width: 12, height: 12, border: '2px solid rgba(245,158,11,0.3)', borderTopColor: '#F59E0B', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
                 Saving…
               </>
-            ) : saved ? '✓ Saved to watchlist' : '🔖 Save to watchlist'}
+            ) : saved ? (
+              <><BookmarkCheck size={14} /> Saved to watchlist</>
+            ) : (
+              <><Bookmark size={14} /> Save to watchlist</>
+            )}
           </button>
 
           {saveMsg && (
-            <div style={{ fontSize: '0.7rem', color: saveMsg.startsWith('✓') ? '#22C55E' : '#EF4444', textAlign: 'center' as const, lineHeight: 1.5 }}>
+            <div style={{ fontSize: '0.7rem', color: saveMsg.toLowerCase().startsWith('saved') ? '#22C55E' : '#EF4444', textAlign: 'center' as const, lineHeight: 1.5 }}>
               {saveMsg}
             </div>
           )}
@@ -385,9 +324,9 @@ export default function DecisionPanel({ property: p, dark }: Props) {
 
       {/* ── DISCLAIMER ── */}
       <div style={{ fontSize: '0.62rem', color: text3, lineHeight: 1.6, padding: '0 0.25rem' }}>
-        Verdict computed by Manop intelligence engine from verified listing data.
-        {engineConf < 70 && ' Limited data for this area — treat as guidance, not financial advice.'}
-        {' '}Always conduct independent due diligence before transacting.
+        Signals computed by Manop intelligence engine from verified listing data — not a recommendation.
+        {engineConf < 70 && ' Limited data for this area — treat as indicative.'}
+        {' '}Always conduct independent due diligence, and run Investment Intelligence with your own numbers before transacting.
       </div>
 
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>

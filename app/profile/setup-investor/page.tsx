@@ -43,7 +43,7 @@ const BUDGET_RANGES = [
 ]
 
 export default function SetupInvestorPage() {
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
   const router = useRouter()
 
   const [country, setCountry]           = useState('')
@@ -58,7 +58,6 @@ export default function SetupInvestorPage() {
   const [error, setError]               = useState('')
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 
@@ -117,6 +116,21 @@ export default function SetupInvestorPage() {
       if (!user) throw new Error('Not authenticated')
 
       const budget = BUDGET_RANGES.find(b => b.label === budgetLabel)
+
+      // FIX: investor_profiles.user_id has a foreign key to user_profiles(id),
+      // not directly to auth.users(id). If this investor never got a
+      // user_profiles row created (e.g. depending on how they signed up),
+      // the write below fails with "violates foreign key constraint
+      // investor_profiles_user_id_fkey". Ensure that row exists first —
+      // upsert is safe to run even if it already does.
+      const { error: profileErr } = await sb.from('user_profiles').upsert({
+        id:         user.id,
+        email:      user.email,
+        user_role:  'investor',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' })
+
+      if (profileErr) throw new Error(profileErr.message)
 
       const { error: err } = await sb.from('investor_profiles').upsert({
         user_id:           user.id,

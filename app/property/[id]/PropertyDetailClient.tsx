@@ -77,14 +77,13 @@ function IntelRow({ label, value, sub, color, border }: {
 }
 
 export default function PropertyDetailClient({ property: p, liveNGNRate, rateSource, rateFetchedAt }: Props) {
-  const [dark, setDark]               = useState(true)
+  const [dark, setDark]               = useState(getInitialDark)
   const [imgIdx, setImgIdx]           = useState(0)
   const [agencyName, setAgencyName]   = useState<string | null>(null)
   const [agencyBadge, setAgencyBadge] = useState<string | null>(null)
   const [showFinancing, setShowFinancing] = useState(false)
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 

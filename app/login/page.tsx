@@ -10,14 +10,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { sb } from '../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../lib/theme'
 import { ManopLogoSVG } from '../../components/ManopLogo'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
 
 // Role → dashboard URL map
 // Association roles are resolved dynamically (DB check), not from metadata
@@ -64,29 +59,40 @@ async function resolveRedirect(userId: string, metaRole: string): Promise<string
 
 export default function LoginPage() {
   const router = useRouter()
-  const [dark,      setDark]      = useState(true)
-  const [email,     setEmail]     = useState('')
-  const [password,  setPassword]  = useState('')
-  const [showPass,  setShowPass]  = useState(false)
-  const [loading,   setLoading]   = useState(false)
-  const [error,     setError]     = useState('')
+  const [dark, setDark] = useState(getInitialDark)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [resetMode, setResetMode] = useState(false)
   const [resetSent, setResetSent] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 
   // If already logged in, redirect immediately
   useEffect(() => {
+    let cancelled = false
+
     sb.auth.getSession().then(async ({ data: { session } }) => {
+      if (cancelled) return
+
       if (session?.user) {
         const metaRole = session.user.user_metadata?.user_role || 'buyer'
         const dest = await resolveRedirect(session.user.id, metaRole)
-        router.replace(dest)
+        if (!cancelled) router.replace(dest)
+        return
       }
+
+      if (!cancelled) setCheckingSession(false)
+    }).catch(() => {
+      if (!cancelled) setCheckingSession(false)
     })
+
+    return () => { cancelled = true }
   }, [router])
 
   const bg     = dark ? '#0F172A' : '#F8FAFC'
@@ -159,6 +165,8 @@ export default function LoginPage() {
       setLoading(false)
     }
   }
+
+  if (checkingSession) return null
 
   if (resetSent) return (
     <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>

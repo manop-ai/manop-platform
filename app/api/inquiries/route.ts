@@ -5,13 +5,8 @@
 // via a separate Promise chain, not chained directly on the Supabase builder.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-// Use service key so RLS doesn't block inserts from anon buyers
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SECRET_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
+import { sbAdmin as sb } from '../../../lib/supabase/admin'
+import { sendAdminNotification, notificationHtml } from '../../../lib/email'
 
 function cors(res: NextResponse): NextResponse {
   res.headers.set('Access-Control-Allow-Origin', '*')
@@ -43,7 +38,6 @@ export async function POST(req: NextRequest) {
       return cors(NextResponse.json({ error: 'message required' }, { status: 400 }))
     }
 
-    // Resolve agency_id from property if not provided
     let resolvedAgencyId = agency_id || null
     if (!resolvedAgencyId && property_id) {
       const { data: prop } = await sb
@@ -73,8 +67,6 @@ export async function POST(req: NextRequest) {
       return cors(NextResponse.json({ error: error.message }, { status: 500 }))
     }
 
-    // Fire-and-forget activity log — wrapped in void + async IIFE
-    // so it never blocks the response and never throws a build error
     void (async () => {
       try {
         await sb.from('activity_log').insert({
@@ -85,6 +77,18 @@ export async function POST(req: NextRequest) {
           metadata:    { inquiry_type, has_email: !!buyer_email },
         })
       } catch { /* non-critical — ignore */ }
+
+      await sendAdminNotification(
+        `New inquiry — ${buyer_name.trim()}`,
+        notificationHtml('New inquiry', [
+          ['Name', buyer_name.trim()],
+          ['Email', buyer_email?.trim() || null],
+          ['Type', inquiry_type],
+          ['Property', property_id],
+          ['Agency', resolvedAgencyId],
+          ['Message', message.trim()],
+        ]),
+      )
     })()
 
     return cors(NextResponse.json({ success: true, inquiry_id: data.id }))
@@ -101,6 +105,36 @@ export async function GET(req: NextRequest) {
   const agencyId = req.nextUrl.searchParams.get('agency_id')
   if (!agencyId) {
     return cors(NextResponse.json({ error: 'agency_id required' }, { status: 400 }))
+  }
+
+  // SECURITY FIX: this endpoint previously returned any agency's buyer
+  // inquiries (names, emails, messages) to anyone who knew or guessed
+  // an agency_id — no authentication was performed at all. Nothing in
+  // the app currently calls this route (grep confirms it's unused —
+  // only POST is wired up in InquiryModal.tsx), so requiring auth here
+  // cannot break an existing caller; it just closes an open PII leak
+  // before anything starts depending on it.
+  const authHeader = req.headers.get('authorization') || ''
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+  if (!token) {
+    return cors(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+  }
+
+  const { data: userData, error: userErr } = await sb.auth.getUser(token)
+  if (userErr || !userData?.user) {
+    return cors(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+  }
+
+  const { data: partner } = await sb
+    .from('data_partners')
+    .select('id')
+    .eq('auth_user_id', userData.user.id)
+    .eq('id', agencyId)
+    .maybeSingle()
+
+  if (!partner) {
+    return cors(NextResponse.json({ error: 'Forbidden' }, { status: 403 }))
   }
 
   const { data, error } = await sb

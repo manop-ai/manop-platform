@@ -6,12 +6,7 @@
 // This feeds the intelligence layer — separate from listings
 
 import { useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
+import { sb } from '../lib/supabase/client'
 
 const NEIGHBORHOODS = [
   'Lekki Phase 1','Lekki Phase 2','Ikoyi','Victoria Island',

@@ -5,15 +5,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { sb } from '../../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
 import { ManopLogoSVG } from '@/components/ManopLogo'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
 
 const CITIES = ['Lagos', 'Abuja', 'Port Harcourt', 'Accra', 'Nairobi', 'Kano', 'Ibadan', 'Other']
 const PROJECT_SCALES = ['1–5 units', '6–20 units', '21–100 units', '100+ units']
@@ -27,7 +22,7 @@ const LBL: React.CSSProperties = {
 export default function DeveloperOnboardPage() {
   const router = useRouter()
   const { user, checking } = useAuth('developer')
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
 
   const [companyName,   setCompanyName]   = useState('')
   const [contactName,   setContactName]   = useState('')
@@ -42,7 +37,6 @@ export default function DeveloperOnboardPage() {
   const [error,         setError]         = useState('')
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 
@@ -83,11 +77,60 @@ export default function DeveloperOnboardPage() {
 
     setSaving(true)
     try {
+      const cleanEmail = email.trim().toLowerCase()
+
+      // ── Claim step ────────────────────────────────────────────
+      // If MANOP already created an unclaimed record for this developer
+      // (admin-sourced, no login yet), find it by email BEFORE deciding
+      // whether to update-by-auth_user_id or insert new — otherwise a
+      // real developer's own signup creates a duplicate account instead
+      // of attaching to the one with real due-diligence data on it.
+      const { data: unclaimedMatch } = await sb.from('developer_accounts')
+        .select('id')
+        .eq('account_status', 'unclaimed')
+        .is('auth_user_id', null)
+        .ilike('email', cleanEmail)
+        .maybeSingle()
+
+      if (unclaimedMatch) {
+        const { error: claimErr } = await sb.from('developer_accounts')
+          .update({
+            auth_user_id:   user.id,
+            account_status: 'claimed',
+            company_name:   companyName.trim(),
+            contact_name:   contactName.trim(),
+            email:          cleanEmail,
+            phone:          phone.trim() || null,
+            website:        website.trim() || null,
+            description:    description.trim() || null,
+            cities,
+            project_scale:  projectScale || null,
+            active:         true,
+            updated_at:     new Date().toISOString(),
+          })
+          .eq('id', unclaimedMatch.id)
+
+        if (claimErr) throw new Error(claimErr.message)
+
+        fetch('/api/signals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            signal_type: 'developer_account_claimed',
+            metadata: { company: companyName.trim() },
+          }),
+        }).catch(() => {})
+
+        router.replace('/developer/dashboard')
+        return
+      }
+
+      // ── No unclaimed match — existing update-or-insert path ────
       const { data: updated, error: updateErr } = await sb.from('developer_accounts')
         .update({
           company_name:   companyName.trim(),
           contact_name:   contactName.trim(),
-          email:          email.trim().toLowerCase(),
+          email:          cleanEmail,
           phone:          phone.trim() || null,
           website:        website.trim() || null,
           description:    description.trim() || null,
@@ -109,7 +152,7 @@ export default function DeveloperOnboardPage() {
           auth_user_id:   user.id,
           company_name:   companyName.trim(),
           contact_name:   contactName.trim(),
-          email:          email.trim().toLowerCase(),
+          email:          cleanEmail,
           phone:          phone.trim() || null,
           website:        website.trim() || null,
           description:    description.trim() || null,
@@ -117,6 +160,7 @@ export default function DeveloperOnboardPage() {
           project_scale:  projectScale || null,
           active:         true,
           verified:       false,
+          account_status: 'claimed',
           created_at:     new Date().toISOString(),
         })
         if (insertErr) throw new Error(insertErr.message)
@@ -150,7 +194,6 @@ export default function DeveloperOnboardPage() {
     <div style={{ background: bg, minHeight: '100vh', color: text }}>
       <div style={{ maxWidth: 580, margin: '0 auto', padding: '2rem 1rem 5rem' }}>
 
-        {/* LOGO — real SVG, not the purple M square */}
         <Link href="/" style={{ display: 'inline-flex', textDecoration: 'none', marginBottom: '2.5rem' }}>
           <ManopLogoSVG height={80} dark={dark} showText />
         </Link>

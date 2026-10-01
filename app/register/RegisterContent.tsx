@@ -15,14 +15,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { sb } from '../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../lib/theme'
 import ManopLogo from '../../components/ManopLogo'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
 
 type AccountType = 'buyer' | 'diaspora' | 'agency' | 'developer'
 
@@ -36,7 +31,7 @@ const ACCOUNT_TYPES: { key: AccountType; label: string; sub: string; icon: strin
 export default function RegisterContent() {
   const router       = useRouter()
   const params       = useSearchParams()
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
   const [step, setStep] = useState<1 | 2>(1)
   const [type, setType] = useState<AccountType | null>(
     (params.get('type') as AccountType | null) || null
@@ -54,7 +49,6 @@ export default function RegisterContent() {
   const [done,   setDone]     = useState(false)
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 

@@ -11,10 +11,13 @@ interface Props {
   developerId: string
   projectId:   string
   unitTypeId?: string | null
+  neighborhood?: string | null
+  city?: string | null
+  countryCode?: string
   dark:        boolean
 }
 
-export default function DevelopmentEnquiryModal({ developerId, projectId, unitTypeId, dark }: Props) {
+export default function DevelopmentEnquiryModal({ developerId, projectId, unitTypeId, neighborhood, city, countryCode = 'NG', dark }: Props) {
   const [open,     setOpen]     = useState(false)
   const [name,     setName]     = useState('')
   const [email,    setEmail]    = useState('')
@@ -60,6 +63,9 @@ export default function DevelopmentEnquiryModal({ developerId, projectId, unitTy
           is_diaspora:   country.trim().length > 0,
           note:          note.trim() || null,
           source:        'manop_development_page',
+          neighborhood:  neighborhood || null,
+          city:          city || null,
+          country_code:  countryCode,
         }),
       })
       const data = await res.json()

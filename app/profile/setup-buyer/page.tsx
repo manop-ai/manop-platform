@@ -34,7 +34,7 @@ function chip(val: string, active: boolean, color = '#5B2EFF'): React.CSSPropert
 export default function SetupBuyerPage() {
   const router = useRouter()
   const { user, checking } = useAuth()
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
 
   const [city,     setCity]     = useState('')
   const [budget,   setBudget]   = useState('')
@@ -44,7 +44,6 @@ export default function SetupBuyerPage() {
   const [error,    setError]    = useState('')
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 

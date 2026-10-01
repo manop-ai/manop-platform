@@ -14,14 +14,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { sb } from '../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../lib/theme'
 import { ManopLogoSVG } from '../../components/ManopLogo'
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
 
 const SETUP_ROUTES: Record<string, string> = {
   buyer:     '/profile/setup-buyer',
@@ -32,12 +28,11 @@ const SETUP_ROUTES: Record<string, string> = {
 
 export default function VerifyPage() {
   const router = useRouter()
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
   const [status, setStatus] = useState<'checking' | 'routing' | 'error'>('checking')
   const [errorMsg, setErrorMsg] = useState('')
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 

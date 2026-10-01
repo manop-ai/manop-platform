@@ -21,7 +21,7 @@ const COLS = [
     links: [
       { label: 'Search properties',   href: '/search'     },
       { label: 'Market intelligence', href: '/markets'    },
-      { label: 'Investment calculator', href: '/calculator' },
+      { label: 'Investment Intelligence', href: '/calculator' },
       { label: 'Neighborhood data',   href: '/markets'    },
     ],
   },
@@ -37,10 +37,8 @@ const COLS = [
   {
     heading: 'Markets',
     links: [
-      { label: 'Lagos',   href: '/neighborhood/lekki-phase-1' },
-      { label: 'Abuja',   href: '/neighborhood/maitama'       },
-      { label: 'Accra',   href: '/neighborhood/east-legon'    },
-      { label: 'Nairobi', href: '/neighborhood/westlands'     },
+      { label: 'Lagos',   href: '/markets?area=Lekki%20Phase%201' },
+      { label: 'Accra',   href: '/markets?area=East%20Legon'      },
     ],
   },
   {
@@ -54,10 +52,9 @@ const COLS = [
 ]
 
 export default function ManopFooter() {
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 
@@ -82,9 +79,14 @@ export default function ManopFooter() {
           <p style={{ fontSize: '0.78rem', color: text2, lineHeight: 1.75, maxWidth: 240, margin: '0 0 1.25rem' }}>
             The intelligence and trust platform for African real estate. Verified data, agency trust scores, and market benchmarks across Lagos, Abuja, Accra, and Nairobi.
           </p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {['🇳🇬', '🇬🇭', '🇰🇪'].map(flag => (
-              <span key={flag} style={{ fontSize: '1.1rem' }}>{flag}</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['NG', 'GH', 'KE'].map(code => (
+              <span key={code} style={{
+                fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.04em',
+                padding: '3px 7px', borderRadius: 5,
+                color: text2, background: dark ? 'rgba(248,250,252,0.06)' : 'rgba(15,23,42,0.05)',
+                border: `1px solid ${dark ? 'rgba(248,250,252,0.1)' : 'rgba(15,23,42,0.08)'}`,
+              }}>{code}</span>
             ))}
           </div>
         </div>

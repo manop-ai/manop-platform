@@ -1,29 +1,23 @@
 'use client'
-// app/agency/dashboard/page.tsx — FIXED
+// app/agency/dashboard/page.tsx
 //
-// FIXES IN THIS VERSION:
-// 1. Added missing state: showTxPrompt, txNeighborhood (TS2304 errors)
-// 2. Moved TransactionPromptModal outside the tab === 'add' div
-//    so it renders as a full-screen overlay correctly
-// 3. Added association membership number to VerificationTab
-//    (AEAN pilot: agencies submit their association number for verification)
-// 4. Replaced purple M square in top bar with ManopLogoSVG
+// Agencies no longer post resale listings. Every tab here is built
+// around what they actually bring MANOP: developments and land/
+// redevelopment opportunities under mandate, leads on those
+// submissions, and transaction data. See the "Developments" and
+// "Site Intelligence" sections below for the reasoning behind each.
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
-import ImageUploader from '../../../components/ImageUploader'
-import ListingForm from '../../../components/ListingForm'
 import TransactionPromptModal from '../../../components/TransactionPromptModal'
 import { ManopLogoSVG } from '../../../components/ManopLogo'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
+import ManopLoader from '../../../components/ManopLoader'
+import ImageUploader from '../../../components/ImageUploader'
+import { ExternalLink, Plus, Trash2, Building2, Circle, BadgeCheck, ShieldCheck, Star, Clock, Mail, CheckCircle2, type LucideIcon } from 'lucide-react'
+import { supabase as sb } from '../../../lib/supabase'
 
 // ─── Neighbourhood → [lng, lat] centre coords ─────────────────
 const HOOD_COORDS: Record<string, [number, number]> = {
@@ -74,11 +68,6 @@ function getCoords(neighborhood: string, city: string): { lat: number; lng: numb
   return null
 }
 
-function parseMillion(val: string): number | null {
-  const n = parseFloat(val)
-  return isNaN(n) || n <= 0 ? null : Math.round(n * 1_000_000)
-}
-
 function fmtNGN(n: number | null): string {
   if (!n) return '—'
   if (n >= 1e9) return `₦${(n / 1e9).toFixed(1)}B`
@@ -94,21 +83,39 @@ interface Partner {
   trust_level: string | null; partner_type: string | null
 }
 
-interface Listing {
-  id: string; neighborhood: string | null; city: string | null
-  property_type: string | null; listing_type: string | null
-  bedrooms: number | null; bathrooms: number | null
-  price_local: number | null; price_usd: number | null
-  confidence: number | null; created_at: string | null; raw_data: unknown
+// A development the agency submitted or was assigned — NOT a resale
+// listing. Agencies no longer post resale properties; every development
+// they touch flows through developer_projects, same as MANOP-sourced ones.
+interface Development {
+  id: string; name: string; neighborhood: string | null; city: string | null
+  state: string | null; country_code: string | null
+  stage: string | null; total_units: number | null; handover_date: string | null
+  description: string | null; images: string[] | null; video_urls: string[] | null
+  mandate_type: string | null; mandate_document_url: string | null
+  fee_model: string | null; agency_fee_share_pct: number | null
+  publish_status: string; reviewed_at: string | null
 }
 
-type Tab = 'overview' | 'listings' | 'add' | 'leads' | 'transactions' | 'verify' | 'settings'
+interface Lead {
+  id: string; name: string; phone: string | null; email: string | null
+  stage: string; created_at: string; project_id: string
+  project_name?: string
+  source: string | null      // 'manop_financing_developer_plan' flags a buyer
+  budget_usd: number | null  // who chose Developer Installment Plan — see Finance tab
+}
 
-const BADGE_CONFIG: Record<string, { label: string; icon: string; color: string; bg: string; border: string }> = {
-  listed:   { label: 'Listed',   icon: '◎', color: '#94A3B8', bg: 'rgba(148,163,184,0.1)',  border: 'rgba(148,163,184,0.25)' },
-  verified: { label: 'Verified', icon: '◇', color: '#60A5FA', bg: 'rgba(96,165,250,0.1)',   border: 'rgba(96,165,250,0.25)' },
-  trust:    { label: 'Trust',    icon: '◈', color: '#14B8A6', bg: 'rgba(20,184,166,0.1)',   border: 'rgba(20,184,166,0.25)' },
-  elite:    { label: 'Elite',    icon: '★', color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',   border: 'rgba(245,158,11,0.25)' },
+interface Txn {
+  id: string; neighborhood: string; city: string; sold_price: number
+  verification_status: string; sold_at: string
+}
+
+type Tab = 'overview' | 'developments' | 'leads' | 'finance' | 'transactions' | 'verify' | 'settings'
+
+const BADGE_CONFIG: Record<string, { label: string; icon: LucideIcon; color: string; bg: string; border: string }> = {
+  listed:   { label: 'Listed',   icon: Circle,     color: '#94A3B8', bg: 'rgba(148,163,184,0.1)',  border: 'rgba(148,163,184,0.25)' },
+  verified: { label: 'Verified', icon: BadgeCheck, color: '#60A5FA', bg: 'rgba(96,165,250,0.1)',   border: 'rgba(96,165,250,0.25)' },
+  trust:    { label: 'Trust',    icon: ShieldCheck,color: '#14B8A6', bg: 'rgba(20,184,166,0.1)',   border: 'rgba(20,184,166,0.25)' },
+  elite:    { label: 'Elite',    icon: Star,       color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',   border: 'rgba(245,158,11,0.25)' },
 }
 
 const NEIGHBORHOODS = [
@@ -120,9 +127,6 @@ const NEIGHBORHOODS = [
   'East Legon','Cantonments','Labone','Airport Residential','North Legon','Roman Ridge','Dzorwulu','Osu',
   'Westlands','Karen','Kilimani','Parklands','Muthaiga','Lavington','Kileleshwa','Langata',
 ]
-
-const PROP_TYPES  = ['Apartment','Duplex','Bungalow','Terraced House','Semi-Detached','Detached House','Land','Commercial','Penthouse','Studio']
-const TITLE_DOCS  = ['C of O','Governor\'s Consent','Deed of Assignment','Excision','Freehold Title','Gazette','Right of Occupancy','Survey Plan']
 
 const PROFESSIONAL_BODIES = [
   { code: 'NIESV',    label: 'NIESV',     full: 'Nigerian Institution of Estate Surveyors and Valuers' },
@@ -269,10 +273,10 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
 
   if (vStatus === 'verified') return (
     <div style={{ background: bg3, border: '1px solid rgba(20,184,166,0.3)', borderRadius: 14, padding: '2rem', textAlign: 'center' as const }}>
-      <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>◇</div>
+      <BadgeCheck size={40} color="#14B8A6" style={{ marginBottom: '1rem' }} />
       <div style={{ fontSize: 16, fontWeight: 700, color: '#14B8A6', marginBottom: 8 }}>Verified</div>
       <div style={{ fontSize: 13, color: text2, lineHeight: 1.6, maxWidth: 360, margin: '0 auto' }}>
-        Your agency is verified on Manop. The Verified badge is visible on all your listings.
+        Your agency is verified on Manop. The Verified badge is visible on everything you submit.
         Keep building your MAPE score to reach Trust and Elite.
       </div>
     </div>
@@ -280,7 +284,7 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
 
   if (vStatus === 'pending' || submitted) return (
     <div style={{ background: bg3, border: '1px solid rgba(245,158,11,0.3)', borderRadius: 14, padding: '2rem', textAlign: 'center' as const }}>
-      <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', fontSize: '1.5rem' }}>⏱</div>
+      <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}><Clock size={22} color="#F59E0B" /></div>
       <div style={{ fontSize: 16, fontWeight: 700, color: '#F59E0B', marginBottom: 8 }}>Under review — 24–48 hours</div>
       <div style={{ fontSize: 13, color: text2, lineHeight: 1.6 }}>
         Questions? <span style={{ color: '#14B8A6' }}>partners@manopintel.com</span>
@@ -297,13 +301,13 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[
-            { icon: '◇', label: 'Verified badge on all listings',      color: '#60A5FA' },
-            { icon: '↑', label: '+40 MAPE Ethics points',               color: '#22C55E' },
-            { icon: '✓', label: 'Unlimited listings (removes 3 cap)',   color: '#5B2EFF' },
-            { icon: '◈', label: 'Eligible for Trust and Elite badges',  color: '#F59E0B' },
+            { icon: BadgeCheck, label: 'Verified badge on all submissions',      color: '#60A5FA' },
+            { icon: CheckCircle2, label: '+40 MAPE Ethics points',              color: '#22C55E' },
+            { icon: Clock,      label: 'Faster review turnaround',              color: '#5B2EFF' },
+            { icon: ShieldCheck,label: 'Eligible for Trust and Elite badges',   color: '#F59E0B' },
           ].map(w => (
             <div key={w.label} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0.6rem 0.875rem', background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${border}`, borderRadius: 9 }}>
-              <span style={{ color: w.color, fontSize: '0.85rem', flexShrink: 0, fontWeight: 700 }}>{w.icon}</span>
+              <w.icon size={15} color={w.color} style={{ flexShrink: 0 }} />
               <span style={{ fontSize: '0.75rem', color: text2, lineHeight: 1.4 }}>{w.label}</span>
             </div>
           ))}
@@ -372,7 +376,7 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
             </div>
             {assocNumber && (
               <div style={{ marginTop: 8, fontSize: '0.68rem', color: '#14B8A6', display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span>✓</span>
+                <CheckCircle2 size={12} />
                 <span>Manop will cross-check this number with {assocName || 'the association'} records within 24 hours</span>
               </div>
             )}
@@ -464,8 +468,8 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
 // ─────────────────────────────────────────────────────────────
 // MAPEWidget — unchanged from original
 // ─────────────────────────────────────────────────────────────
-function MAPEWidget({ partner, listings, dark, border, text, text2, text3, bg3, onGoVerify }: {
-  partner: Partner; listings: Listing[]; dark: boolean
+function MAPEWidget({ partner, developments, dark, border, text, text2, text3, bg3, onGoVerify }: {
+  partner: Partner; developments: Development[]; dark: boolean
   border: string; text: string; text2: string; text3: string; bg3: string
   onGoVerify: () => void
 }) {
@@ -484,17 +488,14 @@ function MAPEWidget({ partner, listings, dark, border, text, text2, text3, bg3, 
   function nextAction() {
     if (vStatus === 'not_started' || vStatus === 'unsubmitted')
       return { label: 'Submit your association or professional body membership. Unlocks +40 Ethics points and the Verified badge.', cta: 'Submit verification →', color: '#60A5FA', onClick: onGoVerify }
-    if (listings.length === 0)
-      return { label: 'Add your first listing. Each complete listing with photos earns up to 20 Market Quality points.', cta: null, color: '#5B2EFF' }
-    const withPhotos = listings.filter(l => {
-      const imgs = Array.isArray((l.raw_data as Record<string, unknown>)?.images) ? (l.raw_data as Record<string, unknown>).images as string[] : []
-      return imgs.length >= 3
-    }).length
-    if (withPhotos < listings.length * 0.5)
-      return { label: `Only ${withPhotos} of ${listings.length} listings have 3+ photos. Photos are the biggest driver of Market Quality points.`, cta: null, color: '#5B2EFF' }
+    if (developments.length === 0)
+      return { label: 'Submit your first development or land opportunity. A complete submission with documents earns Market Quality points once MANOP reviews it.', cta: null, color: '#5B2EFF' }
+    const published = developments.filter(d => d.publish_status === 'published').length
+    if (published === 0)
+      return { label: `${developments.length} development${developments.length !== 1 ? 's' : ''} submitted, none published yet — MANOP review is what moves a submission forward.`, cta: null, color: '#5B2EFF' }
     if (scores.i < 30)
-      return { label: 'Submit your first closed sale. Each verified transaction earns +20 Intelligence points — permanent, never decay.', cta: null, color: '#F59E0B' }
-    return { label: 'Reply to new inquiries within 4 hours. Response speed is the biggest Performance score driver.', cta: null, color: '#22C55E' }
+      return { label: 'Log a closed transaction. Each verified transaction earns +20 Intelligence points — permanent, never decay.', cta: null, color: '#F59E0B' }
+    return { label: 'Reply to new leads within 4 hours. Response speed is the biggest Performance score driver.', cta: null, color: '#22C55E' }
   }
 
   const next = nextAction()
@@ -509,8 +510,8 @@ function MAPEWidget({ partner, listings, dark, border, text, text2, text3, bg3, 
   return (
     <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.25rem' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: badgeConf.bg, border: `1px solid ${badgeConf.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', color: badgeConf.color, flexShrink: 0 }}>
-          {badgeConf.icon}
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: badgeConf.bg, border: `1px solid ${badgeConf.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: badgeConf.color, flexShrink: 0 }}>
+          <badgeConf.icon size={22} />
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -525,7 +526,7 @@ function MAPEWidget({ partner, listings, dark, border, text, text2, text3, bg3, 
             const bc = BADGE_CONFIG[b]; const isA = b === badge
             return (
               <div key={b} style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 2 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 7, background: isA ? bc.bg : 'transparent', border: `1px solid ${isA ? bc.border : border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: isA ? bc.color : text3 }}>{bc.icon}</div>
+                <div style={{ width: 28, height: 28, borderRadius: 7, background: isA ? bc.bg : 'transparent', border: `1px solid ${isA ? bc.border : border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isA ? bc.color : text3 }}><bc.icon size={13} /></div>
                 <div style={{ fontSize: '0.45rem', color: isA ? bc.color : text3, fontWeight: isA ? 700 : 400 }}>{bc.label}</div>
               </div>
             )
@@ -560,184 +561,55 @@ function MAPEWidget({ partner, listings, dark, border, text, text2, text3, bg3, 
 }
 
 // ─────────────────────────────────────────────────────────────
-// AddListingForm — original simple form (kept as fallback)
-// The main tab === 'add' now uses the new <ListingForm> component.
-// This is only used internally if needed.
-// ─────────────────────────────────────────────────────────────
-function AddListingForm({ partnerId, agencyName, dark, onSaved }: {
-  partnerId: string; agencyName: string; dark: boolean; onSaved: () => void
-}) {
-  const [neighborhood, setNeighborhood] = useState('')
-  const [propType, setPropType]         = useState('Apartment')
-  const [listingType, setListingType]   = useState('for-sale')
-  const [priceM, setPriceM]             = useState('')
-  const [bedrooms, setBedrooms]         = useState('3')
-  const [bathrooms, setBathrooms]       = useState('2')
-  const [titleDoc, setTitleDoc]         = useState('')
-  const [agentPhone, setAgentPhone]     = useState('')
-  const [description, setDescription]  = useState('')
-  const [imageUrls, setImageUrls]       = useState<string[]>([])
-  const [saving, setSaving]             = useState(false)
-  const [error, setError]               = useState('')
-  const [success, setSuccess]           = useState('')
-
-  const border = dark ? 'rgba(248,250,252,0.1)' : 'rgba(15,23,42,0.1)'
-  const text   = dark ? '#F8FAFC'               : '#0F172A'
-  const text2  = dark ? 'rgba(248,250,252,0.65)': 'rgba(15,23,42,0.65)'
-  const INP: React.CSSProperties = {
-    width: '100%', background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-    border: `1px solid ${border}`, borderRadius: 8, color: text,
-    fontSize: '0.875rem', padding: '0.6rem 0.875rem', outline: 'none', fontFamily: 'inherit',
-  }
-  const LBL: React.CSSProperties = { fontSize: '0.68rem', color: text2, marginBottom: '0.3rem', display: 'block', fontWeight: 500 }
-
-  async function handleSave() {
-    if (!neighborhood) { setError('Select a neighborhood'); return }
-    const price = parseMillion(priceM)
-    if (!price) { setError('Enter a valid price in millions e.g. 85 for ₦85M'); return }
-    setSaving(true); setError('')
-    try {
-      let ngnRate = 1570
-      try {
-        const ctrl = new AbortController()
-        setTimeout(() => ctrl.abort(), 4000)
-        const r = await fetch('https://open.er-api.com/v6/latest/USD', { signal: ctrl.signal })
-        const d = await r.json()
-        if (d?.rates?.NGN) ngnRate = d.rates.NGN
-      } catch { /* use fallback */ }
-
-      const cityMap: Record<string, string> = {
-        'Maitama': 'Abuja', 'Asokoro': 'Abuja', 'Wuse 2': 'Abuja', 'Wuse': 'Abuja',
-        'Garki': 'Abuja', 'Gwarinpa': 'Abuja', 'Life Camp': 'Abuja', 'Utako': 'Abuja',
-        'Jabi': 'Abuja', 'Katampe': 'Abuja', 'Kado': 'Abuja', 'Apo': 'Abuja', 'Wuye': 'Abuja',
-        'GRA': 'Port Harcourt', 'Old GRA': 'Port Harcourt', 'Rumuola': 'Port Harcourt',
-        'Trans-Amadi': 'Port Harcourt', 'Eliozu': 'Port Harcourt',
-        'East Legon': 'Accra', 'Cantonments': 'Accra', 'Labone': 'Accra',
-        'Airport Residential': 'Accra', 'North Legon': 'Accra', 'Roman Ridge': 'Accra',
-        'Dzorwulu': 'Accra', 'Osu': 'Accra',
-        'Westlands': 'Nairobi', 'Karen': 'Nairobi', 'Kilimani': 'Nairobi',
-        'Parklands': 'Nairobi', 'Muthaiga': 'Nairobi', 'Lavington': 'Nairobi',
-        'Kileleshwa': 'Nairobi', 'Langata': 'Nairobi',
-      }
-      const city        = cityMap[neighborhood] || 'Lagos'
-      const countryCode = city === 'Accra' ? 'GH' : city === 'Nairobi' ? 'KE' : 'NG'
-      const coords      = getCoords(neighborhood, city)
-
-      const { error: dbErr } = await sb.from('properties').insert({
-        data_partner_id: partnerId, source_type: 'agency-direct',
-        country_code: countryCode, city, neighborhood,
-        property_type: propType.toLowerCase().replace(/ /g, '-'),
-        listing_type: listingType,
-        bedrooms: parseInt(bedrooms) || null, bathrooms: parseFloat(bathrooms) || null,
-        price_local: price, currency_code: 'NGN',
-        price_usd: Math.round(price / ngnRate),
-        title_document_type: titleDoc || null, agent_phone: agentPhone || null,
-        confidence: 0.9, lat: coords?.lat ?? null, lng: coords?.lng ?? null,
-        raw_data: {
-          source_agency: agencyName, description: description || null,
-          images: imageUrls,
-          intel: { price_usd: Math.round(price / ngnRate), fx_rate: ngnRate, computed_at: new Date().toISOString() },
-        },
-      })
-
-      if (dbErr) throw new Error(dbErr.message)
-      setSuccess('Listing saved and live on Manop.')
-      setTimeout(() => { setSuccess(''); onSaved() }, 1800)
-      setNeighborhood(''); setPriceM(''); setTitleDoc(''); setAgentPhone(''); setDescription(''); setImageUrls([])
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to save listing')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label style={LBL}>Neighborhood *</label>
-          <select style={{ ...INP, cursor: 'pointer' }} value={neighborhood} onChange={e => setNeighborhood(e.target.value)}>
-            <option value="">Select neighborhood</option>
-            {NEIGHBORHOODS.map(n => <option key={n}>{n}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={LBL}>Property type *</label>
-          <select style={{ ...INP, cursor: 'pointer' }} value={propType} onChange={e => setPropType(e.target.value)}>
-            {PROP_TYPES.map(t => <option key={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={LBL}>Listing type *</label>
-          <select style={{ ...INP, cursor: 'pointer' }} value={listingType} onChange={e => setListingType(e.target.value)}>
-            <option value="for-sale">For Sale</option><option value="for-rent">For Rent</option>
-            <option value="short-let">Short Let</option><option value="off-plan">Off Plan</option>
-          </select>
-        </div>
-        <div>
-          <label style={LBL}>Price (₦ millions) *</label>
-          <input style={INP} type="number" value={priceM} min="0.1" step="0.5" onChange={e => setPriceM(e.target.value)} placeholder="e.g. 85" />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div><label style={LBL}>Beds</label><input style={INP} type="number" value={bedrooms} min="1" max="20" onChange={e => setBedrooms(e.target.value)} /></div>
-          <div><label style={LBL}>Baths</label><input style={INP} type="number" value={bathrooms} min="1" step="0.5" onChange={e => setBathrooms(e.target.value)} /></div>
-        </div>
-        <div>
-          <label style={LBL}>Title document</label>
-          <select style={{ ...INP, cursor: 'pointer' }} value={titleDoc} onChange={e => setTitleDoc(e.target.value)}>
-            <option value="">None specified</option>
-            {TITLE_DOCS.map(t => <option key={t}>{t}</option>)}
-          </select>
-        </div>
-        <div style={{ gridColumn: '1/-1' }}>
-          <label style={LBL}>Agent phone / WhatsApp</label>
-          <input style={INP} type="tel" value={agentPhone} onChange={e => setAgentPhone(e.target.value)} placeholder="+234 800 000 0000" />
-        </div>
-        <div style={{ gridColumn: '1/-1' }}>
-          <label style={LBL}>Description (optional)</label>
-          <textarea style={{ ...INP, minHeight: 72, resize: 'vertical' as const }} value={description} onChange={e => setDescription(e.target.value)} placeholder="Key features, access notes…" />
-        </div>
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <label style={LBL}>Photos</label>
-        <ImageUploader onImagesChange={setImageUrls} maxImages={8} dark={dark} label="Property photos" hint="JPG, PNG, WebP" />
-      </div>
-      {error   && <div style={{ background: 'rgba(239,68,68,0.1)',  border: '1px solid rgba(239,68,68,0.25)',  borderRadius: 8, padding: '0.6rem', fontSize: 13, color: '#EF4444', marginBottom: 10 }}>{error}</div>}
-      {success && <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '0.6rem', fontSize: 13, color: '#22C55E', marginBottom: 10 }}>{success}</div>}
-      <button onClick={handleSave} disabled={saving}
-        style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 9, padding: '0.75rem 1.5rem', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.7 : 1, fontFamily: 'inherit' }}>
-        {saving ? 'Saving…' : 'Save listing →'}
-      </button>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────
 // MAIN DASHBOARD
 // ─────────────────────────────────────────────────────────────
 export default function AgencyDashboard() {
   const { user, checking } = useAuth('agency')
-  const [dark, setDark]         = useState(true)
+  const [dark, setDark]         = useState(getInitialDark)
   const [partner, setPartner]   = useState<Partner | null>(null)
-  const [listings, setListings] = useState<Listing[]>([])
+  const [developments, setDevelopments] = useState<Development[]>([])
+  const [leads, setLeads]       = useState<Lead[]>([])
+  const [transactions, setTransactions] = useState<Txn[]>([])
   const [tab, setTab]           = useState<Tab>('overview')
   const [loading, setLoading]   = useState(false)
-  const [editId, setEditId]     = useState<string | null>(null)
-  const [editPrice, setEditPrice] = useState('')
   const [saveMsg, setSaveMsg]   = useState('')
 
-  // ── FIX: state variables that were missing (caused TS2304 errors) ──
+  // Log a transaction — reachable directly from the Transactions tab now,
+  // not only right after adding a listing (agencies don't add listings
+  // anymore, and a transaction they closed shouldn't need one anyway).
   const [showTxPrompt,   setShowTxPrompt]   = useState(false)
   const [txNeighborhood, setTxNeighborhood] = useState('')
+  const [txCityInput,    setTxCityInput]    = useState('')
 
-  useEffect(() => { setDark(getInitialDark()); return listenTheme(d => setDark(d)) }, [])
+  useEffect(() => { return listenTheme(d => setDark(d)) }, [])
 
-  const loadListings = useCallback(async (id: string) => {
+  const loadAgencyData = useCallback(async (id: string) => {
     setLoading(true)
-    const { data } = await sb.from('properties')
-      .select('id,neighborhood,city,property_type,listing_type,bedrooms,bathrooms,price_local,price_usd,confidence,created_at,raw_data')
-      .eq('data_partner_id', id).order('created_at', { ascending: false })
-    setListings((data as Listing[]) || [])
+    const { data: devs } = await sb.from('developer_projects')
+      .select('id,name,neighborhood,city,state,country_code,stage,total_units,handover_date,description,images,video_urls,mandate_type,mandate_document_url,fee_model,agency_fee_share_pct,publish_status,reviewed_at')
+      .eq('submitting_agency_id', id)
+      .order('created_at', { ascending: false })
+    const devList = (devs as Development[]) || []
+    setDevelopments(devList)
+
+    const projectIds = devList.map(d => d.id)
+    if (projectIds.length > 0) {
+      const { data: leadRows } = await sb.from('developer_leads')
+        .select('id,name,phone,email,stage,created_at,project_id,source,budget_usd')
+        .in('project_id', projectIds)
+        .order('created_at', { ascending: false })
+      const nameById = Object.fromEntries(devList.map(d => [d.id, d.name]))
+      setLeads(((leadRows as Lead[]) || []).map(l => ({ ...l, project_name: nameById[l.project_id] })))
+    } else {
+      setLeads([])
+    }
+
+    const { data: txRows } = await sb.from('market_transactions')
+      .select('id,neighborhood,city,sold_price,verification_status,sold_at')
+      .eq('submitted_by', id)
+      .order('sold_at', { ascending: false })
+    setTransactions((txRows as Txn[]) || [])
+
     setLoading(false)
   }, [])
 
@@ -752,7 +624,7 @@ export default function AgencyDashboard() {
 
         if (byAuthId?.id) {
           setPartner(byAuthId as Partner)
-          loadListings(byAuthId.id)
+          loadAgencyData(byAuthId.id)
           return
         }
 
@@ -767,7 +639,7 @@ export default function AgencyDashboard() {
         const emailPartner = Array.isArray(byEmail) ? byEmail[0] : null
         if (emailPartner?.id) {
           setPartner(emailPartner as Partner)
-          loadListings(emailPartner.id)
+          loadAgencyData(emailPartner.id)
           return
         }
       } catch (err) {
@@ -775,29 +647,9 @@ export default function AgencyDashboard() {
       }
     }
     loadPartner()
-  }, [user, loadListings])
+  }, [user, loadAgencyData])
 
   async function signOut() { await sb.auth.signOut() }
-
-  async function toggleStatus(id: string, currentStatus: string) {
-    const l = listings.find(l => l.id === id); if (!l) return
-    const raw = (l.raw_data || {}) as Record<string, unknown>
-    await sb.from('properties').update({ raw_data: { ...raw, status: currentStatus === 'active' ? 'paused' : 'active' } }).eq('id', id)
-    if (partner) loadListings(partner.id)
-  }
-  async function deleteListing(id: string) {
-    if (!confirm('Remove this listing from Manop?')) return
-    await sb.from('properties').delete().eq('id', id)
-    if (partner) loadListings(partner.id)
-  }
-  async function saveEdit(id: string) {
-    const price = parseMillion(editPrice); if (!price) { setSaveMsg('Enter valid price'); return }
-    let ngnRate = 1570
-    try { const r = await fetch('https://open.er-api.com/v6/latest/USD'); const d = await r.json(); if (d?.rates?.NGN) ngnRate = d.rates.NGN } catch { }
-    await sb.from('properties').update({ price_local: price, price_usd: Math.round(price / ngnRate) }).eq('id', id)
-    setEditId(null); setSaveMsg('✓ Price updated'); setTimeout(() => setSaveMsg(''), 2500)
-    if (partner) loadListings(partner.id)
-  }
 
   const bg     = dark ? '#0A0F1E' : '#F4F6FB'
   const bg2    = dark ? '#111827' : '#F8FAFC'
@@ -814,37 +666,42 @@ export default function AgencyDashboard() {
     fontFamily: 'inherit', width: '100%',
   }
 
-  const totalValue = listings.reduce((s, l) => s + (l.price_local || 0), 0)
-  const forSale    = listings.filter(l => l.listing_type === 'for-sale').length
-  const forRent    = listings.filter(l => ['for-rent', 'short-let'].includes(l.listing_type || '')).length
+  const published    = developments.filter(d => d.publish_status === 'published').length
+  const underReview  = developments.filter(d => d.publish_status !== 'published').length
   const badge      = partner?.badge_level || 'listed'
   const badgeConf  = BADGE_CONFIG[badge] || BADGE_CONFIG.listed
   const vStatus    = partner?.verification_status || 'not_started'
-
-  // Listing cap check
   const isVerified = vStatus === 'verified' || vStatus === 'approved' ||
                      badge === 'verified' || badge === 'trust' || badge === 'elite'
-  const atCap      = !isVerified && listings.length >= 3
+
+  // Leads that came in through Get Financed choosing a Developer
+  // Installment Plan, not "Enquire about this development" — same
+  // developer_leads pipeline, tagged at the source so it's a filtered
+  // view, not a second lead system.
+  const financeLeads = leads.filter(l => l.source === 'manop_financing_developer_plan')
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'overview',     label: 'Overview' },
-    { key: 'listings',     label: `Listings (${listings.length})` },
-    { key: 'add',          label: '+ Add listing' },
-    { key: 'leads',        label: 'Leads' },
-    { key: 'transactions', label: 'Sales history' },
-    { key: 'verify',       label: vStatus === 'verified' ? '✓ Verified' : 'Get verified' },
+    { key: 'developments', label: `Developments (${developments.length})` },
+    { key: 'leads',        label: `Leads (${leads.length})` },
+    { key: 'finance',      label: `Finance (${financeLeads.length})` },
+    { key: 'transactions', label: 'Transactions' },
+    { key: 'verify',       label: vStatus === 'verified' ? 'Verified' : 'Get verified' },
     { key: 'settings',     label: 'Profile' },
   ]
 
-  if (checking || (user && !partner && loading)) return (
-    <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ textAlign: 'center' as const }}>
-        <div style={{ width: 24, height: 24, border: '3px solid rgba(91,46,255,0.2)', borderTopColor: '#5B2EFF', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-        <div style={{ fontSize: 13, color: '#94A3B8' }}>Loading your dashboard…</div>
-      </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
-  )
+  // These live on other domains (Site Intelligence owns the schema for
+  // both) — real separate destinations with their own tab-bar slot,
+  // rather than folded into Developments or faked as embedded panels.
+  // A visible "go there" link is the honest version of "own world" when
+  // the actual page can't be embedded without duplicating someone else's
+  // implementation.
+  const EXTERNAL_NAV: { href: string; label: string }[] = [
+    { href: '/site-intelligence/submit', label: 'Site Submission' },
+    { href: '/site-intelligence',        label: 'Land & Redevelopment' },
+  ]
+
+  if (checking || (user && !partner && loading)) return <ManopLoader dark={dark} label="Loading your dashboard…" />
 
   if (user && !partner) return (
     <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
@@ -874,7 +731,7 @@ export default function AgencyDashboard() {
             <div style={{ fontSize: 11, color: text3 }}>{(partner?.cities || []).join(', ')}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: badgeConf.bg, border: `1px solid ${badgeConf.border}`, borderRadius: 20, padding: '3px 10px' }}>
-            <span style={{ fontSize: '0.75rem', color: badgeConf.color }}>{badgeConf.icon}</span>
+            <badgeConf.icon size={11} color={badgeConf.color} />
             <span style={{ fontSize: '0.65rem', fontWeight: 700, color: badgeConf.color }}>{badgeConf.label}</span>
           </div>
           <div style={{ fontSize: '0.65rem', color: text3, background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', borderRadius: 20, padding: '3px 10px', border: `1px solid ${border}` }}>
@@ -882,26 +739,26 @@ export default function AgencyDashboard() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link href="/search" style={{ fontSize: 12, color: text3, textDecoration: 'none', padding: '0.4rem 0.75rem', borderRadius: 7, border: `1px solid ${border}` }}>View site</Link>
+          <Link href="/developments" style={{ fontSize: 12, color: text3, textDecoration: 'none', padding: '0.4rem 0.75rem', borderRadius: 7, border: `1px solid ${border}` }}>View public site</Link>
           <button onClick={signOut} style={{ fontSize: 12, color: text3, background: 'transparent', border: `1px solid ${border}`, borderRadius: 7, padding: '0.4rem 0.75rem', cursor: 'pointer' }}>Log out</button>
         </div>
       </div>
 
       {/* ── Tabs ── */}
-      <div style={{ background: bg2, borderBottom: `1px solid ${border}`, padding: '0 1.5rem', display: 'flex', overflowX: 'auto' as const }}>
+      <div style={{ background: bg2, borderBottom: `1px solid ${border}`, padding: '0 1.5rem', display: 'flex', overflowX: 'auto' as const, alignItems: 'center' }}>
         {TABS.map(t => (
           <button key={t.key}
-            onClick={() => {
-              if (t.key === 'add' && atCap) {
-                alert('You have reached the 3-listing limit for unverified agencies. Verify your identity to publish unlimited listings.')
-                setTab('verify')
-                return
-              }
-              setTab(t.key)
-            }}
-            style={{ padding: '0.75rem 1rem', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.key ? '#5B2EFF' : 'transparent'}`, color: tab === t.key ? text : (t.key === 'add' && atCap ? text3 : text3), fontSize: '0.8rem', fontWeight: tab === t.key ? 700 : 400, cursor: 'pointer', whiteSpace: 'nowrap' as const, fontFamily: 'inherit', opacity: t.key === 'add' && atCap ? 0.5 : 1 }}>
+            onClick={() => setTab(t.key)}
+            style={{ padding: '0.75rem 1rem', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.key ? '#5B2EFF' : 'transparent'}`, color: tab === t.key ? text : text3, fontSize: '0.8rem', fontWeight: tab === t.key ? 700 : 400, cursor: 'pointer', whiteSpace: 'nowrap' as const, fontFamily: 'inherit' }}>
             {t.label}
           </button>
+        ))}
+        <span style={{ width: 1, height: 18, background: border, margin: '0 6px', flexShrink: 0 }} />
+        {EXTERNAL_NAV.map(n => (
+          <Link key={n.href} href={n.href} target="_blank"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0.75rem 1rem', color: text3, fontSize: '0.8rem', textDecoration: 'none', whiteSpace: 'nowrap' as const }}>
+            {n.label} <ExternalLink size={12} />
+          </Link>
         ))}
       </div>
 
@@ -918,10 +775,10 @@ export default function AgencyDashboard() {
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: '1.25rem' }}>
               {[
-                { label: 'Total listings',  value: listings.length,    color: '#7C5FFF' },
-                { label: 'For sale',        value: forSale,            color: '#5B2EFF' },
-                { label: 'For rent / STR',  value: forRent,            color: '#14B8A6' },
-                { label: 'Portfolio value', value: fmtNGN(totalValue), color: '#22C55E' },
+                { label: 'Developments',   value: developments.length, color: '#7C5FFF' },
+                { label: 'Published',      value: published,           color: '#0D9488' },
+                { label: 'Under review',   value: underReview,         color: '#F59E0B' },
+                { label: 'Open leads',     value: leads.length,        color: '#5B2EFF' },
               ].map(s => (
                 <div key={s.label} style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', boxShadow: cardShadow }}>
                   <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 8 }}>{s.label}</div>
@@ -930,142 +787,168 @@ export default function AgencyDashboard() {
               ))}
             </div>
 
-            <MAPEWidget partner={partner} listings={listings} dark={dark} border={border} text={text} text2={text2} text3={text3} bg3={bg3} onGoVerify={() => setTab('verify')} />
+            <MAPEWidget partner={partner} developments={developments} dark={dark} border={border} text={text} text2={text2} text3={text3} bg3={bg3} onGoVerify={() => setTab('verify')} />
 
-            {/* Listing cap warning on overview */}
-            {atCap && (
-              <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, padding: '0.875rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: '0.78rem', color: '#F59E0B' }}>
-                  <strong>{listings.length}/3 listings</strong> used — verify your identity to publish unlimited listings
-                </div>
-                <button onClick={() => setTab('verify')}
-                  style={{ background: '#F59E0B', color: '#0F172A', border: 'none', borderRadius: 7, padding: '0.35rem 0.875rem', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Verify now →
+            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Recent developments</div>
+            {developments.length === 0 ? (
+              <div style={{ textAlign: 'center' as const, padding: '3rem', color: text3 }}>
+                <Building2 size={28} style={{ marginBottom: 10, opacity: 0.5 }} />
+                <button onClick={() => setTab('developments')} style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.5rem 1.25rem', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'block', margin: '0 auto' }}>
+                  Submit your first development →
                 </button>
               </div>
+            ) : developments.slice(0, 5).map(d => (
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.75rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 6, boxShadow: cardShadow }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {d.name} — {d.neighborhood}, {d.city}
+                  </div>
+                  <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>{d.stage || '—'} · {d.total_units ?? '—'} units</div>
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: d.reviewed_at ? '#0D9488' : '#F59E0B', background: d.reviewed_at ? 'rgba(13,148,136,0.1)' : 'rgba(245,158,11,0.1)', borderRadius: 20, padding: '3px 8px', flexShrink: 0 }}>
+                  {d.reviewed_at ? 'MANOP Review' : d.publish_status}
+                </span>
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* ── Developments — submission + tracking, together ──────────
+             Agencies bring MANOP developments and land/redevelopment
+             opportunities under mandate, never resale listings. Creating
+             a new one and managing existing ones live on the same tab so
+             there's one place to think about "what am I bringing MANOP",
+             not two. */}
+        {tab === 'developments' && partner && (
+          <AgencyDevelopmentsTab
+            partner={partner} developments={developments} dark={dark}
+            bg2={bg2} bg3={bg3} border={border} text={text} text2={text2} text3={text3}
+            onSubmitted={() => loadAgencyData(partner.id)}
+          />
+        )}
+
+        {/* ── Leads — real developer_leads for this agency's developments ── */}
+        {tab === 'leads' && partner && (
+          <>
+            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>
+              Leads on your developments
+            </div>
+            {leads.length === 0 ? (
+              <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', color: text2, textAlign: 'center' as const, boxShadow: cardShadow }}>
+                <Mail size={24} style={{ marginBottom: 10, opacity: 0.5 }} />
+                <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 6 }}>No leads yet</div>
+                <div style={{ fontSize: 13, lineHeight: 1.65 }}>Enquiries from the public development page for anything you've submitted will appear here — and land in MANOP's inbox the moment they come in.</div>
+              </div>
+            ) : (
+              leads.map(l => (
+                <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.875rem 1rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 8, boxShadow: cardShadow }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: text }}>{l.name} — {l.project_name || 'Development'}</div>
+                    <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>
+                      {[l.phone, l.email].filter(Boolean).join(' · ') || 'No contact provided'} · {new Date(l.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: text3, background: bg2, borderRadius: 20, padding: '3px 8px', textTransform: 'capitalize' as const }}>{l.stage}</span>
+                </div>
+              ))
+            )}
+          </>
+        )}
+
+        {/* ── Finance — buyers who chose Developer Installment Plan in
+             Get Financed on one of this agency's mandated developments.
+             Same developer_leads table as the Leads tab, filtered by
+             source — not a second lead system. ─────────────────────── */}
+        {tab === 'finance' && partner && (
+          <>
+            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>
+              Financing enquiries on your developments
+            </div>
+            <div style={{ fontSize: 13, color: text2, lineHeight: 1.65, marginBottom: 14, maxWidth: 640 }}>
+              Buyers who asked about a developer installment plan rather than a bank mortgage. MANOP
+              doesn't structure the plan — pass it to the developer you're mandated by, or handle it
+              directly if that's your arrangement with them.
+            </div>
+            {financeLeads.length === 0 ? (
+              <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', color: text2, textAlign: 'center' as const, boxShadow: cardShadow }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 6 }}>No installment-plan enquiries yet</div>
+                <div style={{ fontSize: 13, lineHeight: 1.65 }}>These come from the "Get Financed" flow on your published developments.</div>
+              </div>
+            ) : (
+              financeLeads.map(l => (
+                <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.875rem 1rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 8, boxShadow: cardShadow }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: text }}>{l.name} — {l.project_name || 'Development'}</div>
+                    <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>
+                      {[l.phone, l.email].filter(Boolean).join(' · ') || 'No contact provided'}
+                      {l.budget_usd ? ` · ~$${l.budget_usd.toLocaleString()} budget` : ''}
+                      {' · '}{new Date(l.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: text3, background: bg2, borderRadius: 20, padding: '3px 8px', textTransform: 'capitalize' as const }}>{l.stage}</span>
+                </div>
+              ))
             )}
 
-            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Recent listings</div>
-            {listings.length === 0 ? (
-              <div style={{ textAlign: 'center' as const, padding: '3rem', color: text3 }}>
-                <div style={{ fontSize: '2rem', marginBottom: 10 }}>🏘</div>
-                <button onClick={() => setTab('add')} style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.5rem 1.25rem', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                  Add your first listing →
-                </button>
+            <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.25rem', marginTop: 18, boxShadow: cardShadow }}>
+              <div style={{ fontWeight: 700, color: text, fontSize: 14, marginBottom: 4 }}>Investment Intelligence</div>
+              <div style={{ fontSize: 13, color: text2, lineHeight: 1.6, marginBottom: 10 }}>
+                Run the yield, debt cover and cashflow numbers on one of your mandated developments the
+                way an investor buyer would.
               </div>
-            ) : listings.slice(0, 5).map(l => {
-              const raw    = (l.raw_data || {}) as Record<string, unknown>
-              const images = Array.isArray(raw.images) ? raw.images as string[] : []
-              return (
-                <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.75rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 6, boxShadow: cardShadow }}>
-                  <div style={{ width: 52, height: 42, borderRadius: 7, overflow: 'hidden', background: bg2, flexShrink: 0 }}>
-                    {images[0] ? <img src={images[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => (e.target as HTMLImageElement).style.display = 'none'} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🏠</div>}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {l.bedrooms ? `${l.bedrooms}-Bed ` : ''}{l.property_type} — {l.neighborhood}
-                    </div>
-                    <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>
-                      {new Date(l.created_at || '').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {images.length} photo{images.length !== 1 ? 's' : ''}
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: '#7C5FFF', flexShrink: 0 }}>{fmtNGN(l.price_local)}</div>
-                  <Link href={`/property/${l.id}`} style={{ fontSize: 11, color: '#14B8A6', textDecoration: 'none', border: '1px solid rgba(20,184,166,0.3)', padding: '3px 8px', borderRadius: 6 }}>View ↗</Link>
-                </div>
-              )
-            })}
-          </>
-        )}
-
-        {/* ── Listings ── */}
-        {tab === 'listings' && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em' }}>
-                All listings ({listings.length}{!isVerified ? '/3 max until verified' : ''})
-              </div>
-              <button onClick={() => atCap ? (alert('Verify your identity to add more listings.'), setTab('verify')) : setTab('add')}
-                style={{ background: atCap ? 'rgba(245,158,11,0.1)' : '#5B2EFF', color: atCap ? '#F59E0B' : '#fff', border: atCap ? '1px solid rgba(245,158,11,0.3)' : 'none', borderRadius: 8, padding: '0.5rem 1rem', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                {atCap ? 'Verify to add more →' : '+ Add listing'}
-              </button>
+              <Link href="/calculator" target="_blank" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#5B2EFF', textDecoration: 'none' }}>
+                Open Investment Intelligence <ExternalLink size={12} />
+              </Link>
             </div>
-            {listings.map(l => {
-              const raw    = (l.raw_data || {}) as Record<string, unknown>
-              const images = Array.isArray(raw.images) ? raw.images as string[] : []
-              const status = (raw.status as string) || 'active'
-              const isEdit = editId === l.id
-              return (
-                <div key={l.id} style={{ background: bg3, border: `1px solid ${isEdit ? 'rgba(91,46,255,0.4)' : border}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden', boxShadow: cardShadow }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.875rem 1rem', flexWrap: 'wrap' as const }}>
-                    <div style={{ width: 60, height: 48, borderRadius: 7, overflow: 'hidden', background: bg2, flexShrink: 0 }}>
-                      {images[0] ? <img src={images[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => (e.target as HTMLImageElement).style.display = 'none'} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, opacity: 0.4 }}>🏠</div>}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: text }}>{l.bedrooms ? `${l.bedrooms}-Bed ` : ''}{l.property_type} — {l.neighborhood}</div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 3, alignItems: 'center', flexWrap: 'wrap' as const }}>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: '#7C5FFF' }}>{fmtNGN(l.price_local)}</span>
-                        <span style={{ fontSize: 10, color: status === 'active' ? '#22C55E' : text3, fontWeight: 600 }}>{status === 'active' ? '● Active' : '○ Paused'}</span>
-                        <span style={{ fontSize: 10, color: text3 }}>{images.length} photo{images.length !== 1 ? 's' : ''}</span>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' as const }}>
-                      <Link href={`/property/${l.id}`} target="_blank" style={{ fontSize: 11, color: '#14B8A6', border: '1px solid rgba(20,184,166,0.3)', padding: '3px 8px', borderRadius: 6, textDecoration: 'none' }}>View ↗</Link>
-                      <button onClick={() => { setEditId(isEdit ? null : l.id); setEditPrice('') }} style={{ fontSize: 11, color: isEdit ? '#F59E0B' : text3, border: `1px solid ${isEdit ? 'rgba(245,158,11,0.4)' : border}`, padding: '3px 8px', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}>{isEdit ? 'Cancel' : 'Edit price'}</button>
-                      <button onClick={() => toggleStatus(l.id, status)} style={{ fontSize: 11, color: text3, border: `1px solid ${border}`, padding: '3px 8px', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}>{status === 'active' ? 'Pause' : 'Activate'}</button>
-                      <button onClick={() => deleteListing(l.id)} style={{ fontSize: 11, color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)', padding: '3px 8px', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}>Remove</button>
-                    </div>
-                  </div>
-                  {isEdit && (
-                    <div style={{ borderTop: `1px solid ${border}`, padding: '0.75rem 1rem', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' as const }}>
-                      <label style={{ fontSize: 12, color: text2 }}>New price (₦M):</label>
-                      <input style={{ ...INP, width: 120 }} type="number" value={editPrice} onChange={e => setEditPrice(e.target.value)} placeholder="e.g. 310" />
-                      <button onClick={() => saveEdit(l.id)} style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 7, padding: '0.4rem 0.875rem', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Save</button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
           </>
         )}
 
-        {/* ── Add listing ── uses new ListingForm with geocoding + MAPE bar ── */}
-        {tab === 'add' && partner && (
-          <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', boxShadow: cardShadow }}>
-            <ListingForm
-              partnerId={partner.id}
-              dark={dark}
-              onSuccess={(_id, meta) => {
-                loadListings(partner.id)
-                setTab('listings')
-                // Use the listing's actual neighborhood — not the agency's city
-                const hood = meta?.neighborhood || meta?.city || partner.cities?.[0] || ''
-                setTxNeighborhood(hood)
-                setShowTxPrompt(true)
-              }}
-              onCancel={() => setTab('listings')}
-            />
-          </div>
-        )}
-
-        {/* ── Leads ── */}
-        {tab === 'leads' && partner && (
-          <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', color: text2, textAlign: 'center' as const, boxShadow: cardShadow }}>
-            <div style={{ fontSize: '1.5rem', marginBottom: 10 }}>📬</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 6 }}>Leads tab</div>
-            <div style={{ fontSize: 13, lineHeight: 1.65 }}>Buyer inquiries submitted via the Message agency button appear here.</div>
-          </div>
-        )}
-
-        {/* ── Sales history ── */}
+        {/* ── Transactions — standalone, reachable without adding
+             anything first. This is the fix for the old flow where the
+             only way in was a modal that popped up right after saving a
+             listing agencies no longer post. ────────────────────────── */}
         {tab === 'transactions' && partner && (
           <>
             <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>
-              Sales history — contribute transaction data
+              Transactions — contribute closed-deal data
             </div>
-            <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', color: text2, fontSize: 13, lineHeight: 1.65, boxShadow: cardShadow }}>
-              Use the transaction submission form to log your closed deals.
-              Each verified transaction earns +20 Intelligence points.
+            <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', marginBottom: 16, boxShadow: cardShadow }}>
+              <p style={{ fontSize: 13, color: text2, lineHeight: 1.65, marginBottom: 14 }}>
+                Log a sale or rental you've closed — you don't need an active listing here to do it.
+                Each verified transaction earns +20 Intelligence score points and strengthens the
+                neighborhood benchmark for everyone.
+              </p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginBottom: 10 }}>
+                <input style={{ ...INP, maxWidth: 220 }} placeholder="Neighborhood *" value={txNeighborhood} onChange={e => setTxNeighborhood(e.target.value)} />
+                <input style={{ ...INP, maxWidth: 180 }} placeholder="City" value={txCityInput || partner.cities?.[0] || ''} onChange={e => setTxCityInput(e.target.value)} />
+                <button
+                  onClick={() => txNeighborhood.trim() && setShowTxPrompt(true)}
+                  disabled={!txNeighborhood.trim()}
+                  style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.65rem 1.25rem', fontSize: 13, fontWeight: 700, cursor: txNeighborhood.trim() ? 'pointer' : 'default', opacity: txNeighborhood.trim() ? 1 : 0.5, fontFamily: 'inherit' }}>
+                  Log a transaction →
+                </button>
+              </div>
             </div>
+
+            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Your submissions</div>
+            {transactions.length === 0 ? (
+              <div style={{ fontSize: 13, color: text3, textAlign: 'center' as const, padding: '1.5rem' }}>No transactions logged yet.</div>
+            ) : (
+              transactions.map(t => (
+                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 6, boxShadow: cardShadow }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: text }}>{t.neighborhood}, {t.city}</div>
+                    <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>{new Date(t.sold_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: '#7C5FFF' }}>{fmtNGN(t.sold_price)}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: t.verification_status === 'verified' ? '#0D9488' : '#F59E0B', background: t.verification_status === 'verified' ? 'rgba(13,148,136,0.1)' : 'rgba(245,158,11,0.1)', borderRadius: 20, padding: '3px 8px', textTransform: 'capitalize' as const }}>
+                      {t.verification_status}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
           </>
         )}
 
@@ -1102,22 +985,501 @@ export default function AgencyDashboard() {
       </div>
 
       {/*
-        ── FIX: TransactionPromptModal moved OUTSIDE the tab div ──
-        This ensures it renders as a proper full-screen overlay
-        regardless of which tab is active when it fires.
-        Was incorrectly nested inside tab === 'add' before.
+        Renders outside the tab div so it's a proper full-screen overlay
+        regardless of which tab is active. Reachable directly from the
+        Transactions tab now — no longer tied to adding a listing.
       */}
       {showTxPrompt && partner && (
         <TransactionPromptModal
           partnerId={partner.id}
           neighborhood={txNeighborhood}
-          city={partner.cities?.[0] || ''}
+          city={txCityInput || partner.cities?.[0] || ''}
           dark={dark}
-          onClose={() => setShowTxPrompt(false)}
+          onClose={() => { setShowTxPrompt(false); loadAgencyData(partner.id) }}
         />
       )}
 
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// AgencyDevelopmentsTab — submission + tracking, together.
+//
+// This is a REAL development submission, not a name-and-neighborhood
+// stub — a developer or agency deciding whether to bring MANOP a
+// project needs to provide what they'd provide anywhere else: unit
+// types and pricing, a real image gallery, and supporting documents.
+// Everything here lands in draft/pending_review and shows up in the
+// admin's global Pending Review list (app/admin/developments/page.tsx)
+// for MANOP to continue and publish — this form does not publish
+// anything itself.
+//
+// Site Submission and Land & Redevelopment For Sale are NOT part of
+// this tab — those are separate destinations in the tab bar above,
+// owned by the Site Intelligence domain. A development here always has
+// a developer attached (developer_projects.developer_id is NOT NULL);
+// raw land with no developer belongs in `sites`, not here.
+// ─────────────────────────────────────────────────────────────
+interface UnitTypeRow {
+  unit_type: string; price_ngn: string; size_sqm: string
+  available_count: string; deposit_pct: string; installment_months: string
+}
+interface DocRow {
+  document_type: string; document_name: string; document_url: string
+}
+
+const DOC_TYPES = ['cac', 'land_title', 'planning_approval', 'building_approval', 'survey', 'allocation', 'other']
+
+function emptyUnitRow(): UnitTypeRow {
+  return { unit_type: '', price_ngn: '', size_sqm: '', available_count: '', deposit_pct: '', installment_months: '' }
+}
+function emptyDocRow(): DocRow {
+  return { document_type: 'other', document_name: '', document_url: '' }
+}
+
+function AgencyDevelopmentsTab({ partner, developments, dark, bg2, bg3, border, text, text2, text3, onSubmitted }: {
+  partner: Partner; developments: Development[]; dark: boolean
+  bg2: string; bg3: string; border: string; text: string; text2: string; text3: string
+  onSubmitted: () => void
+}) {
+  const [showForm, setShowForm] = useState(developments.length === 0)
+  const [editingId, setEditingId]       = useState<string | null>(null)
+  const [name, setName]                 = useState('')
+  const [neighborhood, setNeighborhood] = useState('')
+  const [city, setCity]                 = useState(partner.cities?.[0] || '')
+  const [state, setState]               = useState('')
+  const [countryCode, setCountryCode]   = useState('NG')
+  const [stage, setStage]               = useState('Foundation')
+  const [totalUnits, setTotalUnits]     = useState('')
+  const [handoverDate, setHandoverDate] = useState('')
+  const [description, setDescription]   = useState('')
+  const [developerName, setDeveloperName] = useState('')
+  const [mandateType, setMandateType]   = useState<'direct_authority' | 'developer_mandate'>('direct_authority')
+  const [mandateDocUrl, setMandateDocUrl] = useState('')
+  const [feeModel, setFeeModel]         = useState<'developer_success_fee' | 'agency_commission_share'>('developer_success_fee')
+  const [feeSharePct, setFeeSharePct]   = useState('25')
+  const [images, setImages]             = useState<string[]>([])
+  const [unitRows, setUnitRows]         = useState<UnitTypeRow[]>([emptyUnitRow()])
+  const [docRows, setDocRows]           = useState<DocRow[]>([emptyDocRow()])
+  const [submitting, setSubmitting]     = useState(false)
+  const [error, setError]               = useState('')
+  const [success, setSuccess]           = useState('')
+
+  const INP: React.CSSProperties = {
+    background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.04)',
+    border: `1px solid ${border}`, borderRadius: 8, color: text,
+    fontSize: '0.85rem', outline: 'none', padding: '0.65rem 0.875rem',
+    fontFamily: 'inherit', width: '100%',
+  }
+  const SMALL_INP: React.CSSProperties = { ...INP, padding: '0.5rem 0.6rem', fontSize: '0.8rem' }
+  const LBL: React.CSSProperties = { fontSize: '0.68rem', color: text2, marginBottom: '0.3rem', display: 'block', fontWeight: 500 }
+
+  function updateUnitRow(i: number, field: keyof UnitTypeRow, val: string) {
+    setUnitRows(rows => rows.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
+  }
+  function updateDocRow(i: number, field: keyof DocRow, val: string) {
+    setDocRows(rows => rows.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setName(''); setNeighborhood(''); setTotalUnits(''); setHandoverDate('')
+    setDeveloperName(''); setMandateDocUrl(''); setDescription('')
+    setImages([]); setUnitRows([emptyUnitRow()]); setDocRows([emptyDocRow()])
+  }
+
+  // Editing something already submitted — only fields the agency itself
+  // provided are touched here (developer identity and unit types/
+  // documents stay as originally submitted; those need their own review
+  // trail and aren't part of this pass). Construction stage, unit count,
+  // handover date, description, and the gallery are exactly the things
+  // that go stale between submission and MANOP's review, so those are
+  // what this unlocks.
+  function startEdit(d: Development) {
+    setEditingId(d.id)
+    setName(d.name)
+    setNeighborhood(d.neighborhood || '')
+    setCity(d.city || '')
+    setState(d.state || '')
+    setStage(d.stage || 'Foundation')
+    setTotalUnits(d.total_units != null ? String(d.total_units) : '')
+    setHandoverDate(d.handover_date ? d.handover_date.slice(0, 10) : '')
+    setDescription(d.description || '')
+    setImages(d.images || [])
+    setShowForm(true)
+  }
+
+  async function updateDevelopment() {
+    if (!editingId) return
+    setError('')
+    if (!name.trim())         { setError('Development name is required'); return }
+    if (!neighborhood.trim()) { setError('Neighborhood is required'); return }
+
+    setSubmitting(true)
+    try {
+      const coords = getCoords(neighborhood, city)
+      const { error: updErr } = await sb.from('developer_projects').update({
+        name:          name.trim(),
+        location:      [neighborhood, city].filter(Boolean).join(', ') || name.trim(),
+        neighborhood:  neighborhood.trim(),
+        city:          city.trim() || null,
+        state:         state.trim() || null,
+        stage,
+        total_units:   totalUnits ? parseInt(totalUnits) : null,
+        handover_date: handoverDate || null,
+        description:   description.trim() || null,
+        images,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+      }).eq('id', editingId)
+
+      if (updErr) throw new Error(updErr.message)
+
+      setSuccess('Changes saved.')
+      setTimeout(() => { setSuccess(''); resetForm(); setShowForm(false); onSubmitted() }, 1400)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save changes')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleSubmit() {
+    setError('')
+    if (!name.trim())          { setError('Development name is required'); return }
+    if (!neighborhood.trim())  { setError('Neighborhood is required'); return }
+    if (!developerName.trim()) { setError('Developer name is required — the developer this belongs to, even if unclaimed on MANOP yet'); return }
+    if (!mandateDocUrl.trim()) { setError('A mandate document is required — MANOP does not accept submissions without proof of authority to list'); return }
+
+    setSubmitting(true)
+    try {
+      // Find or create an unclaimed developer_accounts row — same
+      // "unclaimed until they log in" pattern the admin panel uses, so
+      // an agency submission never needs the developer to have a MANOP
+      // account first.
+      let developerId: string
+      const { data: existingDev } = await sb.from('developer_accounts')
+        .select('id').ilike('company_name', developerName.trim()).limit(1).maybeSingle()
+
+      if (existingDev?.id) {
+        developerId = existingDev.id
+      } else {
+        const { data: newDev, error: devErr } = await sb.from('developer_accounts').insert({
+          company_name:   developerName.trim(),
+          country_code:   countryCode,
+          city:           city || null,
+          account_status: 'unclaimed',
+          added_by:       'agency_submission',
+        }).select('id').single()
+        if (devErr) throw new Error(devErr.message)
+        developerId = newDev.id
+      }
+
+      const coords = getCoords(neighborhood, city)
+
+      const { data: newProject, error: projErr } = await sb.from('developer_projects').insert({
+        developer_id:         developerId,
+        name:                 name.trim(),
+        location:             [neighborhood, city].filter(Boolean).join(', ') || name.trim(),
+        neighborhood:         neighborhood.trim(),
+        city:                 city.trim() || null,
+        state:                state.trim() || null,
+        country_code:         countryCode,
+        stage,
+        total_units:          totalUnits ? parseInt(totalUnits) : null,
+        handover_date:        handoverDate || null,
+        description:          description.trim() || null,
+        images,
+        lat:                  coords?.lat ?? null,
+        lng:                  coords?.lng ?? null,
+        entry_source:         'manop_sourced',
+        publish_status:       'pending_review',
+        submitted_via:        'agency_submission',
+        submitting_agency_id: partner.id,
+        mandate_type:         mandateType,
+        mandate_document_url: mandateDocUrl.trim(),
+        fee_model:            feeModel,
+        agency_fee_share_pct: feeModel === 'agency_commission_share' ? parseFloat(feeSharePct) : null,
+      }).select('id').single()
+
+      if (projErr) throw new Error(projErr.message)
+      const projectId = newProject.id
+
+      // Unit types — only rows where the agency actually filled something in
+      const validUnits = unitRows.filter(r => r.unit_type.trim() && r.price_ngn.trim())
+      if (validUnits.length > 0) {
+        const { error: unitErr } = await sb.from('developer_unit_types').insert(
+          validUnits.map(r => ({
+            project_id:      projectId,
+            unit_type:       r.unit_type.trim(),
+            price_ngn:       parseFloat(r.price_ngn) || 0,
+            size_sqm:        r.size_sqm ? parseFloat(r.size_sqm) : null,
+            available_count: r.available_count ? parseInt(r.available_count) : null,
+            deposit_pct:     r.deposit_pct ? parseFloat(r.deposit_pct) : null,
+            installment_months: r.installment_months ? parseInt(r.installment_months) : null,
+          }))
+        )
+        if (unitErr) console.error('[unit types]', unitErr.message) // non-fatal — project already saved
+      }
+
+      // Documents — only rows with both a name and a URL
+      const validDocs = docRows.filter(r => r.document_name.trim() && r.document_url.trim())
+      if (validDocs.length > 0) {
+        const { error: docErr } = await sb.from('developer_documents').insert(
+          validDocs.map(r => ({
+            developer_id:  developerId,
+            project_id:    projectId,
+            document_type: r.document_type,
+            document_name: r.document_name.trim(),
+            document_url:  r.document_url.trim(),
+            provided_by:   partner.name,
+          }))
+        )
+        if (docErr) console.error('[documents]', docErr.message) // non-fatal
+      }
+
+      // Always the mandate letter itself, recorded as a document too —
+      // not just the free-text URL field on developer_projects.
+      await sb.from('developer_documents').insert({
+        developer_id:  developerId,
+        project_id:    projectId,
+        document_type: 'other',
+        document_name: 'Mandate letter',
+        document_url:  mandateDocUrl.trim(),
+        provided_by:   partner.name,
+      })
+
+      // Straight to MANOP's inbox — a new submission needs review before
+      // anything happens with it.
+      void fetch('/api/notify/agency-submission', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agency_name: partner.name, development_name: name.trim(),
+          developer_name: developerName.trim(), neighborhood, city,
+          project_id: projectId,
+        }),
+      }).catch(() => { /* non-critical — ignore */ })
+
+      setSuccess(`${name.trim()} submitted for MANOP review.`)
+      resetForm()
+      setTimeout(() => { setSuccess(''); setShowForm(false); onSubmitted() }, 1600)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to submit')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em' }}>
+          Your developments
+        </div>
+        <button onClick={() => { if (showForm) resetForm(); setShowForm(v => !v) }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: showForm ? 'transparent' : '#5B2EFF', color: showForm ? text2 : '#fff', border: showForm ? `1px solid ${border}` : 'none', borderRadius: 8, padding: '0.5rem 1rem', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          {showForm ? 'Cancel' : <><Plus size={14} /> Submit a development</>}
+        </button>
+      </div>
+
+      {showForm && (
+        <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', marginBottom: 16 }}>
+          <p style={{ fontSize: 12, color: text3, lineHeight: 1.6, marginBottom: 16 }}>
+            {editingId
+              ? "Editing what you've already submitted — construction stage, unit count, handover date, description, and the gallery. The developer and mandate on file stay as originally submitted."
+              : "A development under mandate — never a resale listing. MANOP reviews every submission before it's published; nothing goes live automatically."}
+          </p>
+
+          {/* ── Basics ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={LBL}>Development name *</label>
+              <input style={INP} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Eko Gardens Phase 2" />
+            </div>
+            <div>
+              <label style={LBL}>Developer name *</label>
+              <input style={INP} value={developerName} onChange={e => setDeveloperName(e.target.value)} placeholder="MANOP creates an unclaimed profile if new" />
+            </div>
+            <div>
+              <label style={LBL}>Neighborhood *</label>
+              <select style={{ ...INP, cursor: 'pointer' }} value={neighborhood} onChange={e => setNeighborhood(e.target.value)}>
+                <option value="">Select neighborhood</option>
+                {NEIGHBORHOODS.map(n => <option key={n}>{n}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={LBL}>City</label>
+              <input style={INP} value={city} onChange={e => setCity(e.target.value)} />
+            </div>
+            <div>
+              <label style={LBL}>State</label>
+              <input style={INP} value={state} onChange={e => setState(e.target.value)} />
+            </div>
+            <div>
+              <label style={LBL}>Construction stage</label>
+              <select style={{ ...INP, cursor: 'pointer' }} value={stage} onChange={e => setStage(e.target.value)}>
+                {['Planning', 'Foundation', 'Structure', 'Finishing', 'Completed'].map(s => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={LBL}>Total units (leave blank for land)</label>
+              <input style={INP} type="number" value={totalUnits} onChange={e => setTotalUnits(e.target.value)} />
+            </div>
+            <div>
+              <label style={LBL}>Expected handover</label>
+              <input style={INP} type="date" value={handoverDate} onChange={e => setHandoverDate(e.target.value)} />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={LBL}>Description</label>
+              <textarea style={{ ...INP, minHeight: 70 }} value={description} onChange={e => setDescription(e.target.value)} placeholder="What is this development — units, amenities, what makes it worth reviewing" />
+            </div>
+          </div>
+
+          {/* Unit types, documents, and mandate only apply to a brand
+              new submission — editing an existing one is scoped to the
+              fields above (status, units count, dates, description,
+              gallery), not re-touching the original submission record. */}
+          {!editingId && (
+            <>
+          {/* ── Unit types & pricing ── */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <label style={LBL}>Unit types &amp; pricing</label>
+              <button type="button" onClick={() => setUnitRows(r => [...r, emptyUnitRow()])}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: `1px solid ${border}`, borderRadius: 6, padding: '0.3rem 0.6rem', fontSize: 11, color: text2, cursor: 'pointer' }}>
+                <Plus size={12} /> Add unit type
+              </button>
+            </div>
+            {unitRows.map((row, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr 1fr auto', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                <input style={SMALL_INP} placeholder="e.g. 3-bed apartment" value={row.unit_type} onChange={e => updateUnitRow(i, 'unit_type', e.target.value)} />
+                <input style={SMALL_INP} type="number" placeholder="Price (₦)" value={row.price_ngn} onChange={e => updateUnitRow(i, 'price_ngn', e.target.value)} />
+                <input style={SMALL_INP} type="number" placeholder="Size (sqm)" value={row.size_sqm} onChange={e => updateUnitRow(i, 'size_sqm', e.target.value)} />
+                <input style={SMALL_INP} type="number" placeholder="Available" value={row.available_count} onChange={e => updateUnitRow(i, 'available_count', e.target.value)} />
+                <input style={SMALL_INP} type="number" placeholder="Deposit %" value={row.deposit_pct} onChange={e => updateUnitRow(i, 'deposit_pct', e.target.value)} />
+                <input style={SMALL_INP} type="number" placeholder="Installments (mo)" value={row.installment_months} onChange={e => updateUnitRow(i, 'installment_months', e.target.value)} />
+                {unitRows.length > 1 && (
+                  <button type="button" onClick={() => setUnitRows(r => r.filter((_, idx) => idx !== i))}
+                    style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 4 }}>
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+            </>
+          )}
+
+          {/* ── Media — editable in both create and edit modes ── */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={LBL}>Development &amp; site images</label>
+            <ImageUploader
+              onImagesChange={setImages}
+              maxImages={15}
+              dark={dark}
+              initialUrls={images}
+              label="Gallery"
+              hint="First image becomes the cover — include site photos, not just renders"
+            />
+          </div>
+
+          {!editingId && (
+            <>
+          {/* ── Documents ── */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <label style={LBL}>Supporting documents</label>
+              <button type="button" onClick={() => setDocRows(r => [...r, emptyDocRow()])}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: `1px solid ${border}`, borderRadius: 6, padding: '0.3rem 0.6rem', fontSize: 11, color: text2, cursor: 'pointer' }}>
+                <Plus size={12} /> Add document
+              </button>
+            </div>
+            {docRows.map((row, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1.8fr auto', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                <select style={SMALL_INP} value={row.document_type} onChange={e => updateDocRow(i, 'document_type', e.target.value)}>
+                  {DOC_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+                </select>
+                <input style={SMALL_INP} placeholder="Document name" value={row.document_name} onChange={e => updateDocRow(i, 'document_name', e.target.value)} />
+                <input style={SMALL_INP} placeholder="Document URL" value={row.document_url} onChange={e => updateDocRow(i, 'document_url', e.target.value)} />
+                {docRows.length > 1 && (
+                  <button type="button" onClick={() => setDocRows(r => r.filter((_, idx) => idx !== i))}
+                    style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 4 }}>
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* ── Mandate — the one thing every submission requires ── */}
+          <div style={{ background: bg2, borderRadius: 10, padding: '0.875rem', marginBottom: 12 }}>
+            <label style={LBL}>Your mandate *</label>
+            <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
+              {([
+                ['direct_authority', 'I have direct authority to market this'],
+                ['developer_mandate', 'I hold a documented mandate from the developer/owner'],
+              ] as const).map(([val, label]) => (
+                <label key={val} style={{ fontSize: 12, color: text2, display: 'flex', alignItems: 'flex-start', gap: 6, flex: 1 }}>
+                  <input type="radio" checked={mandateType === val} onChange={() => setMandateType(val)} style={{ marginTop: 2 }} />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <input style={INP} value={mandateDocUrl} onChange={e => setMandateDocUrl(e.target.value)} placeholder="Mandate document URL * — required, MANOP does not accept submissions without one" />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+              <div>
+                <label style={LBL}>Fee model</label>
+                <select style={{ ...INP, cursor: 'pointer' }} value={feeModel} onChange={e => setFeeModel(e.target.value as any)}>
+                  <option value="developer_success_fee">Standard developer success fee</option>
+                  <option value="agency_commission_share">MANOP takes a share of my commission</option>
+                </select>
+              </div>
+              {feeModel === 'agency_commission_share' && (
+                <div>
+                  <label style={LBL}>MANOP's share (%)</label>
+                  <input style={INP} type="number" value={feeSharePct} onChange={e => setFeeSharePct(e.target.value)} />
+                </div>
+              )}
+            </div>
+          </div>
+            </>
+          )}
+
+          {error   && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '0.6rem', fontSize: 13, color: '#EF4444', marginBottom: 10 }}>{error}</div>}
+          {success && <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '0.6rem', fontSize: 13, color: '#22C55E', marginBottom: 10 }}>{success}</div>}
+
+          <button onClick={editingId ? updateDevelopment : handleSubmit} disabled={submitting}
+            style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 9, padding: '0.75rem 1.5rem', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: submitting ? 0.7 : 1, fontFamily: 'inherit' }}>
+            {submitting ? 'Saving…' : editingId ? 'Save changes' : 'Submit for MANOP review →'}
+          </button>
+        </div>
+      )}
+
+      {developments.length === 0 && !showForm ? (
+        <div style={{ textAlign: 'center' as const, padding: '2rem', color: text3, fontSize: 13 }}>
+          <Building2 size={22} style={{ marginBottom: 8, opacity: 0.5 }} />
+          <div>Nothing submitted yet.</div>
+        </div>
+      ) : (
+        developments.map(d => (
+          <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.875rem 1rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: text }}>{d.name}</div>
+              <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>{d.neighborhood}, {d.city} · {d.stage || '—'}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {d.reviewed_at && (
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#0D9488', background: 'rgba(13,148,136,0.1)', borderRadius: 20, padding: '3px 8px' }}>MANOP Review</span>
+              )}
+              <span style={{ fontSize: 10, fontWeight: 700, color: text3, background: bg2, borderRadius: 20, padding: '3px 8px', textTransform: 'capitalize' as const }}>{d.publish_status.replace(/_/g, ' ')}</span>
+              <button onClick={() => startEdit(d)} style={{ fontSize: 11, color: '#5B2EFF', background: 'transparent', border: '1px solid rgba(91,46,255,0.3)', padding: '3px 8px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
+              <Link href={`/development/${d.id}`} target="_blank" style={{ fontSize: 11, color: '#14B8A6', border: '1px solid rgba(20,184,166,0.3)', padding: '3px 8px', borderRadius: 6, textDecoration: 'none' }}>View ↗</Link>
+            </div>
+          </div>
+        ))
+      )}
+    </>
   )
 }

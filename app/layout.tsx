@@ -24,8 +24,10 @@ const themeScript = `
   try {
     var saved = localStorage.getItem('manop-dark');
     var dark = saved !== null ? saved === 'true' : true;
+    localStorage.setItem('manop-dark', String(dark));
+    document.cookie = 'manop-dark=' + dark + '; path=/; max-age=31536000; SameSite=Lax';
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-  } catch(e) {}
+  } catch (e) {}
 })();
 `
 

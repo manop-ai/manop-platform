@@ -3,7 +3,7 @@
 // lib/association.ts
 // ============================================================
 
-import { createClient } from '@/lib/supabase-server' // your existing server client
+import { sb } from './supabase/client'
 import type {
   AssociationUserContext,
   AssociationIntelligence,
@@ -11,7 +11,7 @@ import type {
   AssociationChapter,
   VerificationRequest,
   AssociationAdminInvitation,
-} from '@/types/association'
+} from '@/type/association'
 
 // ── Resolve the current user's association context ────────────
 // Call this at the top of every association page.
@@ -19,7 +19,7 @@ import type {
 export async function getAssociationUserContext(
   userId: string
 ): Promise<AssociationUserContext | null> {
-  const supabase = createClient()
+  const supabase = sb
 
   const { data, error } = await supabase
     .from('user_permission_summary')
@@ -61,7 +61,7 @@ export async function getAssociationUserContext(
 export async function getNationalIntelligence(
   associationId: string
 ): Promise<AssociationIntelligence | null> {
-  const supabase = createClient()
+  const supabase = sb
 
   const { data } = await supabase
     .from('safe_association_intelligence')
@@ -81,7 +81,7 @@ export async function getChapterIntelligence(
   associationId: string,
   chapterId?: string
 ): Promise<AssociationIntelligence[]> {
-  const supabase = createClient()
+  const supabase = sb
 
   let query = supabase
     .from('safe_association_intelligence')
@@ -103,7 +103,7 @@ export async function getChapterIntelligence(
 export async function getAssociationChapters(
   associationId: string
 ): Promise<AssociationChapter[]> {
-  const supabase = createClient()
+  const supabase = sb
 
   const { data } = await supabase
     .from('association_chapters')
@@ -125,7 +125,7 @@ export async function getPendingVerifications(
   associationId: string,
   chapterId?: string
 ): Promise<VerificationRequest[]> {
-  const supabase = createClient()
+  const supabase = sb
 
   let query = supabase
     .from('verification_requests')
@@ -157,7 +157,7 @@ export async function getAssociationMembers(
   page = 0,
   pageSize = 50
 ): Promise<{ members: AssociationMembership[]; total: number }> {
-  const supabase = createClient()
+  const supabase = sb
 
   let query = supabase
     .from('association_memberships')
@@ -193,7 +193,7 @@ export async function getAssociationMembers(
 export async function getPendingInvitations(
   associationId: string
 ): Promise<AssociationAdminInvitation[]> {
-  const supabase = createClient()
+  const supabase = sb
 
   const { data } = await supabase
     .from('association_admin_invitations')
@@ -218,7 +218,7 @@ export async function approveMemberVerification(
   approvedByUserId: string,
   note?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = createClient()
+  const supabase = sb
 
   const { error } = await supabase
     .from('verification_requests')
@@ -240,7 +240,7 @@ export async function rejectMemberVerification(
   rejectedByUserId: string,
   reason: string
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = createClient()
+  const supabase = sb
 
   const { error } = await supabase
     .from('verification_requests')

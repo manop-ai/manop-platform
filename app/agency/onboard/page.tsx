@@ -15,15 +15,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { sb } from '../../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
 import { ManopLogoSVG } from '../../../components/ManopLogo'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
 
 const CITIES     = ['Lagos','Abuja','Port Harcourt','Accra','Nairobi','Kano','Ibadan','Other']
 const PROP_TYPES = ['Residential','Commercial','Mixed-use','Land','Off-plan','Short-let','Luxury']
@@ -31,7 +26,7 @@ const PROP_TYPES = ['Residential','Commercial','Mixed-use','Land','Off-plan','Sh
 export default function AgencyOnboardPage() {
   const router = useRouter()
   const { user, checking } = useAuth('agency')
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
 
   const [agencyName,  setAgencyName]  = useState('')
   const [contactName, setContactName] = useState('')
@@ -45,7 +40,7 @@ export default function AgencyOnboardPage() {
   const [saving,      setSaving]      = useState(false)
   const [error,       setError]       = useState('')
 
-  useEffect(() => { setDark(getInitialDark()); return listenTheme(d => setDark(d)) }, [])
+  useEffect(() => { return listenTheme(d => setDark(d)) }, [])
   useEffect(() => {
     if (!user) return
     setContactName(user.user_metadata?.full_name || '')

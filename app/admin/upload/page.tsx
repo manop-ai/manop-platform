@@ -6,7 +6,7 @@
 
 import { useState, useRef } from 'react'
 
-const MANOP_API = process.env.NEXT_PUBLIC_MANOP_API_URL || 'http://localhost:8003'
+const MANOP_API = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:8003'
 
 const NEIGHBORHOODS = [
   'Lekki Phase 1', 'Ikoyi', 'Victoria Island', 'Lekki',
@@ -333,7 +333,7 @@ export default function UploadPage() {
         </p>
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
           <button onClick={() => { setStep('upload'); setResult(null); setRejected(new Set()); setSaved(0) }} style={{ background: D.purple, color: '#fff', border: 'none', borderRadius: 10, padding: '0.75rem 1.5rem', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>Upload Another →</button>
-          <a href="/neighborhood/lekki-phase-1" style={{ background: D.bg3, color: D.text, border: `1px solid ${D.border}`, borderRadius: 10, padding: '0.75rem 1.5rem', fontWeight: 600, fontSize: '0.875rem', textDecoration: 'none', display: 'inline-block' }}>View Lekki Phase 1 →</a>
+          <a href="/markets?area=Lekki%20Phase%201" style={{ background: D.bg3, color: D.text, border: `1px solid ${D.border}`, borderRadius: 10, padding: '0.75rem 1.5rem', fontWeight: 600, fontSize: '0.875rem', textDecoration: 'none', display: 'inline-block' }}>View Lekki Phase 1 →</a>
         </div>
       </div>
     </div>

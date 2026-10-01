@@ -9,6 +9,7 @@ interface ImageUploaderProps {
   label?: string
   hint?: string
   accept?: string
+  initialUrls?: string[]
 }
 
 const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
@@ -22,10 +23,15 @@ export default function ImageUploader({
   label = 'Images',
   hint = 'Upload JPG, PNG, or WebP images',
   accept = 'image/*',
+  initialUrls = [],
 }: ImageUploaderProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [urls, setUrls] = useState<string[]>([])
+  // Seeded from initialUrls so this component can be used to edit an
+  // existing record's gallery, not just build a fresh one. Pass a `key`
+  // prop from the parent (e.g. key={recordId}) when switching between
+  // records so this state resets instead of carrying over the old gallery.
+  const [urls, setUrls] = useState<string[]>(initialUrls)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleFiles = async (files: FileList | null) => {

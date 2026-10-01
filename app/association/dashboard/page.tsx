@@ -120,7 +120,7 @@ function SectionTitle({ children, action }: { children: React.ReactNode; action?
 // ── Main component ───────────────────────────────────────────
 export default function AssociationDashboard() {
   const router = useRouter()
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
 
   const [ctx, setCtx]             = useState<Ctx|null>(null)
   const [tab, setTab]             = useState<Tab>('overview')
@@ -195,7 +195,6 @@ export default function AssociationDashboard() {
 
   // Theme sync
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 

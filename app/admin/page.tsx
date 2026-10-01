@@ -4,31 +4,15 @@
 // Replaces previous admin-FINAL.tsx
 // Role: admin | super_admin only
 
-import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-)
-
-// ── Theme ────────────────────────────────────────────────────
-function getInitialDark() {
-  if (typeof window === 'undefined') return true
-  const s = localStorage.getItem('manop-dark')
-  return s !== null ? s === 'true' : true
-}
-function setTheme(d: boolean) {
-  localStorage.setItem('manop-dark', String(d))
-  document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light')
-  window.dispatchEvent(new CustomEvent('manop-theme-change', { detail: d }))
-}
-function listenTheme(cb: (d: boolean) => void) {
-  const h = (e: Event) => cb((e as CustomEvent<boolean>).detail)
-  window.addEventListener('manop-theme-change', h)
-  return () => window.removeEventListener('manop-theme-change', h)
-}
+import {
+  LayoutDashboard, Radio, CheckCircle2, Banknote, Building2, Globe,
+  BarChart3, Construction, LogOut, Sun, Moon, Home, ClipboardCheck,
+  Clock, Plus, Star,
+} from 'lucide-react'
+import { getInitialDark, setTheme, listenTheme } from '../../lib/theme'
+import { sb } from '../../lib/supabase/client'
 
 async function getToken() {
   const { data: { session } } = await sb.auth.getSession()
@@ -64,7 +48,7 @@ interface PlatformIntel {
 
 // ── Sub-components ───────────────────────────────────────────
 function KPI({ label, value, sub, accent, icon }: {
-  label: string; value: string|number; sub?: string; accent: string; icon?: string
+  label: string; value: string|number; sub?: string; accent: string; icon?: ReactNode
 }) {
   return (
     <div style={{
@@ -74,7 +58,7 @@ function KPI({ label, value, sub, accent, icon }: {
     }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
         <span style={{ fontSize:10, color:'var(--muted)', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' as const }}>{label}</span>
-        {icon && <span style={{ fontSize:16 }}>{icon}</span>}
+        {icon && <span style={{ display:'flex', color: accent }}>{icon}</span>}
       </div>
       <div style={{ fontSize:26, fontWeight:800, color:'var(--text)', lineHeight:1 }}>{value}</div>
       {sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:7 }}>{sub}</div>}
@@ -156,7 +140,6 @@ export default function AdminCommandCenter() {
 
   // ── Theme ──────────────────────────────────────────────────
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 
@@ -427,19 +410,22 @@ export default function AdminCommandCenter() {
 
   const navGroups = [
     { label:'Intelligence', items:[
-      { k:'command',      l:'Command Center', i:'◉' },
-      { k:'signals',      l:'Signal Monitor', i:'📡' },
+      { k:'command',      l:'Command Center', i:<LayoutDashboard size={14} /> },
+      { k:'signals',      l:'Signal Monitor', i:<Radio size={14} /> },
     ]},
     { label:'Operations', items:[
-      { k:'verify',       l:'Verify Queue',   i:'✓',  n: verQueue.length },
-      { k:'financing',    l:'Financing',       i:'💰', n: financing.filter((f:any)=>f.status==='submitted').length },
-      { k:'agencies',     l:'Agencies',        i:'🏢' },
-      { k:'associations', l:'Associations',    i:'🌍' },
-      { k:'onboard',      l:'Onboard Assoc.', i:'+' },
+      { k:'verify',       l:'Verify Queue',   i:<CheckCircle2 size={14} />,  n: verQueue.length },
+      { k:'financing',    l:'Financing',       i:<Banknote size={14} />, n: financing.filter((f:any)=>f.status==='submitted').length },
+      { k:'agencies',     l:'Agencies',        i:<Building2 size={14} /> },
+      { k:'associations', l:'Associations',    i:<Globe size={14} /> },
+      { k:'onboard',      l:'Onboard Assoc.', i:<Plus size={14} /> },
     ]},
     { label:'Reviewed Developments', items:[
-      { k:'developments', l:'Developers & Projects', i:'🏗', external: '/admin/developments' },
-      { k:'comparables', l:'Comparables', i:'📊', external: '/admin/comparables' },
+      { k:'developments', l:'Developers & Projects', i:<Construction size={14} />, external: '/admin/developments' },
+      { k:'comparables', l:'Comparables', i:<BarChart3 size={14} />, external: '/admin/comparables' },
+    ]},
+    { label:'Site Intelligence', items:[
+      { k:'site-queue', l:'Site Review Queue', i:<Home size={14} />, external: '/admin/sites' },
     ]},
   ]
   const topbarText: Record<Tab, { title:string; sub:string }> = {
@@ -487,10 +473,10 @@ export default function AdminCommandCenter() {
           </nav>
           <div className="sb-bot">
             <button className="ni" onClick={()=>router.push('/agency/dashboard')}>
-              <span style={{fontSize:14}}>🏢</span> Agency View
+              <Building2 size={14} /> Agency View
             </button>
             <button className="ni ni-out" onClick={()=>sb.auth.signOut().then(()=>router.replace('/login'))}>
-              <span style={{fontSize:14}}>←</span> Sign out
+              <LogOut size={14} /> Sign out
             </button>
           </div>
         </aside>
@@ -504,7 +490,7 @@ export default function AdminCommandCenter() {
             </div>
             <div className="row">
               <button className="theme-btn" onClick={()=>setTheme(!dark)} title={dark?'Light mode':'Dark mode'}>
-                {dark?'☀️':'🌙'}
+                {dark ? <Sun size={16} /> : <Moon size={16} />}
               </button>
               <span className="mono" style={{color:'var(--muted)'}}>
                 {new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}
@@ -519,12 +505,12 @@ export default function AdminCommandCenter() {
               <>
                 {/* Platform KPIs */}
                 <div className="kpi-grid">
-                  <KPI label="Total Agencies"      value={intel?.total_agencies??agencies.length}           accent="#5B2EFF" icon="🏢" sub={`${intel?.active_agencies_30d??0} active this month`}/>
-                  <KPI label="Verified Agencies"   value={intel?.verified_agencies??0}                      accent="#22C55E" icon="✓"  sub={`${intel?.total_agencies?Math.round((intel.verified_agencies/intel.total_agencies)*100):0}% rate`}/>
-                  <KPI label="Total Listings"      value={intel?.total_listings??0}                         accent="#3b82f6" icon="🏠"/>
-                  <KPI label="Verified Txns"       value={intel?.total_verified_transactions??0}            accent="#14B8A6" icon="📋" sub="Confirmed market events"/>
-                  <KPI label="Associations"        value={intel?.total_associations??assocs.length}         accent="#8b5cf6" icon="🌍" sub={`${intel?.total_association_members??0} members`}/>
-                  <KPI label="Pending Reviews"     value={intel?.pending_verifications??verQueue.length}    accent={verQueue.length>0?'#f59e0b':'#22c55e'} icon="⏳"/>
+                  <KPI label="Total Agencies"      value={intel?.total_agencies??agencies.length}           accent="#5B2EFF" icon={<Building2 size={16} />} sub={`${intel?.active_agencies_30d??0} active this month`}/>
+                  <KPI label="Verified Agencies"   value={intel?.verified_agencies??0}                      accent="#22C55E" icon={<CheckCircle2 size={16} />}  sub={`${intel?.total_agencies?Math.round((intel.verified_agencies/intel.total_agencies)*100):0}% rate`}/>
+                  <KPI label="Total Listings"      value={intel?.total_listings??0}                         accent="#3b82f6" icon={<Home size={16} />}/>
+                  <KPI label="Verified Txns"       value={intel?.total_verified_transactions??0}            accent="#14B8A6" icon={<ClipboardCheck size={16} />} sub="Confirmed market events"/>
+                  <KPI label="Associations"        value={intel?.total_associations??assocs.length}         accent="#8b5cf6" icon={<Globe size={16} />} sub={`${intel?.total_association_members??0} members`}/>
+                  <KPI label="Pending Reviews"     value={intel?.pending_verifications??verQueue.length}    accent={verQueue.length>0?'#f59e0b':'#22c55e'} icon={<Clock size={16} />}/>
                 </div>
 
                 {/* Signal volume */}
@@ -668,7 +654,7 @@ export default function AdminCommandCenter() {
                 </div>
 
                 <div className="kpi-grid">
-                  <KPI label="Total Signals 7d"    value={(intel?.total_signals_7d??0).toLocaleString()}     accent="#5B2EFF" icon="📡"/>
+                  <KPI label="Total Signals 7d"    value={(intel?.total_signals_7d??0).toLocaleString()}     accent="#5B2EFF" icon={<Radio size={16} />}/>
                   <KPI label="Demand Signals"      value={(intel?.demand_signals_7d??0).toLocaleString()}     accent="#5B2EFF"/>
                   <KPI label="Supply Signals"      value={(intel?.supply_signals_7d??0).toLocaleString()}     accent="#22C55E"/>
                   <KPI label="Trust Signals"       value={(intel?.trust_signals_7d??0).toLocaleString()}      accent="#14B8A6"/>
@@ -715,7 +701,7 @@ export default function AdminCommandCenter() {
                   <span className="tbl-title">All Pending Verifications</span>
                   <span className="tbl-count">{verQueue.length} pending</span>
                 </div>
-                {verQueue.length===0?<div className="empty">✓ Queue is clear</div>:(
+                {verQueue.length===0?<div className="empty" style={{display:'flex',alignItems:'center',gap:6}}><CheckCircle2 size={14}/> Queue is clear</div>:(
                   <table>
                     <thead><tr><th>Agency</th><th>Type</th><th>Ref</th><th>Cities</th><th>MAPE</th><th>Submitted</th><th>Action</th></tr></thead>
                     <tbody>
@@ -748,10 +734,10 @@ export default function AdminCommandCenter() {
             {tab==='financing'&&(
               <>
                 <div className="kpi-grid-3" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
-                  <KPI label="Total Requests"  value={financing.length}                                                        accent="#5B2EFF" icon="💰"/>
-                  <KPI label="Unreviewed"      value={financing.filter((f:any)=>f.status==='submitted').length}                accent="#f59e0b" icon="⏳"/>
-                  <KPI label="In Progress"     value={financing.filter((f:any)=>['reviewing','sent_to_partner','in_progress'].includes(f.status)).length} accent="#14B8A6" icon="📊"/>
-                  <KPI label="Closed"          value={financing.filter((f:any)=>f.status==='closed').length}                   accent="#22c55e" icon="✓"/>
+                  <KPI label="Total Requests"  value={financing.length}                                                        accent="#5B2EFF" icon={<Banknote size={16} />}/>
+                  <KPI label="Unreviewed"      value={financing.filter((f:any)=>f.status==='submitted').length}                accent="#f59e0b" icon={<Clock size={16} />}/>
+                  <KPI label="In Progress"     value={financing.filter((f:any)=>['reviewing','sent_to_partner','in_progress'].includes(f.status)).length} accent="#14B8A6" icon={<BarChart3 size={16} />}/>
+                  <KPI label="Closed"          value={financing.filter((f:any)=>f.status==='closed').length}                   accent="#22c55e" icon={<CheckCircle2 size={16} />}/>
                 </div>
 
                 <div className="info-box">
@@ -831,7 +817,7 @@ export default function AdminCommandCenter() {
                               {a.active?'Active':'Inactive'}
                             </button>
                           </td>
-                          <td style={{fontSize:11,color:'var(--muted)'}}>{a.association_id?'✓':'—'}</td>
+                          <td style={{fontSize:11,color:'var(--muted)'}}>{a.association_id?<CheckCircle2 size={13} style={{color:'#22c55e'}}/>:'—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -858,7 +844,7 @@ export default function AdminCommandCenter() {
                           <td style={{color:'var(--muted)'}}>{a.country_code}</td>
                           <td className="mono">{a.contact_email||'—'}</td>
                           <td><Pill v={a.status} map={STATUS_COLORS}/></td>
-                          <td>{a.is_pilot?<span style={{color:'var(--teal)',fontWeight:700,fontSize:11}}>✦ PILOT</span>:'Standard'}</td>
+                          <td>{a.is_pilot?<span style={{color:'var(--teal)',fontWeight:700,fontSize:11,display:'inline-flex',alignItems:'center',gap:4}}><Star size={12} fill="currentColor"/> PILOT</span>:'Standard'}</td>
                           <td className="mono" style={{color:'var(--muted)'}}>{new Date(a.onboarded_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'})}</td>
                         </tr>
                       ))}
@@ -876,7 +862,7 @@ export default function AdminCommandCenter() {
                   Creates the association, creates their admin account, assigns the national admin role, sends activation email.
                   No SQL. No manual steps.
                 </div>
-                {obStatus==='success'&&<div className="msg-ok">✓ {obMsg}</div>}
+                {obStatus==='success'&&<div className="msg-ok" style={{display:'flex',alignItems:'center',gap:6}}><CheckCircle2 size={14}/> {obMsg}</div>}
                 {obStatus==='error'&&<div className="msg-er">{obMsg}</div>}
                 <div className="fg">
                   <div className="fgg"><label className="lbl">Association Name *</label><input className="inp" placeholder="e.g. Ghana Real Estate Association" value={ob.name} onChange={e=>setOB(p=>({...p,name:e.target.value}))}/></div>

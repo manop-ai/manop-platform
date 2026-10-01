@@ -52,7 +52,7 @@ interface Comparable {
 
 export default function AdminComparablesPage() {
   const { user, checking } = useAuth('admin')
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(getInitialDark)
 
   const [comparables, setComparables] = useState<Comparable[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,7 +63,6 @@ export default function AdminComparablesPage() {
   const flash = (text: string, ok: boolean) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 3500) }
 
   useEffect(() => {
-    setDark(getInitialDark())
     return listenTheme(d => setDark(d))
   }, [])
 
