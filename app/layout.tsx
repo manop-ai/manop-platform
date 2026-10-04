@@ -1,4 +1,4 @@
-// app/layout.tsx — UPDATED
+// app/layout.tsx - UPDATED
 // Root layout now conditionally hides NavBar and Footer for dashboard routes.
 // This is cleaner than route groups because it doesn't require restructuring
 // the entire file system.
@@ -10,10 +10,10 @@ import ManopFooter from '../components/ManopFooter'
 import DashboardShell from '../components/DashboardShell'
 
 export const metadata: Metadata = {
-  title: 'Manop — Africa Property Intelligence',
+  title: 'Manop - Africa Property Intelligence',
   description: 'Search any African neighborhood to see verified yield, cap rates, and market benchmarks.',
   openGraph: {
-    title: 'Manop — Africa Property Intelligence',
+    title: 'Manop - Africa Property Intelligence',
     description: 'Real property intelligence for African real estate investors.',
     url: 'https://manopintel.com',
   },
@@ -49,8 +49,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/*
           DashboardShell reads the current pathname (client-side).
           For /admin, /association/*, /agency/dashboard, /developer/dashboard,
-          /investor/dashboard — it renders children only (no NavBar, no Footer).
-          For all other routes — renders NavBar + children + Footer as before.
+          /investor/dashboard - it renders children only (no NavBar, no Footer).
+          For all other routes - renders NavBar + children + Footer as before.
         */}
         <DashboardShell>
           {children}

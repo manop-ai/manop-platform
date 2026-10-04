@@ -7,8 +7,6 @@ export type VerificationState = 'draft' | 'pending' | 'under_review' | 'approved
 export type VerificationType = 'cac' | 'association_membership' | 'professional_body' | 'manop_review' | 'transaction_history'
 export type ManopRole = 'super_admin' | 'country_admin' | 'association_national_admin' | 'chapter_admin' | 'agency_owner' | 'agency_manager' | 'agent' | 'analyst' | 'buyer' | 'investor' | 'developer'
 export type ScopeType = 'platform' | 'country' | 'association' | 'chapter' | 'agency'
-export type BadgeLevel = 'listed' | 'verified' | 'trust' | 'elite'
-
 export interface Association {
   id: string
   name: string
@@ -62,8 +60,6 @@ export interface AssociationMembership {
   created_at: string
   // joined
   agency_name?: string
-  agency_badge?: BadgeLevel
-  agency_mape_score?: number
   agency_verification_status?: string
   chapter_name?: string
 }
@@ -105,7 +101,6 @@ export interface VerificationRequest {
   // joined
   agency_name?: string
   agency_cities?: string[]
-  agency_mape_score?: number
 }
 
 export interface AssociationIntelligence {
@@ -118,20 +113,9 @@ export interface AssociationIntelligence {
   total_members: number
   active_members: number
   verified_members: number
-  elite_members: number
-  trust_members: number
   new_members_this_period: number
   verification_rate_pct: number | null
-  avg_mape_score: number | null
-  median_mape_score: number | null
-  avg_mape_i: number | null
-  avg_mape_m: number | null
-  avg_mape_p: number | null
-  total_listings: number
   total_transactions: number
-  top_neighborhoods: string[]
-  avg_listing_price_ngn: number | null
-  median_listing_price_ngn: number | null
   meets_minimum_threshold: boolean
   agency_count_used: number
   computed_at: string

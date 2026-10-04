@@ -158,7 +158,7 @@ export default function SetupInvestorPage() {
         }),
       }).catch(() => {})
 
-      router.push('/search')
+      router.push('/developments')
     } catch (e: any) {
       setError(e.message || 'Failed to save. Please try again.')
     } finally {
@@ -318,7 +318,7 @@ export default function SetupInvestorPage() {
 
         <div style={{ display: 'flex', gap: 10, marginTop: '1.5rem' }}>
           <button
-            onClick={() => router.push('/search')}
+            onClick={() => router.push('/developments')}
             style={{ flex: 1, background: 'transparent', color: text2, border: `1px solid ${border}`, borderRadius: 10, padding: '0.875rem', fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'inherit' }}
           >
             Skip for now

@@ -1,6 +1,7 @@
 'use client'
 // components/FinancingModal.tsx
-// "Get Financed" — appears on property listing pages.
+// "Get Financed" — appears on property listing pages and Reviewed
+// Developments (via DevelopmentFinancingLauncher).
 //
 // FINANCE INTELLIGENCE PHASE 2: this used to be capture-only — it took the
 // buyer's numbers and wrote straight to financing_requests with no
@@ -9,17 +10,20 @@
 // calculate → explain → save (finance_analyses) → optionally request
 // (financing_requests, now linked to the analysis via finance_analysis_id).
 //
-// Emoji type-icons replaced with lucide-react, per the standing
-// no-emoji-icon rule — everything else in this file (styling, the
-// hardcoded dark-only color values) is unchanged in this pass; the CSS
-// here doesn't yet follow lib/theme.ts's light/dark token system the way
-// most of the rest of the app does. Flagged, not fixed here — that's a
-// bigger retrofit than this pass, not a Finance Intelligence calculation
-// change, and worth its own verified pass rather than bundling it in.
+// THEME RETROFIT (this pass): this modal was previously hardcoded
+// dark-only — every color in the `css` template and the inline JSX
+// styles was a fixed hex/rgba value, so it stayed dark even when the
+// rest of the page (via DevelopmentFinancingLauncher's new `dark` prop)
+// had switched to light. It now takes a `dark` prop and derives every
+// color from lib/theme.ts's getDesignColors(dark), the same source the
+// Reviewed Development page and Site Intelligence pages already use.
+// `dark` defaults to true so any caller that hasn't been updated yet
+// keeps the exact appearance it had before.
 
 import { useState } from 'react'
 import { Landmark, Building2, HardHat, Globe2, X, CheckCircle2 } from 'lucide-react'
 import { sb } from '../lib/supabase/client'
+import { getDesignColors } from '../lib/theme'
 import { calculateAffordability, getFinanceSuitabilityLabel, type AffordabilityOutputs } from '../lib/finance-intelligence'
 
 interface Props {
@@ -38,6 +42,7 @@ interface Props {
   developerId?: string
   projectId?: string
   unitTypeId?: string | null
+  dark?: boolean
 }
 
 type Step = 'type' | 'details' | 'income' | 'assessment' | 'confirm' | 'success'
@@ -84,7 +89,11 @@ const FINANCING_TYPES = [
   },
 ]
 
-export default function FinancingModal({ propertyId, propertyAddress, estimatedPriceNgn, onClose, developerId, projectId, unitTypeId }: Props) {
+export default function FinancingModal({
+  propertyId, propertyAddress, estimatedPriceNgn, onClose, developerId, projectId, unitTypeId, dark = true,
+}: Props) {
+  const c = getDesignColors(dark)
+
   const [step, setStep]               = useState<Step>('type')
   const [financingType, setFT]        = useState('')
   const [form, setForm]               = useState({
@@ -168,13 +177,13 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
     // payment plan — the developer is who should see it, through the same
     // pipeline "Enquire about this development" already uses, not a
     // separate financing_requests row admin has to manually forward.
-    if (financingType === 'developer_plan' && developerId && projectId) {
+    if (financingType === 'developer_plan' && projectId) {
       try {
         const res = await fetch('/api/developer-leads', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            developer_id: developerId,
+            developer_id: developerId || null,
             project_id: projectId,
             unit_type_id: unitTypeId || null,
             name: form.buyer_name.trim(),
@@ -229,66 +238,74 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
     setStep('success')
   }
 
+  // Every color below comes from getDesignColors(dark) — nothing here is
+  // a fixed hex tied to one mode. Status colors (amber for "edit this",
+  // teal for saved-reference, red for errors, green for success) keep
+  // their semantic meaning across both themes, same as the rest of the app.
+  const overlayBg   = dark ? 'rgba(0,0,0,0.78)' : 'rgba(15,23,42,0.45)'
+  const inputBg     = dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
+  const hoverTint   = c.intelligencePurpleBg
+
   const css = `
     .fin-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.78);
+      position: fixed; inset: 0; background: ${overlayBg};
       display: flex; align-items: center; justify-content: center;
       z-index: 1000; padding: 24px; font-family: 'DM Sans', 'Inter', sans-serif;
     }
     .fin-modal {
-      background: #1E293B; border: 1px solid rgba(248,250,252,0.08);
+      background: ${c.surfaceCard}; border: 1px solid ${c.border};
       border-radius: 18px; width: 520px; max-width: 100%;
       max-height: 90vh; overflow-y: auto;
     }
     .fin-header {
       padding: 24px 28px 20px;
-      border-bottom: 1px solid rgba(248,250,252,0.07);
+      border-bottom: 1px solid ${c.border};
       display: flex; align-items: flex-start; justify-content: space-between;
     }
-    .fin-title { font-size: 18px; font-weight: 800; color: #F8FAFC; }
-    .fin-sub { font-size: 12px; color: rgba(248,250,252,0.45); margin-top: 3px; }
+    .fin-title { font-size: 18px; font-weight: 800; color: ${c.textPrimary}; }
+    .fin-sub { font-size: 12px; color: ${c.textMuted}; margin-top: 3px; }
     .fin-close {
-      background: none; border: none; color: rgba(248,250,252,0.4);
+      background: none; border: none; color: ${c.textMuted};
       cursor: pointer; padding: 4px; line-height: 1;
       display: flex; align-items: center; justify-content: center;
       transition: color 0.15s;
     }
-    .fin-close:hover { color: #F8FAFC; }
+    .fin-close:hover { color: ${c.textPrimary}; }
     .fin-body { padding: 24px 28px; }
     .type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
     .type-card {
-      background: #162032; border: 2px solid rgba(248,250,252,0.07);
+      background: ${c.surfaceCardHigh}; border: 2px solid ${c.border};
       border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.15s; text-align: left;
     }
-    .type-card:hover { border-color: rgba(91,46,255,0.4); background: rgba(91,46,255,0.05); }
-    .type-card.selected { border-color: #5B2EFF; background: rgba(91,46,255,0.1); }
-    .type-icon { color: #7C5FFF; margin-bottom: 8px; }
-    .type-label { font-size: 13px; font-weight: 700; color: #F8FAFC; margin-bottom: 4px; }
-    .type-desc { font-size: 11px; color: rgba(248,250,252,0.45); line-height: 1.5; }
+    .type-card:hover { border-color: ${c.intelligencePurple}66; background: ${hoverTint}; }
+    .type-card.selected { border-color: ${c.intelligencePurple}; background: ${hoverTint}; }
+    .type-icon { color: ${c.intelligencePurple}; margin-bottom: 8px; }
+    .type-label { font-size: 13px; font-weight: 700; color: ${c.textPrimary}; margin-bottom: 4px; }
+    .type-desc { font-size: 11px; color: ${c.textMuted}; line-height: 1.5; }
     .inp {
-      background: #162032; border: 1px solid rgba(248,250,252,0.1);
-      border-radius: 8px; padding: 10px 13px; font-size: 13px; color: #F8FAFC;
+      background: ${inputBg}; border: 1px solid ${c.border};
+      border-radius: 8px; padding: 10px 13px; font-size: 13px; color: ${c.textPrimary};
       font-family: inherit; width: 100%; transition: border-color 0.15s;
     }
-    .inp:focus { outline: none; border-color: #5B2EFF; }
-    .lbl { font-size: 10px; font-weight: 700; color: rgba(248,250,252,0.4); letter-spacing: 0.06em; text-transform: uppercase; display: block; margin-bottom: 5px; }
+    .inp:focus { outline: none; border-color: ${c.intelligencePurple}; }
+    .lbl { font-size: 10px; font-weight: 700; color: ${c.textMuted}; letter-spacing: 0.06em; text-transform: uppercase; display: block; margin-bottom: 5px; }
     .fg { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
     .fgg { margin-bottom: 14px; }
     select.inp { appearance: none; cursor: pointer; }
     .btn-row { display: flex; gap: 10px; margin-top: 20px; }
-    .btn-p { background: #5B2EFF; color: white; border: none; border-radius: 9px; padding: 11px 22px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.15s; }
+    .btn-p { background: ${c.intelligencePurple}; color: white; border: none; border-radius: 9px; padding: 11px 22px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.15s; }
     .btn-p:hover { opacity: 0.88; }
     .btn-p:disabled { opacity: 0.4; cursor: not-allowed; }
-    .btn-g { background: transparent; color: rgba(248,250,252,0.5); border: 1px solid rgba(248,250,252,0.12); border-radius: 9px; padding: 11px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
-    .btn-g:hover { color: #F8FAFC; }
-    .price-box { background: rgba(91,46,255,0.1); border: 1px solid rgba(91,46,255,0.25); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; }
-    .price-label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.7); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
-    .price-value { font-size: 22px; font-weight: 800; color: #ffffff !important; }
-    .err { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #EF4444; margin-bottom: 14px; }
-    .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(248,250,252,0.7); cursor: pointer; margin-bottom: 12px; }
+    .btn-g { background: transparent; color: ${c.textMuted}; border: 1px solid ${c.border}; border-radius: 9px; padding: 11px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .btn-g:hover { color: ${c.textPrimary}; }
+    .price-box { background: ${c.intelligencePurpleBg}; border: 1px solid ${c.intelligencePurple}40; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; }
+    .price-label { font-size: 10px; font-weight: 700; color: ${c.textPrimary}; opacity: 0.75; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+    .price-value { font-size: 22px; font-weight: 800; color: ${c.textPrimary} !important; }
+    .err { background: ${c.statusRedBg}; border: 1px solid ${c.statusRed}4D; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: ${c.statusRed}; margin-bottom: 14px; }
+    .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: ${c.textMuted}; cursor: pointer; margin-bottom: 12px; }
     .progress { display: flex; gap: 6px; margin-bottom: 20px; }
-    .prog-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(248,250,252,0.15); transition: background 0.15s; }
-    .prog-dot.done { background: #5B2EFF; }
+    .prog-dot { width: 6px; height: 6px; border-radius: 50%; background: ${c.border}; transition: background 0.15s; }
+    .prog-dot.done { background: ${c.intelligencePurple}; }
     .success-icon {
       color: #22C55E; margin-bottom: 16px;
       display: flex; align-items: center; justify-content: center;
@@ -326,14 +343,14 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
             {step !== 'success' && (
               <div className="price-box">
                 <div className="price-label">Property Value</div>
-                <div className="price-value" style={{ color: '#fff', textShadow: 'none' }}>{fmtNGN(estimatedPriceNgn)}</div>
+                <div className="price-value">{fmtNGN(estimatedPriceNgn)}</div>
               </div>
             )}
 
             {/* Step 1: Financing Type */}
             {step === 'type' && (
               <>
-                <div style={{ fontSize: 13, color: 'rgba(248,250,252,0.6)', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: c.textMuted, marginBottom: 16 }}>
                   What type of financing are you looking for?
                 </div>
                 <div className="type-grid">
@@ -361,7 +378,7 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
             {/* Step 2: Buyer Details */}
             {step === 'details' && (
               <>
-                <div style={{ fontSize: 13, color: 'rgba(248,250,252,0.6)', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: c.textMuted, marginBottom: 16 }}>
                   Your contact details
                 </div>
                 <div className="fg">
@@ -404,7 +421,7 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
             {/* Step 3: Financial Details */}
             {step === 'income' && (
               <>
-                <div style={{ fontSize: 13, color: 'rgba(248,250,252,0.6)', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: c.textMuted, marginBottom: 16 }}>
                   Financing details (helps us match you to the right partner)
                 </div>
                 <div className="fg">
@@ -473,7 +490,7 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
               const label = live ? getFinanceSuitabilityLabel(live.ltv_pct) : null
               return (
                 <>
-                  <div style={{ fontSize: 13, color: 'rgba(248,250,252,0.6)', marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, color: c.textMuted, marginBottom: 16 }}>
                     Your affordability position — based on what you've entered, not a lender decision.
                   </div>
                   <div className="fg">
@@ -484,39 +501,39 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
                     <div>
                       <label className="lbl">
                         Interest rate assumption (% p.a.)
-                        {selectedType?.rateIsPlaceholder && <span style={{ color: '#F59E0B', fontWeight: 400, textTransform: 'none' as const }}> — edit to your actual quote</span>}
+                        {selectedType?.rateIsPlaceholder && <span style={{ color: c.statusAmber, fontWeight: 400, textTransform: 'none' as const }}> — edit to your actual quote</span>}
                       </label>
                       <input className="inp" type="number" step="0.1" value={interestRatePct} onChange={e => setInterestRatePct(e.target.value)} />
                     </div>
                   </div>
 
                   {live ? (
-                    <div style={{ background: 'rgba(91,46,255,0.08)', border: '1px solid rgba(91,46,255,0.25)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+                    <div style={{ background: c.intelligencePurpleBg, border: `1px solid ${c.intelligencePurple}40`, borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                         <div>
                           <div className="lbl" style={{ marginBottom: 2 }}>Mortgage requirement</div>
-                          <div style={{ fontSize: 16, fontWeight: 800, color: '#F8FAFC' }}>{fmtNGN(live.mortgage_requirement_ngn)}</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: c.textPrimary }}>{fmtNGN(live.mortgage_requirement_ngn)}</div>
                         </div>
                         <div>
                           <div className="lbl" style={{ marginBottom: 2 }}>Indicative LTV</div>
-                          <div style={{ fontSize: 16, fontWeight: 800, color: '#F8FAFC' }}>{live.ltv_pct.toFixed(0)}%</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: c.textPrimary }}>{live.ltv_pct.toFixed(0)}%</div>
                         </div>
                         <div>
                           <div className="lbl" style={{ marginBottom: 2 }}>Indicative monthly repayment</div>
-                          <div style={{ fontSize: 16, fontWeight: 800, color: '#F8FAFC' }}>{fmtNGN(live.indicative_monthly_repayment_ngn)}</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: c.textPrimary }}>{fmtNGN(live.indicative_monthly_repayment_ngn)}</div>
                         </div>
                         <div>
                           <div className="lbl" style={{ marginBottom: 2 }}>Cash required now</div>
-                          <div style={{ fontSize: 16, fontWeight: 800, color: '#F8FAFC' }}>{fmtNGN(live.cash_requirement_ngn)}</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: c.textPrimary }}>{fmtNGN(live.cash_requirement_ngn)}</div>
                         </div>
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#14B8A6' }}>{label}</div>
-                      <div style={{ fontSize: 11, color: 'rgba(248,250,252,0.45)', marginTop: 8, lineHeight: 1.6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: c.verificationTeal }}>{label}</div>
+                      <div style={{ fontSize: 11, color: c.textMuted, marginTop: 8, lineHeight: 1.6 }}>
                         Excludes legal and agency fees. This is your own working analysis, not a MANOP or lender decision — final terms depend on lender underwriting, valuation and your eligibility.
                       </div>
                     </div>
                   ) : (
-                    <div style={{ fontSize: 12, color: 'rgba(248,250,252,0.45)', marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, color: c.textMuted, marginBottom: 16 }}>
                       Enter a down payment and an interest rate to see your affordability position.
                     </div>
                   )}
@@ -536,11 +553,11 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
             {/* Step 4: Confirm */}
             {step === 'confirm' && (
               <>
-                <div style={{ fontSize: 13, color: 'rgba(248,250,252,0.8)', marginBottom: 16, fontWeight: 600 }}>
+                <div style={{ fontSize: 13, color: c.textPrimary, opacity: 0.85, marginBottom: 16, fontWeight: 600 }}>
                   Review your financing request before submitting.
                 </div>
                 {financeReference && (
-                  <div style={{ fontSize: 11, color: '#14B8A6', marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: c.verificationTeal, marginBottom: 10 }}>
                     Affordability assessment saved as {financeReference}
                   </div>
                 )}
@@ -560,15 +577,15 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
                 ].map(row => (
                   <div key={row.label} style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '8px 0', borderBottom: '1px solid rgba(248,250,252,0.05)',
+                    padding: '8px 0', borderBottom: `1px solid ${c.border}`,
                     fontSize: 13,
                   }}>
-                    <span style={{ color: 'rgba(248,250,252,0.5)', fontSize: 12 }}>{row.label}</span>
-                    <span style={{ fontWeight: 600, color: '#F8FAFC' }}>{row.value}</span>
+                    <span style={{ color: c.textMuted, fontSize: 12 }}>{row.label}</span>
+                    <span style={{ fontWeight: 600, color: c.textPrimary }}>{row.value}</span>
                   </div>
                 ))}
 
-                <div style={{ background: 'rgba(20,184,166,0.12)', border: '1px solid rgba(20,184,166,0.3)', borderRadius: 10, padding: '12px 16px', marginTop: 16, fontSize: 12, color: 'rgba(248,250,252,0.85)', lineHeight: 1.7 }}>
+                <div style={{ background: c.verificationTealBg, border: `1px solid ${c.verificationTeal}4D`, borderRadius: 10, padding: '12px 16px', marginTop: 16, fontSize: 12, color: c.textPrimary, opacity: 0.9, lineHeight: 1.7 }}>
                   After submitting, MANOP will review your request and connect you with the most suitable financing partner in {form.buyer_city}. You will receive an email within 1-2 business days.
                 </div>
 
@@ -587,10 +604,10 @@ export default function FinancingModal({ propertyId, propertyAddress, estimatedP
             {step === 'success' && (
               <div style={{ textAlign: 'center', padding: '20px 0 10px' }}>
                 <div className="success-icon"><CheckCircle2 size={30} /></div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: '#F8FAFC', marginBottom: 10 }}>Request submitted</div>
-                <div style={{ fontSize: 13, color: 'rgba(248,250,252,0.55)', lineHeight: 1.7, marginBottom: 24 }}>
-                  We'll review your request and connect you with a financing partner in <strong style={{ color: '#F8FAFC' }}>{form.buyer_city}</strong> within 1-2 business days.<br /><br />
-                  Check your email at <strong style={{ color: '#F8FAFC' }}>{form.buyer_email}</strong> for next steps.
+                <div style={{ fontSize: 20, fontWeight: 800, color: c.textPrimary, marginBottom: 10 }}>Request submitted</div>
+                <div style={{ fontSize: 13, color: c.textMuted, lineHeight: 1.7, marginBottom: 24 }}>
+                  We'll review your request and connect you with a financing partner in <strong style={{ color: c.textPrimary }}>{form.buyer_city}</strong> within 1-2 business days.<br /><br />
+                  Check your email at <strong style={{ color: c.textPrimary }}>{form.buyer_email}</strong> for next steps.
                 </div>
                 <button className="btn-p" onClick={onClose}>Done</button>
               </div>

@@ -16,7 +16,7 @@ import TransactionPromptModal from '../../../components/TransactionPromptModal'
 import { ManopLogoSVG } from '../../../components/ManopLogo'
 import ManopLoader from '../../../components/ManopLoader'
 import ImageUploader from '../../../components/ImageUploader'
-import { ExternalLink, Plus, Trash2, Building2, Circle, BadgeCheck, ShieldCheck, Star, Clock, Mail, CheckCircle2, type LucideIcon } from 'lucide-react'
+import { ExternalLink, Plus, Trash2, Building2, BadgeCheck, ShieldCheck, Clock, Mail, CheckCircle2 } from 'lucide-react'
 import { supabase as sb } from '../../../lib/supabase'
 
 // ─── Neighbourhood → [lng, lat] centre coords ─────────────────
@@ -77,10 +77,7 @@ function fmtNGN(n: number | null): string {
 
 interface Partner {
   id: string; name: string; contact_email: string | null; cities: string[] | null
-  mape_score: number | null; mape_m: number | null; mape_a: number | null
-  mape_p: number | null; mape_e: number | null; mape_i: number | null
-  badge_level: string | null; verification_status: string | null
-  trust_level: string | null; partner_type: string | null
+  verification_status: string | null; partner_type: string | null
 }
 
 // A development the agency submitted or was assigned — NOT a resale
@@ -110,13 +107,6 @@ interface Txn {
 }
 
 type Tab = 'overview' | 'developments' | 'leads' | 'finance' | 'transactions' | 'verify' | 'settings'
-
-const BADGE_CONFIG: Record<string, { label: string; icon: LucideIcon; color: string; bg: string; border: string }> = {
-  listed:   { label: 'Listed',   icon: Circle,     color: '#94A3B8', bg: 'rgba(148,163,184,0.1)',  border: 'rgba(148,163,184,0.25)' },
-  verified: { label: 'Verified', icon: BadgeCheck, color: '#60A5FA', bg: 'rgba(96,165,250,0.1)',   border: 'rgba(96,165,250,0.25)' },
-  trust:    { label: 'Trust',    icon: ShieldCheck,color: '#14B8A6', bg: 'rgba(20,184,166,0.1)',   border: 'rgba(20,184,166,0.25)' },
-  elite:    { label: 'Elite',    icon: Star,       color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',   border: 'rgba(245,158,11,0.25)' },
-}
 
 const NEIGHBORHOODS = [
   'Lekki Phase 1','Lekki Phase 2','Ikoyi','Victoria Island','Eko Atlantic','Banana Island',
@@ -276,8 +266,8 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
       <BadgeCheck size={40} color="#14B8A6" style={{ marginBottom: '1rem' }} />
       <div style={{ fontSize: 16, fontWeight: 700, color: '#14B8A6', marginBottom: 8 }}>Verified</div>
       <div style={{ fontSize: 13, color: text2, lineHeight: 1.6, maxWidth: 360, margin: '0 auto' }}>
-        Your agency is verified on Manop. The Verified badge is visible on everything you submit.
-        Keep building your MAPE score to reach Trust and Elite.
+        Your agency identity has been verified by MANOP.
+        Continued review and document quality keeps future submissions moving smoothly.
       </div>
     </div>
   )
@@ -301,10 +291,10 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[
-            { icon: BadgeCheck, label: 'Verified badge on all submissions',      color: '#60A5FA' },
-            { icon: CheckCircle2, label: '+40 MAPE Ethics points',              color: '#22C55E' },
+            { icon: BadgeCheck, label: 'Verified identity on agency records',    color: '#60A5FA' },
+            { icon: CheckCircle2, label: 'Clearer review status',                 color: '#22C55E' },
             { icon: Clock,      label: 'Faster review turnaround',              color: '#5B2EFF' },
-            { icon: ShieldCheck,label: 'Eligible for Trust and Elite badges',   color: '#F59E0B' },
+            { icon: ShieldCheck,label: 'Greater credibility with buyers',       color: '#F59E0B' },
           ].map(w => (
             <div key={w.label} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0.6rem 0.875rem', background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${border}`, borderRadius: 9 }}>
               <w.icon size={15} color={w.color} style={{ flexShrink: 0 }} />
@@ -466,101 +456,6 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
 }
 
 // ─────────────────────────────────────────────────────────────
-// MAPEWidget — unchanged from original
-// ─────────────────────────────────────────────────────────────
-function MAPEWidget({ partner, developments, dark, border, text, text2, text3, bg3, onGoVerify }: {
-  partner: Partner; developments: Development[]; dark: boolean
-  border: string; text: string; text2: string; text3: string; bg3: string
-  onGoVerify: () => void
-}) {
-  const badge     = partner.badge_level || 'listed'
-  const badgeConf = BADGE_CONFIG[badge] || BADGE_CONFIG.listed
-  const total     = Math.round(partner.mape_score || 0)
-  const scores    = {
-    m: Math.round(partner.mape_m || 0),
-    a: Math.round(partner.mape_a || 0),
-    p: Math.round(partner.mape_p || 0),
-    e: Math.round(partner.mape_e || 0),
-    i: Math.round(partner.mape_i || 0),
-  }
-  const vStatus = partner.verification_status || 'not_started'
-
-  function nextAction() {
-    if (vStatus === 'not_started' || vStatus === 'unsubmitted')
-      return { label: 'Submit your association or professional body membership. Unlocks +40 Ethics points and the Verified badge.', cta: 'Submit verification →', color: '#60A5FA', onClick: onGoVerify }
-    if (developments.length === 0)
-      return { label: 'Submit your first development or land opportunity. A complete submission with documents earns Market Quality points once MANOP reviews it.', cta: null, color: '#5B2EFF' }
-    const published = developments.filter(d => d.publish_status === 'published').length
-    if (published === 0)
-      return { label: `${developments.length} development${developments.length !== 1 ? 's' : ''} submitted, none published yet — MANOP review is what moves a submission forward.`, cta: null, color: '#5B2EFF' }
-    if (scores.i < 30)
-      return { label: 'Log a closed transaction. Each verified transaction earns +20 Intelligence points — permanent, never decay.', cta: null, color: '#F59E0B' }
-    return { label: 'Reply to new leads within 4 hours. Response speed is the biggest Performance score driver.', cta: null, color: '#22C55E' }
-  }
-
-  const next = nextAction()
-  const dims = [
-    { key: 'm', label: 'Market quality', max: 200, val: scores.m, color: '#5B2EFF' },
-    { key: 'a', label: 'Activity',       max: 150, val: scores.a, color: '#14B8A6' },
-    { key: 'p', label: 'Performance',    max: 250, val: scores.p, color: '#22C55E' },
-    { key: 'e', label: 'Ethics',         max: 100, val: scores.e, color: '#F59E0B' },
-    { key: 'i', label: 'Intelligence',   max: 300, val: scores.i, color: '#F59E0B' },
-  ]
-
-  return (
-    <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.25rem' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: badgeConf.bg, border: `1px solid ${badgeConf.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: badgeConf.color, flexShrink: 0 }}>
-          <badgeConf.icon size={22} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: badgeConf.color }}>{badgeConf.label}</span>
-            <span style={{ fontSize: 18, fontWeight: 800, color: text, letterSpacing: '-0.03em' }}>{total}</span>
-            <span style={{ fontSize: 11, color: text3 }}>/1000 pts</span>
-          </div>
-          <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>MAPE score — updated nightly</div>
-        </div>
-        <div style={{ display: 'flex', gap: 5 }}>
-          {(['listed', 'verified', 'trust', 'elite'] as const).map(b => {
-            const bc = BADGE_CONFIG[b]; const isA = b === badge
-            return (
-              <div key={b} style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 2 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 7, background: isA ? bc.bg : 'transparent', border: `1px solid ${isA ? bc.border : border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isA ? bc.color : text3 }}><bc.icon size={13} /></div>
-                <div style={{ fontSize: '0.45rem', color: isA ? bc.color : text3, fontWeight: isA ? 700 : 400 }}>{bc.label}</div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, marginBottom: '1.25rem' }}>
-        {dims.map(d => (
-          <div key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: text3, textTransform: 'uppercase' as const, letterSpacing: '0.08em', width: 90, flexShrink: 0 }}>{d.label}</div>
-            <div style={{ flex: 1, height: 6, background: dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: `${Math.min(100, (d.val / d.max) * 100)}%`, height: '100%', background: d.color, borderRadius: 3, transition: 'width 0.6s ease' }} />
-            </div>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: text, width: 50, textAlign: 'right' as const, flexShrink: 0 }}>{d.val}/{d.max}</div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${border}`, borderRadius: 10, padding: '0.875rem 1rem' }}>
-        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: next.color, textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 6 }}>→ Highest impact next action</div>
-        <div style={{ fontSize: '0.8rem', color: text2, lineHeight: 1.65, marginBottom: next.onClick ? 10 : 0 }}>{next.label}</div>
-        {next.onClick && (
-          <button onClick={next.onClick}
-            style={{ fontSize: '0.78rem', fontWeight: 700, color: next.color, background: 'transparent', border: `1px solid ${next.color}30`, borderRadius: 7, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
-            {next.cta}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────
 // MAIN DASHBOARD
 // ─────────────────────────────────────────────────────────────
 export default function AgencyDashboard() {
@@ -618,7 +513,7 @@ export default function AgencyDashboard() {
     async function loadPartner() {
       try {
         const { data: byAuthId } = await sb.from('data_partners')
-          .select('id,name,contact_email,cities,mape_score,mape_m,mape_a,mape_p,mape_e,mape_i,badge_level,verification_status,trust_level,partner_type')
+          .select('id,name,contact_email,cities,verification_status,partner_type')
           .eq('auth_user_id', user.id)
           .maybeSingle()
 
@@ -632,7 +527,7 @@ export default function AgencyDashboard() {
         if (!cleanEmail) return
 
         const { data: byEmail } = await sb.from('data_partners')
-          .select('id,name,contact_email,cities,mape_score,mape_m,mape_a,mape_p,mape_e,mape_i,badge_level,verification_status,trust_level,partner_type')
+          .select('id,name,contact_email,cities,verification_status,partner_type')
           .ilike('contact_email', cleanEmail)
           .limit(1)
 
@@ -668,11 +563,8 @@ export default function AgencyDashboard() {
 
   const published    = developments.filter(d => d.publish_status === 'published').length
   const underReview  = developments.filter(d => d.publish_status !== 'published').length
-  const badge      = partner?.badge_level || 'listed'
-  const badgeConf  = BADGE_CONFIG[badge] || BADGE_CONFIG.listed
   const vStatus    = partner?.verification_status || 'not_started'
-  const isVerified = vStatus === 'verified' || vStatus === 'approved' ||
-                     badge === 'verified' || badge === 'trust' || badge === 'elite'
+  const isVerified = vStatus === 'verified' || vStatus === 'approved'
 
   // Leads that came in through Get Financed choosing a Developer
   // Installment Plan, not "Enquire about this development" — same
@@ -730,13 +622,6 @@ export default function AgencyDashboard() {
             <div style={{ fontWeight: 700, color: text, fontSize: 14 }}>{partner?.name}</div>
             <div style={{ fontSize: 11, color: text3 }}>{(partner?.cities || []).join(', ')}</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: badgeConf.bg, border: `1px solid ${badgeConf.border}`, borderRadius: 20, padding: '3px 10px' }}>
-            <badgeConf.icon size={11} color={badgeConf.color} />
-            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: badgeConf.color }}>{badgeConf.label}</span>
-          </div>
-          <div style={{ fontSize: '0.65rem', color: text3, background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', borderRadius: 20, padding: '3px 10px', border: `1px solid ${border}` }}>
-            {Math.round(partner?.mape_score || 0)}/1000 pts
-          </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Link href="/developments" style={{ fontSize: 12, color: text3, textDecoration: 'none', padding: '0.4rem 0.75rem', borderRadius: 7, border: `1px solid ${border}` }}>View public site</Link>
@@ -787,7 +672,14 @@ export default function AgencyDashboard() {
               ))}
             </div>
 
-            <MAPEWidget partner={partner} developments={developments} dark={dark} border={border} text={text} text2={text2} text3={text3} bg3={bg3} onGoVerify={() => setTab('verify')} />
+            <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 12, padding: '1rem 1.25rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 8 }}>Submission status</div>
+              <div style={{ fontSize: '0.82rem', color: text2, lineHeight: 1.7 }}>
+                {developments.length === 0
+                  ? 'No developments submitted yet. Add your first opportunity to start the review workflow.'
+                  : `${developments.length} development${developments.length === 1 ? '' : 's'} in your pipeline. ${published} published and ${underReview} awaiting action.`}
+              </div>
+            </div>
 
             <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Recent developments</div>
             {developments.length === 0 ? (
@@ -915,8 +807,8 @@ export default function AgencyDashboard() {
             <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 14, padding: '1.5rem', marginBottom: 16, boxShadow: cardShadow }}>
               <p style={{ fontSize: 13, color: text2, lineHeight: 1.65, marginBottom: 14 }}>
                 Log a sale or rental you've closed — you don't need an active listing here to do it.
-                Each verified transaction earns +20 Intelligence score points and strengthens the
-                neighborhood benchmark for everyone.
+                Verified records may inform aggregate Market Intelligence after review. Individual
+                transaction details are not presented publicly.
               </p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginBottom: 10 }}>
                 <input style={{ ...INP, maxWidth: 220 }} placeholder="Neighborhood *" value={txNeighborhood} onChange={e => setTxNeighborhood(e.target.value)} />

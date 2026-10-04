@@ -1,8 +1,6 @@
 'use client'
 // components/SaveDevelopmentButton.tsx
-// Saves/removes a development from the diaspora buyer's watchlist.
-// Reuses investor_watchlist (already built for resale properties) via
-// its new project_id column, rather than a separate saved-developments table.
+// Saves/removes a Reviewed Development using the project_id watchlist path.
 //
 // toggle() takes the click event and stops it here — this button sits
 // nested inside a Link (the development card) in a Server Component

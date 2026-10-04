@@ -24,7 +24,6 @@ interface DevAccount {
   email: string
   cities: string[]
   verified: boolean
-  mape_score: number | null
 }
 
 interface Project {
@@ -155,7 +154,7 @@ export default function DeveloperDashboard() {
         const { data: account } = await sb
           .from('developer_accounts')
           .select(
-            'id,company_name,contact_name,email,cities,verified,mape_score',
+            'id,company_name,contact_name,email,cities,verified',
           )
           .eq('auth_user_id', authUserId)
           .maybeSingle()
@@ -499,12 +498,7 @@ export default function DeveloperDashboard() {
   const financeLeads = leads.filter(
     l => l.source === 'manop_financing_developer_plan',
   )
-
-  // ── Project cap ──────────────────────────────────────
-
   const isVerified = dev?.verified || false
-  const atProjectCap =
-    !isVerified && projects.length >= 1
 
   // ── Tabs ─────────────────────────────────────────────
 
@@ -548,73 +542,21 @@ export default function DeveloperDashboard() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          color: text,
         }}
       >
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            border:
-              '3px solid rgba(245,158,11,0.2)',
-            borderTopColor: '#F59E0B',
-            borderRadius: '50%',
-            animation: 'spin 0.75s linear infinite',
-          }}
-        />
-
-        <style>{`
-          @keyframes spin {
-            to { transform: rotate(360deg) }
-          }
-        `}</style>
+        Loading developer dashboard…
       </div>
     )
   }
 
-  // ── Missing setup ────────────────────────────────────
-
   if (user && !dev) {
     return (
-      <div
-        style={{
-          background: bg,
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '1.5rem',
-          color: text,
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 440,
-            width: '100%',
-            textAlign: 'center',
-          }}
-        >
-          <h2
-            style={{
-              fontSize: '1.2rem',
-              fontWeight: 800,
-              marginBottom: '0.75rem',
-            }}
-          >
-            Setup not complete
-          </h2>
-
-          <Link
-            href="/developer/onboard"
-            style={{
-              background: '#F59E0B',
-              color: '#fff',
-              borderRadius: 8,
-              padding: '0.65rem 1.5rem',
-              fontSize: '0.9rem',
-              fontWeight: 700,
-              textDecoration: 'none',
-            }}
-          >
+      <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
+        <div style={{ maxWidth: 440, textAlign: 'center' as const }}>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '0.75rem' }}>Setup not complete</h2>
+          <p style={{ fontSize: '0.85rem', color: text2, marginBottom: '1.5rem', lineHeight: 1.65 }}>Your developer profile isn&apos;t set up yet.</p>
+          <Link href="/developer/onboard" style={{ background: '#5B2EFF', color: '#fff', borderRadius: 8, padding: '0.65rem 1.5rem', fontSize: '0.9rem', fontWeight: 700, textDecoration: 'none' }}>
             Complete setup →
           </Link>
         </div>
@@ -720,7 +662,7 @@ export default function DeveloperDashboard() {
 
         <div style={{ display: 'flex', gap: 8 }}>
           <Link
-            href="/search"
+            href="/developments"
             style={{
               fontSize: 12,
               color: text3,
@@ -817,45 +759,6 @@ export default function DeveloperDashboard() {
 
         {tab === 'overview' && (
           <div>
-            {!isVerified && (
-              <div
-                style={{
-                  background: 'rgba(245,158,11,0.07)',
-                  border: '1px solid rgba(245,158,11,0.25)',
-                  borderRadius: 12,
-                  padding: '1rem 1.25rem',
-                  marginBottom: '1.25rem',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: 10,
-                }}
-              >
-                <div style={{ fontSize: '0.82rem', color: text2 }}>
-                  Your company isn&apos;t verified yet. Verify to unlock
-                  multiple projects and build your MAPE score.
-                </div>
-                <button
-                  onClick={() => setTab('settings')}
-                  style={{
-                    background: '#F59E0B',
-                    color: '#0F172A',
-                    border: 'none',
-                    borderRadius: 8,
-                    padding: '0.5rem 1.1rem',
-                    fontWeight: 700,
-                    fontSize: '0.78rem',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Verify company →
-                </button>
-              </div>
-            )}
-
             <div
               style={{
                 display: 'grid',
@@ -1402,12 +1305,6 @@ export default function DeveloperDashboard() {
                     {isVerified ? '● Verified' : 'Not verified'}
                   </div>
                 </div>
-                {dev.mape_score != null && (
-                  <div>
-                    <div style={{ fontSize: '0.7rem', color: text3, marginBottom: 2 }}>MAPE score</div>
-                    <div style={{ fontSize: '0.88rem', color: text }}>{dev.mape_score}</div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1433,72 +1330,7 @@ export default function DeveloperDashboard() {
           <div style={{ maxWidth: 560 }}>
             <div style={STAG}>New project</div>
 
-            {atProjectCap && (
-              <div
-                style={{
-                  background:
-                    'rgba(245,158,11,0.07)',
-                  border:
-                    '1px solid rgba(245,158,11,0.25)',
-                  borderRadius: 12,
-                  padding: '1.25rem 1.5rem',
-                  marginBottom: '1rem',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: '0.9rem',
-                    fontWeight: 700,
-                    color: '#F59E0B',
-                    marginBottom: '0.5rem',
-                  }}
-                >
-                  Project limit reached
-                </div>
-
-                <div
-                  style={{
-                    fontSize: '0.8rem',
-                    color: text2,
-                    lineHeight: 1.65,
-                    marginBottom: '0.875rem',
-                  }}
-                >
-                  Unverified developers can
-                  list{' '}
-                  <strong
-                    style={{ color: text }}
-                  >
-                    1 active project
-                  </strong>
-                  . Verify your company identity
-                  to list multiple projects and
-                  build your MAPE score.
-                </div>
-
-                <button
-                  onClick={() =>
-                    setTab('settings')
-                  }
-                  style={{
-                    background: '#F59E0B',
-                    color: '#0F172A',
-                    border: 'none',
-                    borderRadius: 8,
-                    padding: '0.55rem 1.25rem',
-                    fontWeight: 700,
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  Verify company →
-                </button>
-              </div>
-            )}
-
-            {!atProjectCap && (
-              <div
+            <div
                 style={{
                   background: bg3,
                   border: `1px solid ${border}`,
@@ -1585,8 +1417,7 @@ export default function DeveloperDashboard() {
                     ? 'Creating…'
                     : 'Create project →'}
                 </button>
-              </div>
-            )}
+            </div>
           </div>
         )}
       </div>

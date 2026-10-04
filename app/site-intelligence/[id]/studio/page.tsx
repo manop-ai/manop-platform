@@ -40,7 +40,7 @@ import { rotatePolygon, scalePolygon, polygonAreaSqm } from '../../../../lib/sce
 import { BuildingForm, BUILDING_FORM_LABEL, generateFormLayout } from '../../../../lib/building-forms'
 import {
   Site, SiteIntelligenceLayer, InvestigationItem, LayerCategory, formatArea, formatSourceLine, OPPORTUNITY_TYPE_LABEL,
-  resolveLayerGeometry, LAYER_CATEGORY_LABEL,
+  resolveLayerGeometry, LAYER_CATEGORY_LABEL, resolveZoningEnvelope, ZoningEnvelope,
 } from '../../../../lib/site-intelligence'
 import {
   DevelopmentPreset, DEVELOPMENT_CATEGORY_LABEL, presetToScenarioDefaults, UnitMixRow,
@@ -116,6 +116,11 @@ export default function SiteStudioPage() {
   const [elements, setElements] = useState<ScenarioElementRow[]>([])
   const [buildings, setBuildings] = useState<BuildingRow[]>([])
   const [openSpaces, setOpenSpaces] = useState<{ id: string; label: string; geojson: GeoJSON.Polygon }[]>([])
+  // Real, placed parking objects (element_type 'parking') — empty if none have
+  // been drawn, or if the live database's element_type constraint hasn't been
+  // extended yet (sql/2026_site_studio_parking_element_type.sql). Either way,
+  // ScenarioMap/spatial model fall back to the indicative preview honestly.
+  const [parkingLots, setParkingLots] = useState<{ id: string; label: string; geojson: GeoJSON.Polygon; footprint_sqm: number | null }[]>([])
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(null)
   // Composable-scenario toggles (not persisted — see lib/building-forms.ts):
   // buildingForm is inferred from how many buildings currently exist
@@ -139,6 +144,7 @@ export default function SiteStudioPage() {
   const [leftTab, setLeftTab] = useState<'site' | 'layers' | 'tools'>('site')
   const [layersOpen, setLayersOpen] = useState(false)
   const [showOrientationMarker, setShowOrientationMarker] = useState(false)
+  const [showZoningEnvelope, setShowZoningEnvelope] = useState(true)
   const [showContextBuildings, setShowContextBuildings] = useState(false)
   const [activeIntelligenceLayerIds, setActiveIntelligenceLayerIds] = useState<Set<string>>(new Set())
   const [showBoundary, setShowBoundary] = useState(true)
@@ -241,6 +247,7 @@ export default function SiteStudioPage() {
     setActiveScenario(data.scenario); setReadings(data.readings || []); setElements(data.elements || [])
     setBuildings(data.buildings || [])
     setOpenSpaces(data.openSpaces || [])
+    setParkingLots(data.parkingLots || [])
     setShareUrl(null)
     setBottomOpen(true)
     setBuildingFormOverride(null) // form is inferred fresh from this scenario's own buildings — see state comment above
@@ -272,6 +279,26 @@ export default function SiteStudioPage() {
 
   async function deleteOpenSpace(id: string) {
     setOpenSpaces(prev => prev.filter(o => o.id !== id))
+    const res = await authedFetch(`/api/scenarios/${activeScenario!.id}/buildings/${id}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (res.ok) setReadings(data.readings || readings)
+  }
+
+  async function drawParkingFinish(polygon: GeoJSON.Polygon, areaSqm: number) {
+    if (!activeScenario) return
+    setDrawMode('none')
+    const res = await authedFetch(`/api/scenarios/${activeScenario.id}/buildings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ geojson: polygon, footprint_sqm: areaSqm, element_type: 'parking' }),
+    })
+    const data = await res.json()
+    if (res.ok) { setParkingLots(prev => [...prev, data.building]); setReadings(data.readings || readings) }
+    else if (data.code === 'PARKING_ELEMENT_TYPE_NOT_ENABLED') setError(data.error)
+    else setError(data.error || 'Could not add parking.')
+  }
+
+  async function deleteParkingLot(id: string) {
+    setParkingLots(prev => prev.filter(p => p.id !== id))
     const res = await authedFetch(`/api/scenarios/${activeScenario!.id}/buildings/${id}`, { method: 'DELETE' })
     const data = await res.json()
     if (res.ok) setReadings(data.readings || readings)
@@ -331,23 +358,42 @@ export default function SiteStudioPage() {
    */
   async function applyBuildingForm(form: BuildingForm) {
     if (!activeScenario || !site) return
+    if (saving) return // belt-and-braces — the UI already disables the toggle while a previous call is in flight
     if (site.lat == null || site.lng == null) {
       setError('This site has no known location yet — form toggling needs a site centre to build around.')
       return
     }
-    const totalFootprint = buildings.length > 0
-      ? buildings.reduce((sum, b) => sum + (b.footprint_sqm || 0), 0)
-      : (footprintReading?.numeric_value ?? 0)
-    if (!totalFootprint || totalFootprint <= 0) {
-      setError('No footprint to reshape yet — generate a scenario or draw a building first.')
-      return
-    }
-    const storeysForForm = buildings.length > 0
-      ? Math.round(buildings.reduce((sum, b) => sum + (b.storeys ?? 1), 0) / buildings.length)
-      : (storeys ?? activeScenario.storeys ?? 4)
 
     setSaving(true); setError('')
     try {
+      // REAL BUG FIX, confirmed from a live screenshot: this used to read
+      // `buildings`/`openSpaces` straight from React state. If a previous
+      // form-toggle's requests hadn't finished landing yet (e.g. two toggles
+      // clicked in quick succession), that state could be stale — this
+      // function would then delete the WRONG set of buildings, leaving the
+      // previous form's buildings orphaned. The confirmed symptom: a
+      // scenario showing "Buildings: 4" in one panel and "Buildings Placed:
+      // 8 buildings" in another, in the same screenshot. Re-fetching the
+      // scenario's current, authoritative state right here — instead of
+      // trusting the closure — is what actually fixes that, not just the
+      // disabled-while-saving guard above (which only reduces how often the
+      // race gets triggered).
+      const freshRes = await authedFetch(`/api/scenarios/${activeScenario.id}`)
+      const fresh = await freshRes.json()
+      const currentBuildings: typeof buildings = fresh.buildings || []
+      const currentOpenSpaces: typeof openSpaces = fresh.openSpaces || []
+
+      const totalFootprint = currentBuildings.length > 0
+        ? currentBuildings.reduce((sum, b) => sum + (b.footprint_sqm || 0), 0)
+        : (footprintReading?.numeric_value ?? 0)
+      if (!totalFootprint || totalFootprint <= 0) {
+        setError('No footprint to reshape yet — generate a scenario or draw a building first.')
+        return
+      }
+      const storeysForForm = currentBuildings.length > 0
+        ? Math.round(currentBuildings.reduce((sum, b) => sum + (b.storeys ?? 1), 0) / currentBuildings.length)
+        : (storeys ?? activeScenario.storeys ?? 4)
+
       const layout = generateFormLayout(form, {
         center: { lat: site.lat, lng: site.lng },
         totalFootprintSqm: totalFootprint,
@@ -355,11 +401,11 @@ export default function SiteStudioPage() {
       })
 
       // Replace the current buildings outright.
-      for (const b of buildings) {
+      for (const b of currentBuildings) {
         await authedFetch(`/api/scenarios/${activeScenario.id}/buildings/${b.id}`, { method: 'DELETE' })
       }
       // Replace only a PREVIOUSLY form-generated courtyard (label-tracked, see doc comment above) — never a differently-labelled open space.
-      for (const o of openSpaces.filter(o => o.label === 'Courtyard')) {
+      for (const o of currentOpenSpaces.filter(o => o.label === 'Courtyard')) {
         await authedFetch(`/api/scenarios/${activeScenario.id}/buildings/${o.id}`, { method: 'DELETE' })
       }
 
@@ -450,7 +496,12 @@ export default function SiteStudioPage() {
   }
 
   async function archiveScenario(id: string) {
-    await authedFetch(`/api/scenarios/${id}`, { method: 'DELETE' })
+    const res = await authedFetch(`/api/scenarios/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      setError(d.error || 'Could not archive the scenario.')
+      return
+    }
     if (activeScenario?.id === id) { setActiveScenario(null); setReadings([]); setElements([]) }
     await loadScenarios()
   }
@@ -523,6 +574,12 @@ export default function SiteStudioPage() {
     .map(l => ({ id: l.id, category: l.layer_category, label: l.label, geometry: resolveLayerGeometry(l) }))
     .filter((l): l is { id: string; category: LayerCategory; label: string; geometry: GeoJSON.Geometry } => !!l.geometry),
     [layers, activeIntelligenceLayerIds])
+
+  // Real zoning envelope, if (and only if) Site Intelligence has actually
+  // recorded one for this site — see resolveZoningEnvelope's own doc
+  // comment. Today this resolves to null for every site, which is the
+  // correct, honest result given nothing writes this data yet.
+  const zoningEnvelope: ZoningEnvelope | null = useMemo(() => resolveZoningEnvelope(layers), [layers])
 
   if (loading) return <StudioLoadingState c={c} label="Loading Site Studio…" />
   if (loadError) return <StudioErrorState c={c} dark={dark} title="We couldn't load this site's spatial data." detail={loadError} onRetry={() => window.location.reload()} />
@@ -738,6 +795,24 @@ export default function SiteStudioPage() {
                   ))}
                 </div>
               )}
+              {activeScenario && (
+                <button
+                  onClick={() => setDrawMode(drawMode === 'draw-parking' ? 'none' : 'draw-parking')}
+                  style={{ ...secondaryBtn(c), width: '100%', justifyContent: 'center', marginTop: 8, ...(drawMode === 'draw-parking' ? { background: '#475569', color: '#fff', borderColor: '#475569' } : {}) }}
+                >
+                  {drawMode === 'draw-parking' ? 'Cancel — Parking' : 'Draw Parking'}
+                </button>
+              )}
+              {parkingLots.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  {parkingLots.map(p => (
+                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '4px 0' }}>
+                      <span>{p.label}</span>
+                      <button onClick={() => deleteParkingLot(p.id)} style={{ ...stepBtn(c), width: 'auto', borderRadius: 4, padding: '2px 8px', fontSize: 11 }}>Remove</button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{ fontSize: 11, color: c.textFaint, lineHeight: 1.5, marginTop: 10 }}>
                 {activeScenario
                   ? 'Draw a building footprint, or trace open space ("green land") directly on the map. Placed buildings replace the auto-generated indicative footprint in the readings below.'
@@ -759,11 +834,14 @@ export default function SiteStudioPage() {
             onDrawFinish={(polygon) => saveDrawnBoundary(polygon)}
             onDrawBuildingFinish={drawBuildingFinish}
             onDrawOpenSpaceFinish={drawOpenSpaceFinish}
+            onDrawParkingFinish={drawParkingFinish}
             buildings={buildings}
+            realParkingLots={parkingLots}
             developmentCategory={activeScenario?.development_category}
             indicativeParkingStallCount={parkingEnabled ? (parkingReading?.numeric_value ?? null) : null}
             intelligenceLayers={activeIntelligenceLayers}
             showOrientationMarker={showOrientationMarker}
+            zoningEnvelope={showZoningEnvelope ? zoningEnvelope : null}
             showContextBuildings={showContextBuildings}
             openSpaces={openSpaces}
             selectedBuildingId={selectedBuildingId}
@@ -788,6 +866,11 @@ export default function SiteStudioPage() {
               <LayerRow c={c} label="Orientation marker" checked={showOrientationMarker} onChange={setShowOrientationMarker} enabled note="red = north, blue = east (3D)" />
 
               <div style={{ fontSize: 10.5, color: c.textFaint, margin: '10px 0 4px', fontWeight: 600 }}>SITE INTELLIGENCE</div>
+              <LayerRow
+                c={c} label="Zoning Envelope" checked={showZoningEnvelope} onChange={setShowZoningEnvelope}
+                enabled={!!zoningEnvelope}
+                note={zoningEnvelope ? '3D setback envelope (planning)' : 'no zoning rule recorded yet'}
+              />
               {layers.length === 0 && <div style={{ fontSize: 11, color: c.textFaint }}>No evidence layers recorded for this site yet.</div>}
               {layers.map(l => {
                 const geometry = resolveLayerGeometry(l)
@@ -867,21 +950,28 @@ export default function SiteStudioPage() {
                   value={buildingFormOverride ?? (buildings.length === 2 ? 'l' : buildings.length === 3 ? 'u' : buildings.length >= 4 ? 'courtyard' : 'bar')}
                   onChange={(v) => applyBuildingForm(v as BuildingForm)}
                   options={(['bar', 'l', 'u', 'courtyard'] as BuildingForm[]).map(f => ({ value: f, label: BUILDING_FORM_LABEL[f] }))}
+                  disabled={saving}
                 />
                 <div style={{ fontSize: 10.5, color: c.textFaint, marginTop: 6 }}>
                   Reshapes the scenario's buildings, keeping total footprint and average storeys. Podium+Tower is already available via Development Category (Mixed Use); Wrap and true multi-building composition are next.
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <span style={{ fontSize: 12.5, color: c.textMuted }}>Parking (indicative preview)</span>
-                <ToggleGroup c={c} value={parkingEnabled ? 'on' : 'off'} onChange={(v) => setParkingEnabled(v === 'on')} options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]} />
-              </div>
+              {parkingLots.length === 0 ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <span style={{ fontSize: 12.5, color: c.textMuted }}>Parking (indicative preview)</span>
+                  <ToggleGroup c={c} value={parkingEnabled ? 'on' : 'off'} onChange={(v) => setParkingEnabled(v === 'on')} options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]} />
+                </div>
+              ) : (
+                <Fact c={c} label="Parking" value={`${parkingLots.length} placed lot${parkingLots.length === 1 ? '' : 's'}`} />
+              )}
 
               <Fact c={c} label="Buildings" value={buildings.length > 0 ? String(buildings.length) : (massing?.footprint_sqm != null ? '1 (auto-generated)' : '0')} />
               <Fact c={c} label="Open Space" value={String(openSpaces.length)} />
               <div style={{ fontSize: 10.5, color: c.textFaint, marginBottom: 10 }}>
-                Parking shows as a generated indicative area (from Indicative Parking, below) when toggled on — not yet a placed, independently editable object like a building. Access is not yet modelled as a scenario object.
+                {parkingLots.length > 0
+                  ? 'Parking is a real, placed object — draw, move and delete it from the Tools tab, same as a building. Access is not yet modelled as a scenario object.'
+                  : 'Parking shows as a generated indicative area (from Indicative Parking, below) when toggled on — draw a real parking area from the Tools tab to replace it with a placed object. Access is not yet modelled as a scenario object.'}
               </div>
 
               {buildings.length > 0 && (
@@ -1084,12 +1174,12 @@ function StudioErrorState({ c, dark, title, detail, onRetry }: { c: ReturnType<t
   )
 }
 
-function ToggleGroup({ c, value, onChange, options }: { c: ReturnType<typeof getDesignColors>; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+function ToggleGroup({ c, value, onChange, options, disabled = false }: { c: ReturnType<typeof getDesignColors>; value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; disabled?: boolean }) {
   return (
-    <div style={{ display: 'flex', border: `1px solid ${c.border}`, borderRadius: designTokens.radius.sm, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', border: `1px solid ${c.border}`, borderRadius: designTokens.radius.sm, overflow: 'hidden', opacity: disabled ? 0.5 : 1 }}>
       {options.map(o => (
-        <button key={o.value} onClick={() => onChange(o.value)} style={{
-          padding: '6px 12px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+        <button key={o.value} disabled={disabled} onClick={() => onChange(o.value)} style={{
+          padding: '6px 12px', fontSize: 12, fontWeight: 600, border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
           background: value === o.value ? c.intelligencePurple : 'transparent', color: value === o.value ? '#fff' : c.textMuted,
         }}>{o.label}</button>
       ))}

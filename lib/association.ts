@@ -133,7 +133,6 @@ export async function getPendingVerifications(
       *,
       agency_name:data_partners(name),
       agency_cities:data_partners(cities),
-      agency_mape_score:data_partners(mape_score)
     `)
     .eq('association_id', associationId)
     .eq('verification_type', 'association_membership')
@@ -146,7 +145,6 @@ export async function getPendingVerifications(
     ...r,
     agency_name: r.agency_name?.name,
     agency_cities: r.agency_cities?.cities,
-    agency_mape_score: r.agency_mape_score?.mape_score,
   }))
 }
 
@@ -164,8 +162,6 @@ export async function getAssociationMembers(
     .select(`
       *,
       agency_name:data_partners(name),
-      agency_badge:data_partners(badge_level),
-      agency_mape_score:data_partners(mape_score),
       agency_verification_status:data_partners(verification_status),
       chapter_name:association_chapters(name)
     `, { count: 'exact' })
@@ -180,8 +176,6 @@ export async function getAssociationMembers(
   const members = (data ?? []).map((m: any) => ({
     ...m,
     agency_name: m.agency_name?.name,
-    agency_badge: m.agency_badge?.badge_level,
-    agency_mape_score: m.agency_mape_score?.mape_score,
     agency_verification_status: m.agency_verification_status?.verification_status,
     chapter_name: m.chapter_name?.name,
   }))

@@ -43,13 +43,11 @@ export const TOP_NAV_BY_ACCOUNT: Record<string, TopNavItem[]> = {
   investor: [
     { label: 'Dashboard',           href: '/investor/dashboard' },
     { label: 'Market Intelligence', href: '/markets' },
-    { label: 'Area Intelligence',   href: '/neighborhood' },
-    { label: 'Properties',         href: '/search' },
     { label: 'Developments',       href: '/developments' },
     { label: 'Investment Intelligence', href: '/calculator' },
   ],
   agency: [
-    { label: 'My Listings',      href: '/agency/dashboard' },
+    { label: 'My Developments',  href: '/agency/dashboard' },
     { label: 'My Developments',  href: '/agency/developments' },
     { label: 'Market Intelligence', href: '/markets' },
   ],

@@ -56,13 +56,13 @@ export default function VerifyPage() {
 
           const role = session2.user.user_metadata?.user_role || 'buyer'
           setStatus('routing')
-          router.replace(SETUP_ROUTES[role] || '/search')
+          router.replace(SETUP_ROUTES[role] || '/developments')
           return
         }
 
         const role = session.user.user_metadata?.user_role || 'buyer'
         setStatus('routing')
-        router.replace(SETUP_ROUTES[role] || '/search')
+        router.replace(SETUP_ROUTES[role] || '/developments')
 
       } catch (e) {
         setErrorMsg('Verification failed. Please try again.')

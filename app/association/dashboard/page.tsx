@@ -216,7 +216,7 @@ export default function AssociationDashboard() {
     let mq = sb.from('association_memberships')
       .select(`
         id, membership_number, status, verified_by_assoc, joined_at, submitted_at, chapter_id,
-        data_partners!inner(id, name, badge_level, mape_score, verification_status, cities),
+        data_partners!inner(id, name, verification_status, cities),
         association_chapters(name, state)
       `, { count:'exact' })
       .eq('association_id', aid)
@@ -236,8 +236,7 @@ export default function AssociationDashboard() {
       submitted_at: m.submitted_at,
       agency_id: m.data_partners?.id,
       agency_name: m.data_partners?.name ?? '—',
-      agency_badge: m.data_partners?.badge_level ?? 'listed',
-      agency_mape: m.data_partners?.mape_score ?? 0,
+      agency_verification: m.data_partners?.verification_status,
       agency_cities: m.data_partners?.cities ?? [],
       chapter_name: m.association_chapters?.name ?? null,
       chapter_state: m.association_chapters?.state ?? null,
@@ -249,7 +248,7 @@ export default function AssociationDashboard() {
       .select(`
         id, verification_type, status, membership_number, body_code,
         submitted_at, office_address, contact_phone,
-        data_partners!inner(id, name, cities, mape_score, verification_status)
+        data_partners!inner(id, name, cities, verification_status)
       `)
       .eq('association_id', aid)
       .eq('verification_type','association_membership')
@@ -262,7 +261,6 @@ export default function AssociationDashboard() {
       agency_id: r.data_partners?.id,
       agency_name: r.data_partners?.name ?? '—',
       agency_cities: r.data_partners?.cities ?? [],
-      agency_mape: r.data_partners?.mape_score ?? 0,
       agency_verification: r.data_partners?.verification_status,
       membership_number: r.membership_number,
       body_code: r.body_code,
@@ -887,25 +885,6 @@ export default function AssociationDashboard() {
       margin-bottom: 18px;
     }
 
-    /* ── MAPE bar ── */
-    #assoc-root .mape-wrap {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-    }
-    #assoc-root .mape-bar {
-      width: 52px;
-      height: 4px;
-      background: rgba(255,255,255,0.08);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    #assoc-root .mape-fill {
-      height: 100%;
-      border-radius: 2px;
-      background: #5B2EFF;
-    }
-
     /* ── Neighborhoods ── */
     #assoc-root .hood-wrap {
       display: flex;
@@ -1211,25 +1190,8 @@ export default function AssociationDashboard() {
                   <KPI label="Total Members"     value={intel?.total_members ?? memberTotal}     accent="#5B2EFF" sub={`${intel?.new_members_this_period ?? 0} new this month`} T={T} />
                   <KPI label="Verified Members"  value={intel?.verified_members ?? '—'}          accent="#22c55e" sub={intel?.verification_rate_pct ? `${intel.verification_rate_pct}% rate` : 'No data yet'} T={T} />
                   <KPI label="Pending Review"    value={verQueue.length}                          accent={verQueue.length > 0 ? '#f59e0b' : '#22c55e'} sub="Awaiting your action" T={T} />
-                  <KPI label="Elite Agencies"    value={intel?.elite_members ?? 0}               accent="#f59e0b" sub={`${intel?.trust_members ?? 0} Trust level`} T={T} />
-                  <KPI label="Avg MAPE Score"    value={intel?.avg_mape_score ? Math.round(intel.avg_mape_score) : '—'} accent="#3b82f6" sub={intel?.median_mape_score ? `Median ${Math.round(intel.median_mape_score)}` : undefined} T={T} />
-                  <KPI label="Total Listings"    value={intel?.total_listings ?? 0}              accent="#14B8A6" sub={`${intel?.total_transactions ?? 0} transactions`} T={T} />
+                  <KPI label="Transactions"      value={intel?.total_transactions ?? 0}         accent="#14B8A6" sub="Recorded market events" T={T} />
                 </div>
-
-                {/* Top neighborhoods */}
-                {intel?.top_neighborhoods?.length > 0 && (
-                  <>
-                    <div className="sec-lbl">Most Active Neighborhoods</div>
-                    <div className="hood-wrap">
-                      {intel.top_neighborhoods.map((n: string, i: number) => (
-                        <div key={n} className="hood">
-                          {i === 0 && <span style={{ color:'#f59e0b' }}>★</span>}
-                          {n}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
 
                 {/* Chapter overview */}
                 {ctx.isNational && chapters.length > 0 && (
@@ -1282,8 +1244,7 @@ export default function AssociationDashboard() {
                         <th>Agency</th>
                         <th>Chapter</th>
                         <th>Cities</th>
-                        <th>MAPE</th>
-                        <th>Badge</th>
+                        <th>Identity verification</th>
                         <th>Status</th>
                         <th>Joined</th>
                       </tr>
@@ -1303,18 +1264,7 @@ export default function AssociationDashboard() {
                           <td style={{ fontSize:11, color:'rgba(255,255,255,0.45)' }}>
                             {m.agency_cities?.slice(0,2).join(', ') || '—'}
                           </td>
-                          <td>
-                            <div className="mape-wrap">
-                              <span style={{ fontWeight:700 }}>{m.agency_mape}</span>
-                              <div className="mape-bar">
-                                <div className="mape-fill" style={{ width:`${Math.min(m.agency_mape/10,100)}%` }} />
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <Chip label={m.agency_badge}
-                              color={m.agency_badge==='elite'?'#f59e0b':m.agency_badge==='trust'?'#22c55e':m.agency_badge==='verified'?'#3b82f6':'#64748b'} />
-                          </td>
+                          <td><Chip label={m.agency_verification ?? 'not started'} color={m.agency_verification==='verified' || m.agency_verification==='approved' ? '#22c55e' : '#64748b'} /></td>
                           <td>
                             <Chip label={m.status}
                               color={m.status==='active'?'#22c55e':m.status==='pending'?'#f59e0b':'#ef4444'} />
@@ -1335,7 +1285,7 @@ export default function AssociationDashboard() {
               <>
                 <div className="notice-box">
                   <strong style={{ color:'#f1f5f9' }}>Verification is controlled by the national admin.</strong><br />
-                  When an agency claims {ctx.associationCode} membership, their request appears here. You review their details, check your records, and approve or reject. Approved agencies get a verified badge and their MAPE Ethics score increases automatically.
+                  When an agency claims {ctx.associationCode} membership, their request appears here. Review their details, check your records, then approve or reject the membership request.
                 </div>
 
                 {verQueue.length === 0
@@ -1355,7 +1305,6 @@ export default function AssociationDashboard() {
                           <th>Agency</th>
                           <th>Membership No.</th>
                           <th>Cities</th>
-                          <th>MAPE</th>
                           <th>Current Status</th>
                           <th>Submitted</th>
                           <th>Action</th>
@@ -1374,7 +1323,6 @@ export default function AssociationDashboard() {
                             <td style={{ fontSize:11, color:'rgba(255,255,255,0.45)' }}>
                               {r.agency_cities?.slice(0,2).join(', ') || '—'}
                             </td>
-                            <td style={{ fontWeight:700 }}>{r.agency_mape}</td>
                             <td>
                               <Chip label={r.agency_verification ?? 'not started'}
                                 color={r.agency_verification==='verified'?'#22c55e':r.agency_verification==='pending'?'#f59e0b':'#64748b'} />

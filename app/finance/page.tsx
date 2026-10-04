@@ -40,7 +40,7 @@ const MODULES: Module[] = [
     status: 'available',
     body: 'Set a property price against the deposit you have. See the amount you would need to borrow, the loan-to-value, an indicative monthly repayment and the cash needed now — using your own assumptions.',
     where: 'Currently reachable only from an individual listing on the legacy search flow, not yet from a Reviewed Development. Flagged in the ongoing architecture reconciliation.',
-    // No href/cta here on purpose — the honest destination is /search,
+    // No href/cta here on purpose — the honest destination depends on context,
     // which is the flow this reconciliation is questioning. Pointing a
     // Finance Intelligence CTA at it was the bug: it made a legacy-model
     // page look like the current, intended path. Restore a CTA once this

@@ -15,14 +15,16 @@ import Link from 'next/link'
 import { getInitialDark, listenTheme } from '../lib/theme'
 import { ManopLogoSVG } from './ManopLogo'
 
+// Current architecture leads: Reviewed Developments, Site Intelligence,
+// Finance Intelligence, and Market Intelligence.
 const COLS = [
   {
     heading: 'Platform',
     links: [
-      { label: 'Search properties',   href: '/search'     },
-      { label: 'Market intelligence', href: '/markets'    },
-      { label: 'Investment Intelligence', href: '/calculator' },
-      { label: 'Neighborhood data',   href: '/markets'    },
+      { label: 'Reviewed Developments',   href: '/developments' },
+      { label: 'Site Intelligence',       href: '/site-intelligence' },
+      { label: 'Finance Intelligence',    href: '/finance'      },
+      { label: 'Market Intelligence',     href: '/markets'      },
     ],
   },
   {
@@ -30,15 +32,14 @@ const COLS = [
     links: [
       { label: 'Agency onboarding',    href: '/agency/onboard'    },
       { label: 'Developer onboarding', href: '/developer/onboard' },
-      { label: 'MAPE trust scoring',   href: '/markets'           },
       { label: 'API access',           href: '/register'          },
     ],
   },
   {
     heading: 'Markets',
     links: [
-      { label: 'Lagos',   href: '/markets?area=Lekki%20Phase%201' },
-      { label: 'Accra',   href: '/markets?area=East%20Legon'      },
+      { label: 'Lekki Phase 1',  href: '/markets?area=Lekki%20Phase%201' },
+      { label: 'Ikoyi',          href: '/markets?area=Ikoyi'             },
     ],
   },
   {
@@ -77,18 +78,17 @@ export default function ManopFooter() {
             <ManopLogoSVG height={72} dark={dark} showText />
           </Link>
           <p style={{ fontSize: '0.78rem', color: text2, lineHeight: 1.75, maxWidth: 240, margin: '0 0 1.25rem' }}>
-            The intelligence and trust platform for African real estate. Verified data, agency trust scores, and market benchmarks across Lagos, Abuja, Accra, and Nairobi.
+            MANOP is building intelligence and trust infrastructure for African real estate — connecting site, development, market and financial intelligence to help people make better-informed decisions. Private beta, starting in Lagos.
           </p>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {['NG', 'GH', 'KE'].map(code => (
-              <span key={code} style={{
-                fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.04em',
-                padding: '3px 7px', borderRadius: 5,
-                color: text2, background: dark ? 'rgba(248,250,252,0.06)' : 'rgba(15,23,42,0.05)',
-                border: `1px solid ${dark ? 'rgba(248,250,252,0.1)' : 'rgba(15,23,42,0.08)'}`,
-              }}>{code}</span>
-            ))}
-          </div>
+          {/* Single market badge, matching the homepage's actual beta
+               claim — was NG/GH/KE, which overstated coverage the same
+               way the old tagline and Markets column did. */}
+          <span style={{
+            fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.04em',
+            padding: '3px 7px', borderRadius: 5, display: 'inline-block',
+            color: text2, background: dark ? 'rgba(248,250,252,0.06)' : 'rgba(15,23,42,0.05)',
+            border: `1px solid ${dark ? 'rgba(248,250,252,0.1)' : 'rgba(15,23,42,0.08)'}`,
+          }}>NG · Lagos</span>
         </div>
 
         {/* Link columns */}

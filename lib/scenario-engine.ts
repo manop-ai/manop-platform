@@ -25,6 +25,8 @@
 // parameters; this file is the only thing allowed to turn those
 // parameters into geometry/quantities.
 
+import { INDICATIVE_SQM_PER_PARKING_SPACE } from './scenario-geometry'
+
 export type ValueStatus =
   | 'fact' | 'assumption' | 'derived' | 'estimate' | 'professional_opinion' | 'unknown'
 
@@ -293,6 +295,33 @@ export function overrideReadingWithPlacedOpenSpace(
     reading_key: 'indicative_open_space_sqm', label: 'Indicative Open Space', numeric_value: round2(total),
     unit: 'sqm', value_status: 'derived',
     derivation_note: `Sum of ${openSpaceAreasSqm.length} placed open space area${openSpaceAreasSqm.length === 1 ? '' : 's'}`,
+    source: null,
+  })
+  return next
+}
+
+/**
+ * Same idea again, for real PLACED parking objects (element_type
+ * 'parking' — see sql/2026_site_studio_parking_element_type.sql).
+ * Deliberately still `value_status: 'estimate'`, not 'derived' or
+ * 'fact': the placed AREA is real, but the stall COUNT is still
+ * area ÷ an assumed sqm-per-space figure, not a solved stall-by-stall
+ * layout. Upgrading this to 'derived' would overclaim precision the
+ * underlying calculation doesn't have — area-based estimation and a
+ * real parking-layout solver are genuinely different levels of
+ * evidence, and the status must say which one this is.
+ */
+export function overrideReadingWithPlacedParking(
+  readings: ScenarioReading[], parkingAreasSqm: number[],
+): ScenarioReading[] {
+  if (parkingAreasSqm.length === 0) return readings
+  const totalArea = parkingAreasSqm.reduce((sum, a) => sum + a, 0)
+  const estimatedStalls = Math.floor(totalArea / INDICATIVE_SQM_PER_PARKING_SPACE)
+  const next = readings.filter(r => r.reading_key !== 'indicative_parking_count')
+  next.push({
+    reading_key: 'indicative_parking_count', label: 'Indicative Parking', numeric_value: estimatedStalls,
+    unit: 'spaces', value_status: 'estimate',
+    derivation_note: `${Math.round(totalArea).toLocaleString()} sqm placed parking area ÷ ~${INDICATIVE_SQM_PER_PARKING_SPACE} sqm/space — still an area-based estimate, not a solved stall layout`,
     source: null,
   })
   return next

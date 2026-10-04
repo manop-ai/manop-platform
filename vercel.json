@@ -7,13 +7,13 @@
     "app/api/**/*.ts": {
       "maxDuration": 30
     },
-    "app/api/cron/compute-mape/route.ts": {
+    "app/api/cron/refresh-intelligence/route.ts": {
       "maxDuration": 60
     }
   },
   "crons": [
     {
-      "path": "/api/cron/compute-mape",
+      "path": "/api/cron/refresh-intelligence",
       "schedule": "0 2 * * *"
     }
   ],

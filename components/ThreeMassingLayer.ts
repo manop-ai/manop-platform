@@ -28,6 +28,8 @@
 import * as THREE from 'three'
 import type mapboxgl from 'mapbox-gl'
 import { buildMassing, buildParkingLot, scatterTrees, MassingCategory, LocalPoint2D } from '../lib/massing-geometry'
+import { buildZoningEnvelopeMesh } from '../lib/zoning-envelope-geometry'
+import type { ZoningEnvelope } from '../lib/site-intelligence'
 
 const METERS_PER_DEGREE_LAT = 111_320
 function metersPerDegreeLng(atLat: number): number {
@@ -62,6 +64,10 @@ export class ThreeMassingLayer implements mapboxgl.CustomLayerInterface {
   // Separate from siteGroup on purpose: setScene() clears siteGroup on every
   // update, and the orientation marker must survive scene updates.
   private debugGroup = new THREE.Group()
+  // Same reasoning again: the zoning envelope is a constraint, not part
+  // of the scenario's own massing — it must not be cleared every time
+  // setScene() runs.
+  private envelopeGroup = new THREE.Group()
   private enabled = true
 
   setEnabled(v: boolean) { this.enabled = v; this.map?.triggerRepaint() }
@@ -71,6 +77,7 @@ export class ThreeMassingLayer implements mapboxgl.CustomLayerInterface {
     this.scene.add(this.buildingsGroup)
     this.scene.add(this.siteGroup)
     this.scene.add(this.debugGroup)
+    this.scene.add(this.envelopeGroup)
   }
 
   onAdd(map: mapboxgl.Map, gl: WebGLRenderingContext) {
@@ -168,23 +175,45 @@ export class ThreeMassingLayer implements mapboxgl.CustomLayerInterface {
     this.map?.triggerRepaint()
   }
 
-  /** A real spatial parking area — painted stall outlines sized to
-   * the scenario's indicative parking count, not just a tinted ground
-   * plane. `areaPoints` is an INDICATIVE placement (see
-   * ScenarioMap.buildIndicativeParkingPolygon) — there is no
-   * persisted parking scenario_elements row yet (see the Site Studio
-   * audit, Priority 2: parking spatialisation), so this always
-   * renders as a generated preview, never a placed/editable object,
-   * exactly like the indicative building footprint preview it's
-   * modelled on. `targetStallCount` of 0 or null clears the layer. */
-  setParking(areaPoints: { lat: number; lng: number }[] | null, targetStallCount: number | null) {
-    const existing = this.siteGroup.getObjectByName('parking-lot')
+  /**
+   * The TestFit-style setback/sky-exposure envelope. `envelope` must
+   * already be a REAL, validated ZoningEnvelope (see
+   * resolveZoningEnvelope in lib/site-intelligence.ts) — this method
+   * has no fallback/placeholder rendering for "no data", because the
+   * correct behaviour for no data is simply never calling this at
+   * all, same as setParking's lots array being empty. `boundaryPoints`
+   * must be the SAME site boundary the envelope's edgeIndex values
+   * were authored against, in the same winding order.
+   */
+  setZoningEnvelope(envelope: ZoningEnvelope | null, boundaryPoints: { lat: number; lng: number }[] | null) {
+    this.envelopeGroup.clear()
+    if (!envelope || !boundaryPoints || boundaryPoints.length < 3) { this.map?.triggerRepaint(); return }
+    const localRing = boundaryPoints.map(p => this.toLocal(p))
+    this.envelopeGroup.add(buildZoningEnvelopeMesh(localRing, envelope))
+    this.map?.triggerRepaint()
+  }
+
+  /** A real spatial parking area or areas — painted stall outlines +
+   * drive aisle, sized to each lot's own stall count. Accepts an
+   * array now: once parking is a real, independently placed
+   * scenario_elements object (see sql/2026_site_studio_parking_
+   * element_type.sql), a scenario can have more than one lot, the
+   * same way it can have more than one building. A single generated
+   * indicative preview is still just a one-element array from the
+   * caller's point of view — this function doesn't need to know
+   * which case it's in. */
+  setParking(lots: { points: { lat: number; lng: number }[]; stallCount: number }[]) {
+    const existing = this.siteGroup.getObjectByName('parking-lots')
     if (existing) this.siteGroup.remove(existing)
-    if (!areaPoints || !targetStallCount || targetStallCount <= 0) { this.map?.triggerRepaint(); return }
-    const localPoints = areaPoints.map(p => this.toLocal(p))
-    const lot = buildParkingLot(localPoints, targetStallCount)
-    lot.name = 'parking-lot'
-    this.siteGroup.add(lot)
+    if (lots.length === 0) { this.map?.triggerRepaint(); return }
+    const group = new THREE.Group()
+    group.name = 'parking-lots'
+    for (const lot of lots) {
+      if (!lot.stallCount || lot.stallCount <= 0) continue
+      const localPoints = lot.points.map(p => this.toLocal(p))
+      group.add(buildParkingLot(localPoints, lot.stallCount))
+    }
+    this.siteGroup.add(group)
     this.map?.triggerRepaint()
   }
 

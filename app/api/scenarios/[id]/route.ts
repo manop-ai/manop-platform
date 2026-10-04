@@ -14,16 +14,22 @@ import { recomputeAndPersistReadings } from '../../../../lib/scenario-persist'
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const sb = sbFromRequest(req)
 
-  const [{ data: scenario, error: scenarioError }, { data: readings }, { data: elements }, { data: buildings }, { data: openSpaces }] = await Promise.all([
+  const [{ data: scenario, error: scenarioError }, { data: readings }, { data: elements }, { data: buildings }, { data: openSpaces }, { data: parkingLots }] = await Promise.all([
     sb.from('development_scenarios').select('*').eq('id', params.id).single(),
     sb.from('scenario_readings').select('*').eq('scenario_id', params.id),
     sb.from('scenario_elements').select('*').eq('scenario_id', params.id),
     sb.rpc('get_scenario_buildings_geojson', { p_scenario_id: params.id }),
     sb.rpc('get_scenario_elements_geojson', { p_scenario_id: params.id, p_element_type: 'open_space' }),
+    // 'parking' as a real element_type is new — see
+    // sql/2026_site_studio_parking_element_type.sql. If the live CHECK
+    // constraint doesn't allow it yet, no 'parking' rows can exist, so this
+    // just comes back empty — not an error — and the Studio correctly falls
+    // back to the indicative parking preview, exactly as before.
+    sb.rpc('get_scenario_elements_geojson', { p_scenario_id: params.id, p_element_type: 'parking' }),
   ])
 
   if (scenarioError || !scenario) return NextResponse.json({ error: 'Scenario not found.' }, { status: 404 })
-  return NextResponse.json({ scenario, readings: readings || [], elements: elements || [], buildings: buildings || [], openSpaces: openSpaces || [] })
+  return NextResponse.json({ scenario, readings: readings || [], elements: elements || [], buildings: buildings || [], openSpaces: openSpaces || [], parkingLots: parkingLots || [] })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

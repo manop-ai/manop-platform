@@ -1,12 +1,7 @@
 // lib/log-site-signal.ts
 //
-// Site Intelligence writes into the SAME activity_log table
-// (and signal_category/signal_weight vocabulary) that already drives
-// neighborhood_intelligence and platform_intelligence — not a
-// separate signals system. Weights are chosen to sit sensibly
-// alongside the existing ones already defined for properties
-// (property_view = 2, enquiry_sent = 25, etc.) — see the Signal
-// Intelligence Infrastructure migration for those.
+// Site Intelligence activity is recorded in the shared activity_log so
+// evidence and interaction history stay available to future intelligence.
 
 import { SupabaseClient } from '@supabase/supabase-js'
 

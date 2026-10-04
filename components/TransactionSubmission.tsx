@@ -131,10 +131,9 @@ export default function TransactionSubmission({ partnerId, agencyName, dark }: P
       <div style={{ background: dark ? 'rgba(91,46,255,0.07)' : 'rgba(91,46,255,0.04)', border: '1px solid rgba(91,46,255,0.18)', borderRadius: 10, padding: '1rem', marginBottom: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: '#7C5FFF', marginBottom: 6 }}>Why submit transaction data?</div>
         <div style={{ fontSize: 12, color: text2, lineHeight: 1.6 }}>
-          Manop's intelligence — yield, cap rate, PropLens verdict — becomes more accurate with verified sold prices.
+          Verified sold prices strengthen Market Intelligence and help MANOP report observed market conditions more accurately.
           Your transaction data is <strong>kept confidential</strong> and only used to compute
-          neighborhood-level benchmarks. No individual deal is ever shown publicly.
-          Agencies that contribute data get a <strong>verified data contributor badge</strong> on all their listings.
+          aggregate market information. No individual deal is shown publicly.
         </div>
       </div>
 

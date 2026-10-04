@@ -121,7 +121,7 @@ export default function NavBar() {
   const toggleTrack = dark ? '#5B2EFF' : '#CBD5E1'
   const hoverBg     = dark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.04)'
 
-  const dashboardHref = userRole ? (ROLE_ROUTES[userRole] || '/search') : '/search'
+  const dashboardHref = userRole ? (ROLE_ROUTES[userRole] || '/developments') : '/developments'
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/')
   const groupActive = (g: NavGroup) => g.items.some(i => isActive(i.href))

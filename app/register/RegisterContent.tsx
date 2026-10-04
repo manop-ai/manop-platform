@@ -24,7 +24,7 @@ type AccountType = 'buyer' | 'diaspora' | 'agency' | 'developer'
 const ACCOUNT_TYPES: { key: AccountType; label: string; sub: string; icon: string; color: string }[] = [
   { key: 'buyer',     label: 'Home Buyer',       sub: 'Find and evaluate properties',        icon: '🏠', color: '#5B2EFF' },
   { key: 'diaspora',  label: 'Diaspora Investor', sub: 'Invest from abroad — USD pricing',    icon: '🌍', color: '#14B8A6' },
-  { key: 'agency',    label: 'Agency',            sub: 'List properties, track leads, earn MAPE', icon: '🏢', color: '#7C5FFF' },
+  { key: 'agency',    label: 'Agency',            sub: 'List properties and manage opportunities', icon: '🏢', color: '#7C5FFF' },
   { key: 'developer', label: 'Developer',         sub: 'Showcase projects, track unit sales', icon: '🏗️', color: '#F59E0B' },
 ]
 

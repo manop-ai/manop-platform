@@ -10,6 +10,18 @@ import Link from 'next/link'
 import { getInitialDark, listenTheme } from '../../lib/theme'
 import { ManopLogoSVG } from '../../components/ManopLogo'
 import { Download } from 'lucide-react'
+import { sb } from '../../lib/supabase/client'
+
+// PHASE 3 (Investment Intelligence persistence): this page's own analyze()
+// math is left exactly as-is — it's tested, and lib/finance-intelligence.ts's
+// calculateInvestmentCashflow is a verbatim extraction of it, not a
+// different formula, so there's nothing to reconcile numerically. What
+// was actually missing for Phase 3 was persistence: every other Finance
+// Intelligence surface (FinancingModal's Buyer Affordability) saves its
+// result to finance_analyses so it can be revisited later — this page
+// never did. It now does, via saveAnalysis() below, and exposes DSCR
+// per structure (noi ÷ annual debt service) alongside yield/CoC, same as
+// lib/finance-intelligence.ts's describeDSCR bands.
 
 // ─── UNIT CONVENTION ─────────────────────────────────────────
 // ALL internal values are in ACTUAL NAIRA
@@ -69,6 +81,18 @@ interface StructResult {
   coc:             number
   monthlyDebt:     number
   equityIn:        number
+  dscr:            number | null
+}
+
+// Same bands as lib/finance-intelligence.ts's describeDSCR — kept as a
+// local copy rather than importing it, since this is a label-only helper
+// and the point of this pass is persistence, not a wholesale rewrite of
+// a file that already works.
+function dscrLabel(dscr: number | null): string {
+  if (dscr == null) return 'N/A — cash purchase'
+  if (dscr >= 1.3)  return 'Strong rental cover'
+  if (dscr >= 1.0)  return 'Thin but covered'
+  return 'Shortfall — rent may not cover debt'
 }
 
 interface Analysis {
@@ -546,6 +570,8 @@ export default function CalculatorPage() {
   const [analysis,  setAnalysis]  = useState<Analysis | null>(null)
   const [error,     setError]     = useState('')
   const [showGate,  setShowGate]  = useState(false)
+  const [financeReference, setFinanceReference] = useState<string | null>(null)
+  const [savingAnalysis,   setSavingAnalysis]   = useState(false)
 
   const priceNGN     = parseMillion(priceM)
   const monthlyNGN   = parseMillion(rentM)
@@ -585,31 +611,78 @@ export default function CalculatorPage() {
     const selected: StructResult[] = []
 
     if (structs.cash) {
-      selected.push({ label: 'Cash', grossYield: (annualGrossNGN / priceNGN) * 100, capRate: (noiNGN / priceNGN) * 100, annualCashFlow: noiNGN, monthlyCashFlow: noiNGN / 12, coc: (noiNGN / priceNGN) * 100, monthlyDebt: 0, equityIn: priceNGN })
+      selected.push({ label: 'Cash', grossYield: (annualGrossNGN / priceNGN) * 100, capRate: (noiNGN / priceNGN) * 100, annualCashFlow: noiNGN, monthlyCashFlow: noiNGN / 12, coc: (noiNGN / priceNGN) * 100, monthlyDebt: 0, equityIn: priceNGN, dscr: null })
     }
     if (structs.loan) {
       const downNGN = priceNGN * (downPct / 100)
       const annualDebt = mortgageMonthly * 12
       const annualCF = noiNGN - annualDebt
-      selected.push({ label: 'Mortgage', grossYield: (annualGrossNGN / priceNGN) * 100, capRate: (noiNGN / priceNGN) * 100, annualCashFlow: annualCF, monthlyCashFlow: annualCF / 12, coc: downNGN > 0 ? (annualCF / downNGN) * 100 : 0, monthlyDebt: mortgageMonthly, equityIn: downNGN })
+      selected.push({ label: 'Mortgage', grossYield: (annualGrossNGN / priceNGN) * 100, capRate: (noiNGN / priceNGN) * 100, annualCashFlow: annualCF, monthlyCashFlow: annualCF / 12, coc: downNGN > 0 ? (annualCF / downNGN) * 100 : 0, monthlyDebt: mortgageMonthly, equityIn: downNGN, dscr: annualDebt > 0 ? noiNGN / annualDebt : null })
     }
     if (structs.install) {
       const depositNGN = priceNGN * 0.3
       const annualInst = instMonthly * 12
       const annualCF = noiNGN - annualInst
-      selected.push({ label: 'Installment', grossYield: (annualGrossNGN / priceNGN) * 100, capRate: (noiNGN / priceNGN) * 100, annualCashFlow: annualCF, monthlyCashFlow: annualCF / 12, coc: depositNGN > 0 ? (annualCF / depositNGN) * 100 : 0, monthlyDebt: instMonthly, equityIn: depositNGN })
+      selected.push({ label: 'Installment', grossYield: (annualGrossNGN / priceNGN) * 100, capRate: (noiNGN / priceNGN) * 100, annualCashFlow: annualCF, monthlyCashFlow: annualCF / 12, coc: depositNGN > 0 ? (annualCF / depositNGN) * 100 : 0, monthlyDebt: instMonthly, equityIn: depositNGN, dscr: annualInst > 0 ? noiNGN / annualInst : null })
     }
 
     const primary = selected.reduce((b, s) => s.coc > b.coc ? s : b, selected[0])
     const verdict = getVerdict(primary.annualCashFlow, primary.coc, primary.grossYield)
 
-    setAnalysis({
+    const result: Analysis = {
       priceNGN, monthlyRentNGN: monthlyNGN, annualGrossNGN, effectiveNGN, noiNGN,
       priceUSD: priceNGN / fx, annualNoiUSD: noiNGN / fx, fx, selected, primary, verdict,
       loc: location, propType, vacancyPct: vacancy / 100, opExpPct: opExp / 100,
       appreciation: appPct / 100,
       generatedAt: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
-    })
+    }
+    setAnalysis(result)
+    setFinanceReference(null)
+    saveAnalysis(result)
+  }
+
+  // PHASE 3: persists this analysis to finance_analyses, the same table
+  // Buyer Affordability already saves to — so a user's Investment
+  // Intelligence runs are traceable later ("My Finance"), not just a PDF
+  // that leaves no record. Best-effort: a save failure never blocks the
+  // on-screen result, matching FinancingModal's own saveAssessmentAndContinue.
+  async function saveAnalysis(result: Analysis) {
+    setSavingAnalysis(true)
+    const { data, error: dbError } = await sb.from('finance_analyses').insert({
+      analysis_type: 'investment_intelligence',
+      inputs: {
+        purchase_price_ngn: result.priceNGN,
+        monthly_rent_ngn: result.monthlyRentNGN,
+        vacancy_pct: vacancy,
+        operating_expenses_pct: opExp,
+        appreciation_pct: appPct,
+        fx_ngn_per_usd: result.fx,
+        location: result.loc,
+        property_type: result.propType,
+        structures_compared: result.selected.map(s => s.label),
+        mortgage_interest_rate_pct: structs.loan ? intRate : null,
+        mortgage_term_years: structs.loan ? loanTerm : null,
+        mortgage_down_payment_pct: structs.loan ? downPct : null,
+        installment_duration_months: structs.install ? instDur : null,
+      },
+      outputs: {
+        verdict: result.verdict,
+        primary_structure: result.primary.label,
+        gross_yield_pct: result.primary.grossYield,
+        cap_rate_pct: result.primary.capRate,
+        cash_on_cash_pct: result.primary.coc,
+        annual_cashflow_ngn: result.primary.annualCashFlow,
+        monthly_cashflow_ngn: result.primary.monthlyCashFlow,
+        dscr: result.primary.dscr,
+        structures: result.selected,
+      },
+      input_provenance: 'user_stated',
+    }).select('id, reference').single()
+
+    setSavingAnalysis(false)
+    if (!dbError && data) setFinanceReference(data.reference)
+    // Silent on failure, same posture as Buyer Affordability — the
+    // on-screen analysis is already complete and useful without this.
   }
 
   function handleDownload() {
@@ -748,6 +821,9 @@ export default function CalculatorPage() {
                   ? `Yield of ${pct(analysis.primary.grossYield)} is below the 6% benchmark but cash flow is positive at ${fmtNGN(analysis.primary.monthlyCashFlow)}/month. Negotiate the price or model short-let.`
                   : `Negative cash flow of ${fmtNGN(analysis.primary.monthlyCashFlow)}/month. Rent of ${fmtNGN(analysis.monthlyRentNGN)}/month is insufficient for ${fmtNGN(analysis.priceNGN)}. Renegotiate.`}
               </div>
+              <div style={{ fontSize: 11, color: text3, marginTop: 10 }}>
+                {savingAnalysis ? 'Saving analysis…' : financeReference ? `Saved as ${financeReference} — this analysis is recorded, not a MANOP or lender decision.` : 'This is your own working analysis, not a MANOP or lender decision.'}
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
@@ -758,6 +834,10 @@ export default function CalculatorPage() {
                 { l: 'Price in USD',    v: fmtUSD(analysis.priceUSD),        s: `at ₦${fx.toLocaleString()}/$1`, c: '#7C5FFF' },
                 { l: 'Net monthly',     v: fmtNGN(analysis.primary.monthlyCashFlow), s: 'after costs & debt', c: analysis.primary.monthlyCashFlow > 0 ? '#22C55E' : '#EF4444' },
                 { l: 'CoC return',      v: pct(analysis.primary.coc),        s: 'cash-on-cash',         c: '#14B8A6' },
+                ...(analysis.primary.dscr != null ? [{
+                  l: 'DSCR', v: analysis.primary.dscr.toFixed(2) + 'x', s: dscrLabel(analysis.primary.dscr),
+                  c: analysis.primary.dscr >= 1.3 ? '#22C55E' : analysis.primary.dscr >= 1.0 ? '#F59E0B' : '#EF4444',
+                }] : []),
               ].map(m => (
                 <div key={m.l} style={{ background: bg2, borderRadius: 10, padding: '0.875rem 1rem' }}>
                   <div style={{ fontSize: '0.6rem', fontWeight: 700, color: text3, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>{m.l}</div>
@@ -778,7 +858,7 @@ export default function CalculatorPage() {
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 14, color: isBest ? '#7C5FFF' : text }}>{s.label}{isBest && <span style={{ fontSize: 10, color: '#7C5FFF', marginLeft: 6 }}>BEST</span>}</div>
                         <div style={{ fontSize: 12, color: text3, marginTop: 2 }}>{fmtNGN(s.monthlyCashFlow)}/mo · CoC {pct(s.coc)}</div>
-                        {s.monthlyDebt > 0 && <div style={{ fontSize: 11, color: text3 }}>Debt: {fmtNGN(s.monthlyDebt)}/mo</div>}
+                        {s.monthlyDebt > 0 && <div style={{ fontSize: 11, color: text3 }}>Debt: {fmtNGN(s.monthlyDebt)}/mo{s.dscr != null ? ` · DSCR ${s.dscr.toFixed(2)}x` : ''}</div>}
                       </div>
                       <div style={{ textAlign: 'right' as const }}>
                         <div style={{ fontSize: 15, fontWeight: 800, color: s.annualCashFlow > 0 ? '#22C55E' : '#EF4444' }}>{pct(s.grossYield)}</div>

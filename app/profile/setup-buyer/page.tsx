@@ -70,7 +70,7 @@ export default function SetupBuyerPage() {
         timeline,
         updated_at:    new Date().toISOString(),
       }, { onConflict: 'id' })
-      router.replace('/search')
+      router.replace('/developments')
     } catch (e: unknown) {
       setError('Failed to save preferences. You can update these later.')
     } finally {
@@ -144,7 +144,7 @@ export default function SetupBuyerPage() {
           )}
 
           <div style={{ display: 'flex', gap: 10, marginTop: '0.5rem' }}>
-            <button onClick={() => router.replace('/search')} style={{ flex: 1, background: 'transparent', color: text2, border: `1px solid ${border}`, borderRadius: 10, padding: '0.875rem', fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => router.replace('/developments')} style={{ flex: 1, background: 'transparent', color: text2, border: `1px solid ${border}`, borderRadius: 10, padding: '0.875rem', fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'inherit' }}>
               Skip for now
             </button>
             <button onClick={handleSave} disabled={saving} style={{ flex: 2, background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 10, padding: '0.875rem', fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>

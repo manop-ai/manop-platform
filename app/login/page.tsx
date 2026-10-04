@@ -17,8 +17,8 @@ import { ManopLogoSVG } from '../../components/ManopLogo'
 // Role → dashboard URL map
 // Association roles are resolved dynamically (DB check), not from metadata
 const ROLE_REDIRECTS: Record<string, string> = {
-  buyer:                       '/search',
-  diaspora:                    '/search',
+  buyer:                       '/developments',
+  diaspora:                    '/developments',
   investor:                    '/investor/dashboard',
   agency:                      '/agency/dashboard',
   developer:                   '/developer/dashboard',
@@ -54,7 +54,7 @@ async function resolveRedirect(userId: string, metaRole: string): Promise<string
   }
 
   // Fall back to metadata role
-  return ROLE_REDIRECTS[metaRole] || '/search'
+  return ROLE_REDIRECTS[metaRole] || '/developments'
 }
 
 export default function LoginPage() {

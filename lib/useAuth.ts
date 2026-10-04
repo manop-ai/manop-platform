@@ -18,8 +18,8 @@ interface AuthState {
 }
 
 export const ROLE_ROUTES: Record<string, string> = {
-  buyer:                      '/search',
-  diaspora:                   '/search',
+  buyer:                      '/developments',
+  diaspora:                   '/developments',
   investor:                   '/investor/dashboard',
   agency:                     '/agency/dashboard',
   developer:                  '/developer/dashboard',
@@ -72,7 +72,7 @@ export function useAuth(requiredRole?: string): AuthState {
 
       // Wrong role for this page → redirect
       if (requiredRole && resolvedRole !== requiredRole && resolvedRole !== 'admin' && resolvedRole !== 'super_admin') {
-        router.replace(ROLE_ROUTES[resolvedRole] || '/search')
+        router.replace(ROLE_ROUTES[resolvedRole] || '/developments')
         return
       }
 

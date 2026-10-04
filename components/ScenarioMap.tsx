@@ -28,7 +28,7 @@ import {
 const METERS_PER_DEGREE_LAT = 111_320
 
 export type MapStyleMode = 'map' | 'satellite'
-export type DrawMode = 'none' | 'draw-site' | 'draw-building' | 'draw-open-space' | 'measure'
+export type DrawMode = 'none' | 'draw-site' | 'draw-building' | 'draw-open-space' | 'draw-parking' | 'measure'
 
 export interface BuildingFeature {
   id: string
@@ -43,6 +43,15 @@ export interface OpenSpaceFeature {
   id: string
   label: string
   geojson: GeoJSON.Polygon
+}
+
+/** A REAL, placed parking object (element_type 'parking') — distinct
+ * from the generated indicative preview. See lib/scenario-spatial-model.ts. */
+export interface ParkingLotFeature {
+  id: string
+  label: string
+  geojson: GeoJSON.Polygon
+  footprint_sqm: number | null
 }
 
 export interface ScenarioMapProps {
@@ -62,8 +71,10 @@ export interface ScenarioMapProps {
   onDrawFinish?: (polygon: GeoJSON.Polygon, areaSqm: number) => void
   onDrawBuildingFinish?: (polygon: GeoJSON.Polygon, areaSqm: number) => void
   onDrawOpenSpaceFinish?: (polygon: GeoJSON.Polygon, areaSqm: number) => void
+  onDrawParkingFinish?: (polygon: GeoJSON.Polygon, areaSqm: number) => void
   buildings?: BuildingFeature[]
   openSpaces?: OpenSpaceFeature[]
+  realParkingLots?: ParkingLotFeature[]
   developmentCategory?: string
   /** Indicative parking spaces from the scenario's current readings
    * (e.g. indicative_parking_count). Renders as a generated preview
@@ -79,6 +90,12 @@ export interface ScenarioMapProps {
   /** Verification aid: draws a north (red) / east (blue) marker at the site origin
    * in the 3D layer, built from the same local frame as the massing. */
   showOrientationMarker?: boolean
+  /** A REAL, already-validated zoning envelope (see resolveZoningEnvelope
+   * in lib/site-intelligence.ts) to render as a 3D setback wedge, or null
+   * if none exists for this site. Only meaningful alongside a confirmed
+   * `boundary` — edgeIndex values are authored against that ring, never
+   * the exploratory boundary. */
+  zoningEnvelope?: import('../lib/site-intelligence').ZoningEnvelope | null
   /** Optional REAL-world context: the building footprints/heights already in the
    * Mapbox style (OpenStreetMap-derived). Third-party data, coverage varies by
    * area — it complements the satellite/map evidence layer, never replaces it. */
@@ -96,10 +113,10 @@ function styleUrl(mode: MapStyleMode, dark: boolean): string {
 export default function ScenarioMap({
   lat, lng, boundary, exploratoryBoundary = null, footprintSqm, heightM, height = '100%', dark = true,
   is3D, mapStyle, showBoundary = true, showFootprint = true,
-  drawMode = 'none', onDrawFinish, onDrawBuildingFinish, onDrawOpenSpaceFinish,
-  buildings = [], openSpaces = [], selectedBuildingId = null, onSelectBuilding, onBuildingMoved,
+  drawMode = 'none', onDrawFinish, onDrawBuildingFinish, onDrawOpenSpaceFinish, onDrawParkingFinish,
+  buildings = [], openSpaces = [], realParkingLots = [], selectedBuildingId = null, onSelectBuilding, onBuildingMoved,
   developmentCategory = 'multifamily_residential', indicativeParkingStallCount = null,
-  intelligenceLayers = [], showOrientationMarker = false, showContextBuildings = false,
+  intelligenceLayers = [], showOrientationMarker = false, showContextBuildings = false, zoningEnvelope = null,
 }: ScenarioMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('mapbox-gl').Map | null>(null)
@@ -125,7 +142,7 @@ export default function ScenarioMap({
   const centerLat = center?.lat, centerLng = center?.lng
   const parkingPolygon = useMemo(
     () => (centerLat != null && centerLng != null && indicativeParkingStallCount)
-      ? buildIndicativeParkingPolygon({ lat: centerLat, lng: centerLng }, indicativeParkingStallCount)
+      ? buildIndicativeParkingPolygon({ lat: centerLat, lng: centerLng }, indicativeParkingStallCount, boundary || exploratoryBoundary)
       : null,
     [centerLat, centerLng, indicativeParkingStallCount],
   )
@@ -136,11 +153,12 @@ export default function ScenarioMap({
   // props any more; each view calls a pure modelTo*() projector on this.
   const spatialModel: ScenarioSpatialModel = useMemo(() => buildScenarioSpatialModel({
     buildings, openSpaces,
+    realParkingLots,
     parkingPolygon, parkingStallCount: indicativeParkingStallCount,
     intelligenceLayers,
     developmentCategory,
     selectedBuildingId,
-  }), [buildings, openSpaces, parkingPolygon, indicativeParkingStallCount, intelligenceLayers, developmentCategory, selectedBuildingId])
+  }), [buildings, openSpaces, realParkingLots, parkingPolygon, indicativeParkingStallCount, intelligenceLayers, developmentCategory, selectedBuildingId])
   // addLayers/drag handlers run from long-lived map callbacks; a ref keeps
   // them reading the CURRENT model rather than the one from mount.
   const spatialModelRef = useRef(spatialModel)
@@ -149,6 +167,13 @@ export default function ScenarioMap({
   showOrientationMarkerRef.current = showOrientationMarker
   const showContextBuildingsRef = useRef(showContextBuildings)
   showContextBuildingsRef.current = showContextBuildings
+  const zoningEnvelopeRef = useRef(zoningEnvelope)
+  zoningEnvelopeRef.current = zoningEnvelope
+  // Zoning rules are authored against the CONFIRMED boundary only —
+  // never the exploratory one, which is a user's own sketch, not a
+  // planning fact edgeIndex values could meaningfully reference.
+  const boundaryRef = useRef(boundary)
+  boundaryRef.current = boundary
 
   /** Pushes the current spatial model into the Three.js layer. Used by the
    * live-sync effect AND right after the layer is created: the layer is created
@@ -157,9 +182,13 @@ export default function ScenarioMap({
    * reload until something else changed the model. */
   function syncThreeLayer(layer: import('./ThreeMassingLayer').ThreeMassingLayer, model: ScenarioSpatialModel) {
     layer.setScene(modelToMassingBuildings(model), modelToMassingOpenSpaces(model))
-    const parking = modelToMassingParking(model)
-    layer.setParking(parking.points, parking.stallCount)
+    layer.setParking(modelToMassingParking(model))
     layer.setOrientationMarker(showOrientationMarkerRef.current)
+    const b = boundaryRef.current
+    layer.setZoningEnvelope(
+      zoningEnvelopeRef.current,
+      b ? b.coordinates[0].map(([lng, lat]) => ({ lat, lng })) : null,
+    )
   }
 
   /** Real-world building context from the base style's own data. Added beneath the
@@ -228,8 +257,18 @@ export default function ScenarioMap({
     // finding — so this is deliberately a preview only.
     if (!map.getSource('scenario-parking')) {
       map.addSource('scenario-parking', { type: 'geojson', data: modelToParkingFeatureCollection(spatialModelRef.current) })
-      map.addLayer({ id: 'scenario-parking-fill', type: 'fill', source: 'scenario-parking', paint: { 'fill-color': '#475569', 'fill-opacity': 0.2 } })
-      map.addLayer({ id: 'scenario-parking-line', type: 'line', source: 'scenario-parking', paint: { 'line-color': '#475569', 'line-width': 1.5, 'line-dasharray': [1, 1.5] } })
+      map.addLayer({
+        id: 'scenario-parking-fill', type: 'fill', source: 'scenario-parking',
+        paint: { 'fill-color': '#475569', 'fill-opacity': ['case', ['get', 'isIndicativePreview'], 0.2, 0.3] },
+      })
+      map.addLayer({
+        id: 'scenario-parking-line', type: 'line', source: 'scenario-parking',
+        paint: {
+          'line-color': '#475569',
+          'line-width': ['case', ['get', 'isIndicativePreview'], 1.5, 2],
+          'line-dasharray': ['case', ['get', 'isIndicativePreview'], ['literal', [1, 1.5]], ['literal', [1, 0]]],
+        },
+      })
     }
 
     // Site Intelligence spatial layer toggles — draws ONLY layers the
@@ -345,7 +384,7 @@ export default function ScenarioMap({
 
   function renderDraftSource(map: import('mapbox-gl').Map, points: { lat: number; lng: number }[]) {
     const coords = points.map(p => [p.lng, p.lat])
-    const closingModes = drawMode === 'draw-site' || drawMode === 'draw-building' || drawMode === 'draw-open-space'
+    const closingModes = drawMode === 'draw-site' || drawMode === 'draw-building' || drawMode === 'draw-open-space' || drawMode === 'draw-parking'
     const lineCoords = closingModes && coords.length >= 3 ? [...coords, coords[0]] : coords
     const data: GeoJSON.FeatureCollection = {
       type: 'FeatureCollection',
@@ -394,7 +433,7 @@ export default function ScenarioMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftPoints, drawMode])
 
-  const liveAreaSqm = (drawMode === 'draw-site' || drawMode === 'draw-building' || drawMode === 'draw-open-space') && draftPoints.length >= 3 ? computeDrawnPolygonAreaSqm(draftPoints) : null
+  const liveAreaSqm = (drawMode === 'draw-site' || drawMode === 'draw-building' || drawMode === 'draw-open-space' || drawMode === 'draw-parking') && draftPoints.length >= 3 ? computeDrawnPolygonAreaSqm(draftPoints) : null
   const liveDistanceM = drawMode === 'measure' && draftPoints.length >= 2
     ? draftPoints.slice(1).reduce((sum, p, i) => sum + computeDistanceMeters(draftPoints[i], p), 0)
     : null
@@ -407,6 +446,7 @@ export default function ScenarioMap({
     if (drawMode === 'draw-site') onDrawFinish?.(polygon, areaSqm)
     else if (drawMode === 'draw-building') onDrawBuildingFinish?.(polygon, areaSqm)
     else if (drawMode === 'draw-open-space') onDrawOpenSpaceFinish?.(polygon, areaSqm)
+    else if (drawMode === 'draw-parking') onDrawParkingFinish?.(polygon, areaSqm)
     setDraftPoints([])
   }
 
@@ -439,6 +479,13 @@ export default function ScenarioMap({
   }, [spatialModel])
 
   useEffect(() => { threeLayerRef.current?.setOrientationMarker(showOrientationMarker) }, [showOrientationMarker])
+
+  useEffect(() => {
+    const layer = threeLayerRef.current
+    if (!layer) return
+    layer.setZoningEnvelope(zoningEnvelope, boundary ? boundary.coordinates[0].map(([lng, lat]) => ({ lat, lng })) : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoningEnvelope, boundary])
 
   useEffect(() => {
     const map = mapRef.current
@@ -650,7 +697,7 @@ export default function ScenarioMap({
     const polys = [
       ...spatialModel.buildings.map(b => b.geojson),
       ...spatialModel.openSpaces.map(o => o.geojson),
-      ...(spatialModel.parking ? [spatialModel.parking.geojson] : []),
+      ...spatialModel.parkingLots.map(p => p.geojson),
     ]
     if (polys.length > 0) return fitToPolygons(polys)
     fitSite() // no placed objects yet — the scenario IS the site at this point
@@ -708,6 +755,8 @@ export default function ScenarioMap({
               ? `Click to place building corners (${draftPoints.length})${liveAreaSqm != null ? ` — ${liveAreaSqm.toLocaleString()} sqm footprint` : ''}`
               : drawMode === 'draw-open-space'
               ? `Click to trace open space (${draftPoints.length})${liveAreaSqm != null ? ` — ${liveAreaSqm.toLocaleString()} sqm` : ''}`
+              : drawMode === 'draw-parking'
+              ? `Click to trace a parking area (${draftPoints.length})${liveAreaSqm != null ? ` — ${liveAreaSqm.toLocaleString()} sqm` : ''}`
               : `Click two or more points${liveDistanceM != null ? ` — ${liveDistanceM.toLocaleString()} m` : ''}`}
           </span>
           {draftPoints.length > 0 && (
@@ -716,7 +765,7 @@ export default function ScenarioMap({
           {draftPoints.length > 0 && (
             <button onClick={() => setDraftPoints([])} style={drawBtnStyle}>Clear</button>
           )}
-          {(drawMode === 'draw-site' || drawMode === 'draw-building' || drawMode === 'draw-open-space') && draftPoints.length >= 3 && (
+          {(drawMode === 'draw-site' || drawMode === 'draw-building' || drawMode === 'draw-open-space' || drawMode === 'draw-parking') && draftPoints.length >= 3 && (
             <button onClick={finishDrawSite} style={{ ...drawBtnStyle, background: '#6D28D9', borderColor: '#6D28D9' }}>Finish</button>
           )}
         </div>

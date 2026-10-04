@@ -206,7 +206,7 @@ export default function DeveloperOnboardPage() {
             Set up your developer profile.
           </h1>
           <p style={{ fontSize: '0.9rem', color: text2, lineHeight: 1.7 }}>
-            Showcase your projects, track unit sales, and earn MAPE points for data transparency.
+            Showcase your projects, track unit sales, and provide clear, reviewable information for buyers and partners.
           </p>
         </div>
 

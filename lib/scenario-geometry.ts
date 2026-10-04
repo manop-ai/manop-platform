@@ -217,7 +217,7 @@ export function scalePolygon(polygon: GeoJSON.Polygon, factor: number): GeoJSON.
  * (non-structured) parking; MANOP does not claim a code-compliant
  * bay-packing calculation from this.
  */
-const INDICATIVE_SQM_PER_PARKING_SPACE = 25
+export const INDICATIVE_SQM_PER_PARKING_SPACE = 25
 
 /**
  * Builds an INDICATIVE parking area placed near (but offset from) the
@@ -231,14 +231,65 @@ const INDICATIVE_SQM_PER_PARKING_SPACE = 25
  * of the indicative building footprint preview when both are shown
  * for a scenario with no real placed buildings yet.
  */
+/**
+ * Half-width/half-height of a polygon's own lng/lat bounding box, in real
+ * metres. Used to scale the indicative parking preview's offset to the
+ * ACTUAL site's size — see buildIndicativeParkingPolygon below for why this
+ * matters: without it, a large parking area on a small/tight site can be
+ * offset clean off the parcel and onto a neighbouring block.
+ */
+function computePolygonHalfExtentMeters(polygon: GeoJSON.Polygon, atLat: number): { halfWidthM: number; halfHeightM: number } {
+  const ring = polygon.coordinates[0]
+  let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity
+  for (const [lng, lat] of ring) {
+    minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng)
+    minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat)
+  }
+  const mPerDegLng = metersPerDegreeLng(atLat)
+  return {
+    halfWidthM: ((maxLng - minLng) * mPerDegLng) / 2,
+    halfHeightM: ((maxLat - minLat) * METERS_PER_DEGREE_LAT) / 2,
+  }
+}
+
+/**
+ * Builds an INDICATIVE parking area sized for a given stall count, offset
+ * just enough from `center` to avoid sitting exactly on top of the
+ * indicative building footprint preview.
+ *
+ * REAL BUG FIX, confirmed from a live screenshot (SITE-TEST-002): the
+ * previous version scaled that offset to the PARKING RECTANGLE's OWN size,
+ * which has nothing to do with how big the actual site is. On a small/tight
+ * parcel with a large indicative parking count, that routinely pushed the
+ * whole preview onto a completely different city block — not a rendering
+ * glitch, a genuinely wrong placement anyone could see on the map next to
+ * the real site boundary.
+ *
+ * Fix: when a real site boundary is available, the offset is capped at a
+ * fraction of the SITE's own bounding-box half-extent, so the preview can
+ * never be pushed further from centre than the site itself reasonably
+ * allows. Without a confirmed boundary (point-only site — no real extent to
+ * scale against), the offset is capped at a small fixed distance instead of
+ * guessed at, on the principle that a small overlap with the footprint
+ * preview is far less wrong than a large, confident-looking guess.
+ */
 export function buildIndicativeParkingPolygon(
   center: { lat: number; lng: number },
   stallCount: number,
+  siteBoundary?: GeoJSON.Polygon | null,
 ): GeoJSON.Polygon {
   const areaSqm = Math.max(stallCount, 0) * INDICATIVE_SQM_PER_PARKING_SPACE
   const raw = buildRectangleFootprintPolygon(center, areaSqm, 0.45)
-  const sideM = Math.sqrt(areaSqm / 0.45)
-  return translatePolygon(raw, -sideM * 0.65, sideM * 0.65)
+  const parkingSideM = Math.sqrt(areaSqm / 0.45)
+
+  let offsetM = parkingSideM * 0.65
+  if (siteBoundary) {
+    const { halfWidthM, halfHeightM } = computePolygonHalfExtentMeters(siteBoundary, center.lat)
+    offsetM = Math.min(offsetM, Math.min(halfWidthM, halfHeightM) * 0.35)
+  } else {
+    offsetM = Math.min(offsetM, 12)
+  }
+  return translatePolygon(raw, -offsetM, offsetM)
 }
 
 /** A small rectangular default footprint for a freshly-drawn or

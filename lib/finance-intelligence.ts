@@ -200,11 +200,62 @@ export function describeDSCR(dscr: number | null): string {
   return 'Buyer funds shortfall — estimated rental income may not fully cover repayments'
 }
 
-// ─── Payment Plan Intelligence (genuinely new — Phase 4) ────────────────
-// Depends on the Reviewed Developments payment-plan schema, which this
-// audit did not find yet. Shaped here so Phase 4 has a target signature;
-// do not wire this up until that schema is confirmed with the Reviewed
-// Developments / User Platform track.
+// ─── Payment Plan Intelligence, real schema (Phase 4, 2026-10-03) ───────
+// The Reviewed Developments payment-plan schema is now confirmed by
+// reading developer_unit_types directly (see app/development/[id]/page.tsx's
+// own query and app/agency/developments/page.tsx's bulk-upload form): it
+// is exactly two columns — deposit_pct and installment_months — not the
+// richer reservation-fee/frequency/completion-balance shape speculated
+// below under PaymentPlanInputs. That richer shape stays as a target for
+// if/when developers start entering more granular plan data; it is not
+// wired to anything because that data doesn't exist yet. This function
+// is the one that actually runs today, against what's actually stored.
+
+export interface UnitPaymentPlanInputs {
+  price_ngn: number
+  deposit_pct: number           // developer_unit_types.deposit_pct
+  installment_months: number    // developer_unit_types.installment_months
+}
+
+export interface UnitPaymentPlanOutputs {
+  deposit_ngn: number
+  balance_ngn: number
+  monthly_installment_ngn: number
+  installment_months: number
+  payment_pressure: 'Low' | 'Medium' | 'High'
+}
+
+export function calculateUnitPaymentPlan(inputs: UnitPaymentPlanInputs): UnitPaymentPlanOutputs | null {
+  if (!inputs.price_ngn || !inputs.deposit_pct || !inputs.installment_months) return null
+  const deposit = inputs.price_ngn * (inputs.deposit_pct / 100)
+  const balance = Math.max(inputs.price_ngn - deposit, 0)
+  const monthly = balance / inputs.installment_months
+
+  // Same rough-indicator methodology/thresholds as calculatePaymentPlanBurden
+  // below, applied to the data that's actually available. Flagged there
+  // as needing validation against real buyer income-band data before
+  // Phase 4 treats it as more than an indicator — same caveat applies here.
+  const pressure: UnitPaymentPlanOutputs['payment_pressure'] =
+    monthly > inputs.price_ngn * 0.03 ? 'High' :
+    monthly > inputs.price_ngn * 0.015 ? 'Medium' : 'Low'
+
+  return {
+    deposit_ngn: deposit,
+    balance_ngn: balance,
+    monthly_installment_ngn: monthly,
+    installment_months: inputs.installment_months,
+    payment_pressure: pressure,
+  }
+}
+
+// ─── Payment Plan Intelligence, richer target shape (aspirational) ─────
+// Depends on a reservation-fee/frequency/completion-balance payment-plan
+// schema that does NOT exist in developer_unit_types today — confirmed,
+// not assumed, by reading the actual table and its only two consumers
+// (the Reviewed Development detail page and the agency bulk-upload
+// form). Kept here as a target signature for if that data model grows;
+// not wired to anything until it does. Use calculateUnitPaymentPlan
+// above for what can actually run against today's schema.
 
 export interface PaymentPlanInputs {
   price_ngn: number

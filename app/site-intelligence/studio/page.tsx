@@ -169,7 +169,7 @@ export default function SiteStudioLandingPage() {
           <FeatureCard c={c} icon={<Search size={19} />} title="Explore" body="Start with a site and its available evidence — location, planning context, constraints — and see what's known before assuming anything." />
           <FeatureCard c={c} icon={<Sliders size={19} />} title="Configure" body="Adjust development assumptions — storeys, coverage, unit mix, parking — starting from a category-specific starter layout or your own." />
           <FeatureCard c={c} icon={<Boxes size={19} />} title="Visualize" body="See the resulting scenario directly on the site, in 2D and 3D massing — draw, move, resize, and rotate buildings by hand." />
-          <FeatureCard c={c} icon={<LineChart size={19} />} title="Evaluate" body="Carry a scenario's quantities straight into Construction Appraisal to understand indicative development economics." />
+          <FeatureCard c={c} icon={<LineChart size={19} />} title="Evaluate" body="Carry a scenario's quantities straight into Construction Appraisal — part of Finance Intelligence — to understand indicative development economics." />
         </div>
       </div>
 

@@ -8,7 +8,7 @@
 // duplicated per route.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { computeScenarioReadings, overrideReadingsWithPlacedBuildings, overrideReadingWithPlacedOpenSpace, ScenarioParameters } from './scenario-engine'
+import { computeScenarioReadings, overrideReadingsWithPlacedBuildings, overrideReadingWithPlacedOpenSpace, overrideReadingWithPlacedParking, ScenarioParameters } from './scenario-engine'
 
 export async function recomputeAndPersistReadings(sb: SupabaseClient, scenarioId: string) {
   const { data: scenario } = await sb
@@ -45,12 +45,26 @@ export async function recomputeAndPersistReadings(sb: SupabaseClient, scenarioId
     .eq('scenario_id', scenarioId)
     .eq('element_type', 'open_space')
 
+  // 'parking' as a real element_type may not be enabled on every
+  // database yet (sql/2026_site_studio_parking_element_type.sql) — if
+  // it isn't, this simply returns no rows rather than erroring, and
+  // overrideReadingWithPlacedParking's no-op-on-empty-array behavior
+  // leaves the formula-based reading exactly as before.
+  const { data: parkingLots } = await sb
+    .from('scenario_elements')
+    .select('footprint_sqm')
+    .eq('scenario_id', scenarioId)
+    .eq('element_type', 'parking')
+
   const baseReadings = computeScenarioReadings(params)
   const withBuildings = overrideReadingsWithPlacedBuildings(baseReadings, (buildings || []).map(b => ({
     footprint_sqm: b.footprint_sqm, storeys: b.storeys,
   })))
-  const readings = overrideReadingWithPlacedOpenSpace(
+  const withOpenSpace = overrideReadingWithPlacedOpenSpace(
     withBuildings, (openSpaces || []).map(o => o.footprint_sqm ?? 0).filter(a => a > 0),
+  )
+  const readings = overrideReadingWithPlacedParking(
+    withOpenSpace, (parkingLots || []).map(p => p.footprint_sqm ?? 0).filter(a => a > 0),
   )
 
   await sb.from('scenario_readings').upsert(

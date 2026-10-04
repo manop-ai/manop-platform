@@ -2,16 +2,10 @@
 // components/TransactionPromptModal.tsx
 //
 // PURPOSE:
-// After an agency successfully saves a listing, this modal fires.
+// The agency or developer can submit verified transaction evidence here.
 // It asks: "Have you sold or rented here before?"
 // If yes → minimal transaction form → saves to market_transactions
-// This is the core flywheel: listings → transaction prompts → market data
-// → better benchmarks → better intelligence → more investors → more agencies
-//
-// MAPE IMPACT:
-// A submitted transaction earns I-score points when verified.
-// The modal tells the agent exactly how many points they'll earn.
-// Earning is visible, immediate, and motivating.
+// Transaction evidence can support current Market Intelligence.
 //
 // TRANSACTION VERIFICATION:
 // All submissions go in with verification_status = 'pending'.
@@ -24,7 +18,7 @@
 // USAGE:
 //   import TransactionPromptModal from '../../../components/TransactionPromptModal'
 //
-//   After listing saves:
+//   From the agency or developer dashboard:
 //   setShowTxPrompt(true)  // show the modal
 //   setTxNeighborhood(listing.neighborhood)
 //
@@ -170,14 +164,6 @@ export default function TransactionPromptModal({ partnerId, neighborhood, city, 
 
       if (dbErr) throw new Error(dbErr.message)
 
-      // Also log the MAPE activity event for the cron to process
-      await sb.from('mape_activity_log').insert({
-        partner_id:   partnerId,
-        dimension:    'I',
-        points:       0,  // 0 until verified — cron updates this
-        reason:       `Transaction submitted for ${neighborhood} — pending verification`,
-      })
-
       setStep('done')
 
     } catch (err: unknown) {
@@ -206,30 +192,11 @@ export default function TransactionPromptModal({ partnerId, neighborhood, city, 
         {/* ── STEP 1: PROMPT ──────────────────────────────── */}
         {step === 'prompt' && (
           <div style={{ padding: '1.75rem' }}>
-            {/* MAPE incentive banner */}
-            <div style={{
-              background: `rgba(91,46,255,0.08)`,
-              border: `1px solid rgba(91,46,255,0.2)`,
-              borderRadius: 10, padding: '0.75rem 1rem',
-              marginBottom: '1.25rem',
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}>
-              <div style={{ fontSize: '1.2rem' }}>📊</div>
-              <div>
-                <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#7C5FFF', textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 2 }}>
-                  Earn intelligence points
-                </div>
-                <div style={{ fontSize: '0.75rem', color: text2, lineHeight: 1.5 }}>
-                  Verified transactions earn up to <strong style={{ color: text }}>+20 I-score pts</strong> each — the most valuable MAPE action you can take.
-                </div>
-              </div>
-            </div>
-
             <h2 style={{ fontSize: '1.05rem', fontWeight: 800, color: text, marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>
               Have you sold or rented here before?
             </h2>
             <p style={{ fontSize: '0.82rem', color: text2, lineHeight: 1.65, marginBottom: '1.5rem' }}>
-              You just listed in <strong style={{ color: text }}>{neighborhood}</strong>. If you've closed a deal in this area, sharing the transaction data strengthens the market benchmarks — and your MAPE score.
+              You just listed in <strong style={{ color: text }}>{neighborhood}</strong>. If you've closed a deal in this area, sharing the transaction data strengthens the market benchmarks and improves the evidence base for nearby pricing.
             </p>
             <p style={{ fontSize: '0.75rem', color: text3, lineHeight: 1.6, marginBottom: '1.5rem', padding: '0.75rem', background: bg3, borderRadius: 8 }}>
               Your transaction data is confidential. It is only used in aggregated form to compute neighborhood price benchmarks. Individual transaction details are never shown publicly.

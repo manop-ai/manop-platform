@@ -24,25 +24,18 @@ type Tab = 'command'|'signals'|'verify'|'agencies'|'associations'|'financing'|'o
 
 interface PlatformIntel {
   total_signals_7d: number
-  demand_signals_7d: number
-  supply_signals_7d: number
   trust_signals_7d: number
   financing_signals_30d: number
   transaction_signals_30d: number
   total_agencies: number
   active_agencies_30d: number
   verified_agencies: number
-  total_listings: number
   total_verified_transactions: number
-  top_neighborhoods: string[]
   financing_requests_30d: number
   total_financing_demand_ngn: number
   total_associations: number
   total_association_members: number
   pending_verifications: number
-  pct_listings_with_price: number
-  pct_listings_with_images: number
-  avg_mape_score: number
   computed_at: string
 }
 
@@ -83,9 +76,8 @@ const STATUS_COLORS: Record<string,string> = {
   pending:'#f59e0b', under_review:'#8b5cf6', submitted:'#f59e0b', reviewing:'#3b82f6',
   sent_to_partner:'#14B8A6', partner_contacted:'#14B8A6', in_progress:'#3b82f6',
   rejected:'#ef4444', suspended:'#ef4444', inactive:'#ef4444', not_started:'#64748b',
-  listed:'#64748b', elite:'#f59e0b', trust:'#22c55e',
   mortgage:'#5B2EFF', nhf:'#14B8A6', diaspora_remittance:'#f59e0b', developer_plan:'#3b82f6',
-  demand:'#5B2EFF', supply:'#22c55e', financing:'#f59e0b',
+  financing:'#f59e0b',
   trust_signal:'#14B8A6', transaction:'#3b82f6', participation:'#8b5cf6',
 }
 
@@ -112,7 +104,6 @@ export default function AdminCommandCenter() {
 
   // Data
   const [intel, setIntel]               = useState<PlatformIntel|null>(null)
-  const [hoodIntel, setHoodIntel]       = useState<any[]>([])
   const [verQueue, setVerQueue]         = useState<any[]>([])
   const [agencies, setAgencies]         = useState<any[]>([])
   const [assocs, setAssocs]             = useState<any[]>([])
@@ -150,7 +141,7 @@ export default function AdminCommandCenter() {
         if (!session?.user) { router.replace('/login'); return }
         if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN') return
         const role = session.user.user_metadata?.user_role
-        if (role !== 'admin' && role !== 'super_admin') { router.replace('/search'); return }
+        if (role !== 'admin' && role !== 'super_admin') { router.replace('/developments'); return }
         await loadAll()
         setLoading(false)
       }
@@ -161,7 +152,6 @@ export default function AdminCommandCenter() {
   const loadAll = useCallback(async () => {
     const [
       { data: pi },
-      { data: hi },
       { data: vq },
       { data: ag },
       { data: as_ },
@@ -171,21 +161,16 @@ export default function AdminCommandCenter() {
       // Platform intelligence snapshot
       sb.from('platform_intelligence')
         .select('*').order('computed_at',{ascending:false}).limit(1).maybeSingle(),
-      // Top neighborhoods by area score
-      sb.from('neighborhood_intelligence')
-        .select('neighborhood,city,demand_score_7d,area_score,demand_trend,supply_gap_score,active_listings,verified_transactions,data_quality,financing_requests_30d')
-        .eq('meets_display_threshold',true)
-        .order('area_score',{ascending:false}).limit(20),
       // Verification queue
       sb.from('verification_requests')
-        .select('*, data_partners(name,cities,mape_score), associations(name)')
+        .select('*, data_partners(name,cities), associations(name)')
         .in('status',['pending','under_review'])
         .order('submitted_at',{ascending:true}).limit(100),
       // Agencies
       sb.from('data_partners')
-        .select('id,name,contact_email,cities,verification_status,badge_level,mape_score,active,created_at,association_id')
+        .select('id,name,contact_email,cities,verification_status,active,created_at,association_id')
         .eq('partner_type','agency')
-        .order('mape_score',{ascending:false}).limit(300),
+        .order('created_at',{ascending:false}).limit(300),
       // Associations
       sb.from('associations')
         .select('*').order('onboarded_at',{ascending:false}),
@@ -198,12 +183,10 @@ export default function AdminCommandCenter() {
     ])
 
     setIntel(pi as PlatformIntel)
-    setHoodIntel(hi ?? [])
     setVerQueue((vq ?? []).map((r:any) => ({
       ...r,
       agency_name: r.data_partners?.name ?? '—',
       agency_cities: r.data_partners?.cities ?? [],
-      agency_mape: r.data_partners?.mape_score ?? 0,
       assoc_name: r.associations?.name ?? null,
     })))
     setAgencies(ag ?? [])
@@ -507,7 +490,6 @@ export default function AdminCommandCenter() {
                 <div className="kpi-grid">
                   <KPI label="Total Agencies"      value={intel?.total_agencies??agencies.length}           accent="#5B2EFF" icon={<Building2 size={16} />} sub={`${intel?.active_agencies_30d??0} active this month`}/>
                   <KPI label="Verified Agencies"   value={intel?.verified_agencies??0}                      accent="#22C55E" icon={<CheckCircle2 size={16} />}  sub={`${intel?.total_agencies?Math.round((intel.verified_agencies/intel.total_agencies)*100):0}% rate`}/>
-                  <KPI label="Total Listings"      value={intel?.total_listings??0}                         accent="#3b82f6" icon={<Home size={16} />}/>
                   <KPI label="Verified Txns"       value={intel?.total_verified_transactions??0}            accent="#14B8A6" icon={<ClipboardCheck size={16} />} sub="Confirmed market events"/>
                   <KPI label="Associations"        value={intel?.total_associations??assocs.length}         accent="#8b5cf6" icon={<Globe size={16} />} sub={`${intel?.total_association_members??0} members`}/>
                   <KPI label="Pending Reviews"     value={intel?.pending_verifications??verQueue.length}    accent={verQueue.length>0?'#f59e0b':'#22c55e'} icon={<Clock size={16} />}/>
@@ -519,8 +501,6 @@ export default function AdminCommandCenter() {
                     <div className="card-title">Signal Volume (7 days)</div>
                     {intel ? (
                       <>
-                        <SignalBar label="Demand Signals"  value={intel.demand_signals_7d}  total={intel.total_signals_7d} color="#5B2EFF"/>
-                        <SignalBar label="Supply Signals"  value={intel.supply_signals_7d}  total={intel.total_signals_7d} color="#22C55E"/>
                         <SignalBar label="Trust Signals"   value={intel.trust_signals_7d}   total={intel.total_signals_7d} color="#14B8A6"/>
                         <SignalBar label="Financing (30d)" value={intel.financing_signals_30d} total={Math.max(intel.total_signals_7d,intel.financing_signals_30d)} color="#F59E0B"/>
                         <div style={{marginTop:10,padding:'10px 0',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between'}}>
@@ -530,79 +510,20 @@ export default function AdminCommandCenter() {
                       </>
                     ) : (
                       <div style={{color:'var(--muted)',fontSize:12}}>
-                        Run the MAPE cron once to populate signal intelligence.<br/>
-                        <code style={{fontSize:11,background:'var(--border)',padding:'2px 6px',borderRadius:4}}>GET /api/cron/compute-mape</code>
+                        Run the refresh once to populate signal intelligence.<br/>
+                        <code style={{fontSize:11,background:'var(--border)',padding:'2px 6px',borderRadius:4}}>GET /api/cron/refresh-intelligence</code>
                       </div>
                     )}
                   </div>
 
                   <div className="card">
-                    <div className="card-title">Data Quality</div>
+                    <div className="card-title">Finance demand</div>
                     {intel ? (
-                      <>
-                        <SignalBar label="Listings with Price"  value={Math.round(intel.pct_listings_with_price??0)}  total={100} color="#22C55E"/>
-                        <SignalBar label="Listings with Images" value={Math.round(intel.pct_listings_with_images??0)} total={100} color="#3b82f6"/>
-                        <div style={{marginTop:12,display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                          {[
-                            { label:'Avg MAPE Score', value: intel.avg_mape_score ? Math.round(intel.avg_mape_score) : 0 },
-                            { label:'Financing Demand', value: intel.financing_requests_30d ?? 0 },
-                          ].map(s=>(
-                            <div key={s.label} style={{background:'var(--border2)',borderRadius:8,padding:'10px 12px'}}>
-                              <div style={{fontSize:10,color:'var(--muted)',fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase' as const,marginBottom:4}}>{s.label}</div>
-                              <div style={{fontSize:20,fontWeight:800,color:'var(--text)'}}>{s.value}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </>
+                      <div style={{fontSize:24,fontWeight:800,color:'var(--text)'}}>{intel.financing_requests_30d ?? 0}<span style={{fontSize:12,fontWeight:500,color:'var(--muted)',marginLeft:6}}>requests · 30 days</span></div>
                     ) : (
                       <div style={{color:'var(--muted)',fontSize:12}}>No intelligence computed yet.</div>
                     )}
                   </div>
-                </div>
-
-                {/* Top neighborhoods */}
-                <div className="tbl">
-                  <div className="tbl-hd">
-                    <span className="tbl-title">Top Neighborhoods by Area Score</span>
-                    <span className="tbl-count">{hoodIntel.length} neighborhoods tracked</span>
-                  </div>
-                  {hoodIntel.length===0?(
-                    <div className="empty">No neighborhood intelligence yet. Run the MAPE cron to compute area scores.</div>
-                  ):(
-                    <table>
-                      <thead><tr><th>Neighborhood</th><th>City</th><th>Area Score</th><th>Demand 7d</th><th>Supply Gap</th><th>Listings</th><th>Verified Txns</th><th>Trend</th><th>Quality</th></tr></thead>
-                      <tbody>
-                        {hoodIntel.map((n:any)=>(
-                          <tr key={n.neighborhood+n.city}>
-                            <td style={{fontWeight:700,color:'var(--text)'}}>{n.neighborhood}</td>
-                            <td style={{color:'var(--muted)'}}>{n.city}</td>
-                            <td>
-                              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                                <span style={{fontWeight:800,fontSize:14}}>{n.area_score}</span>
-                                <div style={{width:40,height:4,background:'var(--border)',borderRadius:2,overflow:'hidden'}}>
-                                  <div style={{width:`${n.area_score}%`,height:'100%',background:'#5B2EFF',borderRadius:2}}/>
-                                </div>
-                              </div>
-                            </td>
-                            <td style={{fontWeight:600}}>{n.demand_score_7d}</td>
-                            <td>
-                              <span style={{color:n.supply_gap_score>60?'#ef4444':n.supply_gap_score>30?'#f59e0b':'var(--muted)',fontWeight:600}}>
-                                {n.supply_gap_score}
-                              </span>
-                            </td>
-                            <td>{n.active_listings}</td>
-                            <td>{n.verified_transactions??0}</td>
-                            <td>
-                              <span className={n.demand_trend==='rising'?'trend-up':n.demand_trend==='falling'?'trend-dn':'trend-st'}>
-                                {n.demand_trend==='rising'?'↑ Rising':n.demand_trend==='falling'?'↓ Falling':'→ Stable'}
-                              </span>
-                            </td>
-                            <td><Pill v={n.data_quality} map={{high:'#22c55e',medium:'#f59e0b',low:'#f59e0b',sparse:'#64748b'}}/></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
                 </div>
 
                 {/* Financing summary */}
@@ -650,47 +571,16 @@ export default function AdminCommandCenter() {
               <>
                 <div className="info-box">
                   <strong style={{color:'var(--text)'}}>Signal Intelligence is live.</strong><br/>
-                  Every user action generates a weighted signal. Signals are categorised, weighted, and aggregated into neighborhood and platform intelligence. Run the MAPE cron to refresh these scores.
+                  MANOP records verification, transaction, and finance activity to support review and market intelligence. Aggregates are refreshed from the activity log.
                 </div>
 
                 <div className="kpi-grid">
                   <KPI label="Total Signals 7d"    value={(intel?.total_signals_7d??0).toLocaleString()}     accent="#5B2EFF" icon={<Radio size={16} />}/>
-                  <KPI label="Demand Signals"      value={(intel?.demand_signals_7d??0).toLocaleString()}     accent="#5B2EFF"/>
-                  <KPI label="Supply Signals"      value={(intel?.supply_signals_7d??0).toLocaleString()}     accent="#22C55E"/>
                   <KPI label="Trust Signals"       value={(intel?.trust_signals_7d??0).toLocaleString()}      accent="#14B8A6"/>
                   <KPI label="Financing Signals"   value={(intel?.financing_signals_30d??0).toLocaleString()} accent="#F59E0B" sub="30 day window"/>
                   <KPI label="Transaction Signals" value={(intel?.transaction_signals_30d??0).toLocaleString()} accent="#3b82f6" sub="30 day window"/>
                 </div>
 
-                <div className="tbl">
-                  <div className="tbl-hd">
-                    <span className="tbl-title">Neighborhood Intelligence</span>
-                    <button className="btn btn-p btn-sm" onClick={()=>sb.rpc('compute_neighborhood_intelligence').then(()=>loadAll())}>
-                      Refresh Now
-                    </button>
-                  </div>
-                  {hoodIntel.length===0?(
-                    <div className="empty">No neighborhoods tracked yet. Signals are captured as users search and view properties.</div>
-                  ):(
-                    <table>
-                      <thead><tr><th>Neighborhood</th><th>City</th><th>Area Score</th><th>Demand</th><th>Supply Gap</th><th>Financing Demand</th><th>Trust</th><th>Quality</th></tr></thead>
-                      <tbody>
-                        {hoodIntel.map((n:any)=>(
-                          <tr key={n.neighborhood+n.city}>
-                            <td style={{fontWeight:700,color:'var(--text)'}}>{n.neighborhood}</td>
-                            <td style={{color:'var(--muted)'}}>{n.city}</td>
-                            <td><span style={{fontWeight:800}}>{n.area_score}</span>/100</td>
-                            <td><span style={{fontWeight:600}}>{n.demand_score_7d}</span></td>
-                            <td><span style={{color:n.supply_gap_score>50?'#ef4444':'var(--text2)',fontWeight:n.supply_gap_score>50?700:400}}>{n.supply_gap_score}</span></td>
-                            <td>{n.financing_requests_30d??0}</td>
-                            <td>{n.verified_agencies??0}/{n.total_agencies??0} verified</td>
-                            <td><Pill v={n.data_quality} map={{high:'#22c55e',medium:'#f59e0b',low:'#f59e0b',sparse:'#64748b'}}/></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
               </>
             )}
 
@@ -703,7 +593,7 @@ export default function AdminCommandCenter() {
                 </div>
                 {verQueue.length===0?<div className="empty" style={{display:'flex',alignItems:'center',gap:6}}><CheckCircle2 size={14}/> Queue is clear</div>:(
                   <table>
-                    <thead><tr><th>Agency</th><th>Type</th><th>Ref</th><th>Cities</th><th>MAPE</th><th>Submitted</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Agency</th><th>Type</th><th>Ref</th><th>Cities</th><th>Submitted</th><th>Action</th></tr></thead>
                     <tbody>
                       {verQueue.map((r:any)=>(
                         <tr key={r.id}>
@@ -714,7 +604,6 @@ export default function AdminCommandCenter() {
                           <td><Pill v={r.verification_type} map={STATUS_COLORS}/></td>
                           <td className="mono">{r.membership_number||r.cac_number||r.body_code||'—'}</td>
                           <td style={{fontSize:11,color:'var(--muted)'}}>{r.agency_cities?.slice(0,2).join(', ')||'—'}</td>
-                          <td style={{fontWeight:700}}>{r.agency_mape}</td>
                           <td className="mono" style={{color:'var(--muted)'}}>{new Date(r.submitted_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</td>
                           <td>
                             <div className="row">
@@ -802,15 +691,13 @@ export default function AdminCommandCenter() {
                 </div>
                 <div className="tbl">
                   <table>
-                    <thead><tr><th>Agency</th><th>Email</th><th>Cities</th><th>MAPE</th><th>Badge</th><th>Verification</th><th>Active</th><th>Assoc</th></tr></thead>
+                    <thead><tr><th>Agency</th><th>Email</th><th>Cities</th><th>Verification</th><th>Active</th><th>Assoc</th></tr></thead>
                     <tbody>
                       {filteredAgencies.map((a:any)=>(
                         <tr key={a.id}>
                           <td style={{fontWeight:700,color:'var(--text)'}}>{a.name}</td>
                           <td className="mono">{a.contact_email||'—'}</td>
                           <td style={{fontSize:11,color:'var(--muted)'}}>{a.cities?.slice(0,2).join(', ')||'—'}</td>
-                          <td style={{fontWeight:700}}>{a.mape_score??0}</td>
-                          <td><Pill v={a.badge_level||'listed'} map={STATUS_COLORS}/></td>
                           <td><Pill v={a.verification_status||'not_started'} map={STATUS_COLORS}/></td>
                           <td>
                             <button className={`btn ${a.active?'btn-ok':'btn-g'} btn-sm`} onClick={()=>toggleAgencyActive(a.id,a.active)}>

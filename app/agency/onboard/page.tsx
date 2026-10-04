@@ -126,7 +126,6 @@ export default function AgencyOnboardPage() {
         cities,
         property_types:      propTypes,
         partner_type:        'agency',
-        trust_level:         'agency',
         verification_status: 'not_started',
         active:              true,
         auth_user_id:        user.id,
@@ -233,7 +232,7 @@ export default function AgencyOnboardPage() {
             Set up your agency profile.
           </h1>
           <p style={{ fontSize: '0.875rem', color: text2, lineHeight: 1.7 }}>
-            Your profile is the foundation of your MAPE score. Buyers see your trust badge before your listings.
+            Complete your agency profile so MANOP can review your company, verify your credentials, and match you with the right opportunities.
           </p>
         </div>
 
@@ -322,7 +321,7 @@ export default function AgencyOnboardPage() {
               {agree && <span style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 900 }}>✓</span>}
             </div>
             <span style={{ fontSize: '0.78rem', color: text2, lineHeight: 1.65, userSelect: 'none' as const }}>
-              I commit to listing only real properties with accurate prices. Inaccurate listings affect my MAPE score and may result in removal.
+              I commit to listing only accurate, verifiable property and market information. MANOP may remove submissions that are misleading or unsupported.
             </span>
           </div>
 

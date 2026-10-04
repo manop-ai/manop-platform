@@ -220,10 +220,27 @@ export function buildMassing(spec: BuildingSpec): THREE.Group {
       const centroid = footprintCentroid(ring)
       const spanX = Math.max(...ring.map(p => p.x)) - Math.min(...ring.map(p => p.x))
       const spanZ = Math.max(...ring.map(p => p.z)) - Math.min(...ring.map(p => p.z))
-      const roofGeom = new THREE.ConeGeometry(Math.max(spanX, spanZ) * 0.62, 2.4, 4)
+      const longSpan = Math.max(spanX, spanZ, 0.1)
+      const shortSpan = Math.max(Math.min(spanX, spanZ), 0.1)
+      const ridgeHeight = Math.min(shortSpan * 0.4, 3.2)
+      // Built directly in the final Y-up target frame — X is the pitch
+      // direction, Y is height — unlike footprintShape() elsewhere in
+      // this file, which builds flat-in-XY and needs a rotateX(-90°)
+      // to stand up. No such rotation here: Y is already "up".
+      const roofShape = new THREE.Shape()
+      roofShape.moveTo(-shortSpan / 2, 0)
+      roofShape.lineTo(0, ridgeHeight)
+      roofShape.lineTo(shortSpan / 2, 0)
+      roofShape.lineTo(-shortSpan / 2, 0)
+      const roofGeom = new THREE.ExtrudeGeometry(roofShape, { depth: longSpan, bevelEnabled: false })
+      roofGeom.translate(0, 0, -longSpan / 2) // centre the ridge-run axis on the origin
+      // The extrusion's ridge runs along local Z. Rotate it onto X when
+      // the footprint's LONG axis is actually X (east-west) — i.e. only
+      // when spanX is the bigger one; otherwise Z already is the long
+      // axis and no rotation is needed.
+      if (spanX > spanZ) roofGeom.rotateY(Math.PI / 2)
       const roof = new THREE.Mesh(roofGeom, new THREE.MeshLambertMaterial({ color: 0x78350f }))
-      roof.rotation.y = Math.PI / 4
-      roof.position.set(centroid.x, storeys * FLOOR_HEIGHT_M + 1.2, centroid.z)
+      roof.position.set(centroid.x, storeys * FLOOR_HEIGHT_M, centroid.z)
       group.add(roof)
       break
     }

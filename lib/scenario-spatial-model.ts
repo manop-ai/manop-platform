@@ -29,6 +29,7 @@
 
 import type { BuildingFeature, OpenSpaceFeature } from '../components/ScenarioMap'
 import type { MassingCategory } from './massing-geometry'
+import { INDICATIVE_SQM_PER_PARKING_SPACE } from './scenario-geometry'
 
 export interface SpatialBuilding {
   id: string
@@ -44,14 +45,20 @@ export interface SpatialOpenSpace {
   geojson: GeoJSON.Polygon
 }
 
-/** The indicative parking preview — deliberately a single optional
- * slot, not an array, because there is exactly one generated preview
- * per scenario today (see buildIndicativeParkingPolygon). Becomes a
- * real array once parking is a placed/editable scenario_elements
- * object (flagged in the Site Studio audit, not this pass). */
-export interface SpatialParking {
+/**
+ * A parking lot — either a REAL, placed, independently editable
+ * scenario object (element_type 'parking', see sql/2026_site_studio_
+ * parking_element_type.sql), or, when none exist yet, the single
+ * generated indicative preview this feature used to be limited to.
+ * `isIndicativePreview` is how every consumer (2D styling, 3D, the
+ * readings panel) tells the two apart — never silently treated the
+ * same, same honesty rule as the rest of this file.
+ */
+export interface SpatialParkingLot {
+  id: string
   geojson: GeoJSON.Polygon
   stallCount: number
+  isIndicativePreview: boolean
 }
 
 export interface SpatialIntelligenceLayer {
@@ -65,13 +72,23 @@ export interface ScenarioSpatialModel {
   developmentCategory: string
   buildings: SpatialBuilding[]
   openSpaces: SpatialOpenSpace[]
-  parking: SpatialParking | null
+  /** Real placed lots when any exist; otherwise a single generated
+   * indicative-preview entry; otherwise empty. Never both at once —
+   * see buildScenarioSpatialModel. */
+  parkingLots: SpatialParkingLot[]
   intelligenceLayers: SpatialIntelligenceLayer[]
 }
 
 export interface BuildSpatialModelInput {
   buildings: BuildingFeature[]
   openSpaces: OpenSpaceFeature[]
+  /** Real, placed parking objects already fetched from the server
+   * (GET /api/scenarios/[id]'s parkingLots) — empty if the live
+   * database doesn't have the element_type extended yet, or none
+   * have been drawn. Takes priority over the indicative preview. */
+  realParkingLots: { id: string; geojson: GeoJSON.Polygon; footprint_sqm: number | null }[]
+  /** Fallback indicative preview inputs — ignored entirely once any
+   * real parking lot exists. */
   parkingPolygon: GeoJSON.Polygon | null
   parkingStallCount: number | null
   intelligenceLayers: SpatialIntelligenceLayer[]
@@ -80,6 +97,18 @@ export interface BuildSpatialModelInput {
 }
 
 export function buildScenarioSpatialModel(input: BuildSpatialModelInput): ScenarioSpatialModel {
+  const realParkingLots: SpatialParkingLot[] = input.realParkingLots.map(p => ({
+    id: p.id,
+    geojson: p.geojson,
+    stallCount: Math.floor((p.footprint_sqm ?? 0) / INDICATIVE_SQM_PER_PARKING_SPACE),
+    isIndicativePreview: false,
+  }))
+  const parkingLots: SpatialParkingLot[] = realParkingLots.length > 0
+    ? realParkingLots
+    : (input.parkingPolygon && input.parkingStallCount && input.parkingStallCount > 0)
+      ? [{ id: 'indicative-parking-preview', geojson: input.parkingPolygon, stallCount: input.parkingStallCount, isIndicativePreview: true }]
+      : []
+
   return {
     developmentCategory: input.developmentCategory,
     buildings: input.buildings.map(b => ({
@@ -91,9 +120,7 @@ export function buildScenarioSpatialModel(input: BuildSpatialModelInput): Scenar
       selected: b.id === input.selectedBuildingId,
     })),
     openSpaces: input.openSpaces.map(o => ({ id: o.id, geojson: o.geojson })),
-    parking: (input.parkingPolygon && input.parkingStallCount && input.parkingStallCount > 0)
-      ? { geojson: input.parkingPolygon, stallCount: input.parkingStallCount }
-      : null,
+    parkingLots,
     intelligenceLayers: input.intelligenceLayers,
   }
 }
@@ -121,7 +148,10 @@ export function modelToOpenSpacesFeatureCollection(model: ScenarioSpatialModel):
 export function modelToParkingFeatureCollection(model: ScenarioSpatialModel): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
-    features: model.parking ? [{ type: 'Feature', geometry: model.parking.geojson, properties: {} }] : [],
+    features: model.parkingLots.map(p => ({
+      type: 'Feature', geometry: p.geojson,
+      properties: { id: p.id, stallCount: p.stallCount, isIndicativePreview: p.isIndicativePreview },
+    })),
   }
 }
 
@@ -160,10 +190,9 @@ export function modelToMassingOpenSpaces(model: ScenarioSpatialModel): { points:
   return model.openSpaces.map(o => ({ points: o.geojson.coordinates[0].map(([lng, lat]) => ({ lat, lng })) }))
 }
 
-export function modelToMassingParking(model: ScenarioSpatialModel): { points: { lat: number; lng: number }[] | null; stallCount: number | null } {
-  if (!model.parking) return { points: null, stallCount: null }
-  return {
-    points: model.parking.geojson.coordinates[0].map(([lng, lat]) => ({ lat, lng })),
-    stallCount: model.parking.stallCount,
-  }
+export function modelToMassingParking(model: ScenarioSpatialModel): { points: { lat: number; lng: number }[]; stallCount: number }[] {
+  return model.parkingLots.map(p => ({
+    points: p.geojson.coordinates[0].map(([lng, lat]) => ({ lat, lng })),
+    stallCount: p.stallCount,
+  }))
 }

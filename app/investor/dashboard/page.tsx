@@ -22,8 +22,8 @@
 //     shown as one flat tag sourced from reviewed_at.
 //   - Loading state is ManopLoader (logo + rolling circle).
 //
-// DB tables: investor_watchlist, investor_alerts, investor_profiles,
-// user_profiles, developer_projects, properties, neighborhood_intelligence.
+// DB tables: investor_watchlist, investor_profiles, user_profiles,
+// developer_projects.
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -35,11 +35,10 @@ import { ManopLogoSVG } from '../../../components/ManopLogo'
 import ManopLoader from '../../../components/ManopLoader'
 import MediaLightbox, { MediaItem } from '../../../components/MediaLightbox'
 import {
-  Search, Building2, Bell, ExternalLink,
-  Plus, Trash2, CheckCircle2,
+  Search, Building2, ExternalLink, CheckCircle2,
 } from 'lucide-react'
 
-type Tab = 'overview' | 'properties' | 'developments' | 'alerts' | 'profile'
+type Tab = 'overview' | 'developments' | 'profile'
 
 interface InvestorProfile {
   budget_min: number | null; budget_max: number | null
@@ -47,11 +46,6 @@ interface InvestorProfile {
   is_diaspora: boolean | null; country_of_residence: string | null
   preferred_currency: string | null
 }
-interface Alert {
-  id: string; alert_type: string; neighborhood: string | null; city: string | null
-  max_price_ngn: number | null; active: boolean; last_triggered: string | null; created_at: string
-}
-
 const GOAL_LABELS: Record<string, string> = {
   capital_growth: 'Capital Growth', rental_income: 'Rental Income',
   own_use: 'Own Use', mixed: 'Mixed Strategy',
@@ -78,9 +72,7 @@ export default function InvestorDashboard() {
 
   const [userName, setUserName]         = useState('')
   const [profile, setProfile]           = useState<InvestorProfile | null>(null)
-  const [savedProperties, setSavedProperties] = useState<any[]>([])
   const [savedDevelopments, setSavedDevelopments] = useState<any[]>([])
-  const [alerts, setAlerts]             = useState<Alert[]>([])
 
   useEffect(() => { return listenTheme(setDark) }, [])
 
@@ -94,21 +86,15 @@ export default function InvestorDashboard() {
     const { data: up } = await sb.from('user_profiles').select('id').eq('auth_user_id', user.id).maybeSingle()
     const upId = up?.id || null
 
-    const [{ data: ip }, { data: props }, { data: devs }, { data: al }] = await Promise.all([
+    const [{ data: ip }, { data: devs }] = await Promise.all([
       upId ? sb.from('investor_profiles').select('*').eq('user_id', upId).maybeSingle() : Promise.resolve({ data: null }),
-      sb.from('investor_watchlist')
-        .select('id, properties(id, neighborhood, city, bedrooms, price_local, property_type)')
-        .eq('user_id', user.id).not('property_id', 'is', null).limit(12),
       sb.from('investor_watchlist')
         .select('id, developer_projects(id, name, neighborhood, city, reviewed_at, images)')
         .eq('user_id', user.id).not('project_id', 'is', null).limit(12),
-      sb.from('investor_alerts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     ])
 
     setProfile(ip || null)
-    setSavedProperties(props || [])
     setSavedDevelopments(devs || [])
-    setAlerts(al || [])
     setLoading(false)
   }, [user])
 
@@ -133,9 +119,7 @@ export default function InvestorDashboard() {
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'overview',     label: 'Overview' },
-    { key: 'properties',   label: `Properties (${savedProperties.length})` },
-    { key: 'developments', label: `Developments (${savedDevelopments.length})` },
-    { key: 'alerts',       label: `Alerts (${alerts.length})` },
+    { key: 'developments', label: `Saved developments (${savedDevelopments.length})` },
     { key: 'profile',      label: 'Profile' },
   ]
 
@@ -189,17 +173,11 @@ export default function InvestorDashboard() {
         {/* ── Overview ── */}
         {tab === 'overview' && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: '1.25rem' }}>
-              {[
-                { label: 'Saved properties',   value: savedProperties.length,   color: '#7C5FFF' },
-                { label: 'Saved developments', value: savedDevelopments.length, color: '#0D9488' },
-                { label: 'Active alerts',      value: alerts.filter(a => a.active).length, color: '#5B2EFF' },
-              ].map(s => (
-                <div key={s.label} style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', boxShadow: cardShadow }}>
-                  <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 8 }}>{s.label}</div>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: s.color, letterSpacing: '-0.03em' }}>{s.value}</div>
-                </div>
-              ))}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
+              <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', boxShadow: cardShadow }}>
+                <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 8 }}>Saved developments</div>
+                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0D9488', letterSpacing: '-0.03em' }}>{savedDevelopments.length}</div>
+              </div>
             </div>
 
             <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Recent developments</div>
@@ -234,80 +212,17 @@ export default function InvestorDashboard() {
               </div>
             )}
 
-            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Recent properties</div>
-            {savedProperties.length === 0 ? (
-              <div style={{ fontSize: 13, color: text3, textAlign: 'center' as const, padding: '1.5rem' }}>No properties saved yet.</div>
-            ) : (
-              savedProperties.slice(0, 5).map(item => {
-                const p = Array.isArray(item.properties) ? item.properties[0] : item.properties
-                if (!p) return null
-                return (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 6, boxShadow: cardShadow }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, textTransform: 'capitalize' as const }}>{p.property_type} · {p.bedrooms} bed</div>
-                      <div style={{ fontSize: 11, color: text3 }}>{p.neighborhood}, {p.city}</div>
-                    </div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>{p.price_local ? fmtNGN(p.price_local) : '—'}</div>
-                  </div>
-                )
-              })
-            )}
           </>
         )}
 
-        {/* ── Properties — real search, real results ── */}
-        {tab === 'properties' && <PropertiesTab dark={dark} bg2={bg2} bg3={bg3} border={border} text={text} text2={text2} text3={text3} cardShadow={cardShadow} INP={INP} />}
-
         {/* ── Developments — real search, real detail view ── */}
         {tab === 'developments' && <DevelopmentsTab dark={dark} bg2={bg2} bg3={bg3} border={border} text={text} text2={text2} text3={text3} cardShadow={cardShadow} INP={INP} />}
-
-        {/* ── Alerts ── */}
-        {tab === 'alerts' && <AlertsTab dark={dark} bg2={bg2} bg3={bg3} border={border} text={text} text2={text2} text3={text3} cardShadow={cardShadow} INP={INP} alerts={alerts} setAlerts={setAlerts} />}
 
         {/* ── Profile ── */}
         {tab === 'profile' && <ProfileTab bg3={bg3} border={border} text={text} text2={text2} text3={text3} cardShadow={cardShadow} profile={profile} />}
 
       </div>
     </div>
-  )
-}
-
-// ── Properties tab ──────────────────────────────────────────────
-function PropertiesTab({ dark, bg2, bg3, border, text, text2, text3, cardShadow, INP }: any) {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<any[] | null>(null)
-
-  async function handleSearch() {
-    if (!query.trim()) return
-    const { data } = await sb.from('properties').select('*')
-      .or(`neighborhood.ilike.%${query}%,city.ilike.%${query}%`).limit(24)
-    setResults(data || [])
-  }
-
-  return (
-    <>
-      <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Search properties</div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input style={INP} value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} placeholder="e.g. Lekki Phase 1, Ikoyi, East Legon…" />
-        <button onClick={handleSearch} style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0 1.5rem', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' as const, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Search size={14} /> Search
-        </button>
-      </div>
-
-      {results === null && <div style={{ fontSize: 13, color: text3, textAlign: 'center' as const, padding: '2rem 0' }}>Search an area above to see properties there.</div>}
-      {results !== null && results.length === 0 && <div style={{ fontSize: 13, color: text3, textAlign: 'center' as const, padding: '2rem 0' }}>No properties in that area yet.</div>}
-      {results !== null && results.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-          {results.map(p => (
-            <div key={p.id} style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', boxShadow: cardShadow }}>
-              <div style={{ fontWeight: 700, fontSize: 14, textTransform: 'capitalize' as const }}>{p.property_type} · {p.bedrooms} bed</div>
-              <div style={{ fontSize: 12, color: text3, marginBottom: 8 }}>{p.neighborhood}, {p.city}</div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>{p.price_local ? fmtNGN(p.price_local) : '—'}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
   )
 }
 
@@ -383,103 +298,6 @@ function DevelopmentsTab({ dark, bg2, bg3, border, text, text2, text3, cardShado
             </div>
           ))}
         </div>
-      )}
-    </>
-  )
-}
-
-// ── Alerts tab ──────────────────────────────────────────────────
-function AlertsTab({ dark, bg2, bg3, border, text, text2, text3, cardShadow, INP, alerts, setAlerts }: any) {
-  const [newAlert, setNewAlert] = useState({ neighborhood: '', city: '', alert_type: 'new_listing', max_price_ngn: '' })
-  const [adding, setAdding] = useState(false)
-
-  async function addAlert() {
-    if (!newAlert.neighborhood) return
-    setAdding(true)
-    const { data: { session } } = await sb.auth.getSession()
-    const uid = session?.user?.id
-    if (!uid) { setAdding(false); return }
-
-    const { data, error } = await sb.from('investor_alerts').insert({
-      user_id: uid, alert_type: newAlert.alert_type, neighborhood: newAlert.neighborhood,
-      city: newAlert.city || null,
-      max_price_ngn: newAlert.max_price_ngn ? parseFloat(newAlert.max_price_ngn) : null,
-      active: true,
-    }).select().maybeSingle()
-
-    if (!error && data) setAlerts((a: Alert[]) => [data as Alert, ...a])
-    setNewAlert({ neighborhood: '', city: '', alert_type: 'new_listing', max_price_ngn: '' })
-    setAdding(false)
-  }
-
-  async function removeAlert(id: string) {
-    await sb.from('investor_alerts').delete().eq('id', id)
-    setAlerts((a: Alert[]) => a.filter(al => al.id !== id))
-  }
-  async function toggleAlert(id: string, active: boolean) {
-    await sb.from('investor_alerts').update({ active }).eq('id', id)
-    setAlerts((a: Alert[]) => a.map(al => al.id === id ? { ...al, active } : al))
-  }
-
-  return (
-    <>
-      <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>New alert</div>
-      <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', marginBottom: 16, boxShadow: cardShadow }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
-          <div>
-            <div style={{ fontSize: 11, color: text3, marginBottom: 4 }}>Neighborhood</div>
-            <input style={INP} value={newAlert.neighborhood} onChange={e => setNewAlert({ ...newAlert, neighborhood: e.target.value })} placeholder="e.g. Lekki Phase 1" />
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: text3, marginBottom: 4 }}>City</div>
-            <input style={INP} value={newAlert.city} onChange={e => setNewAlert({ ...newAlert, city: e.target.value })} placeholder="Lagos" />
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: text3, marginBottom: 4 }}>Type</div>
-            <select style={INP} value={newAlert.alert_type} onChange={e => setNewAlert({ ...newAlert, alert_type: e.target.value })}>
-              <option value="new_listing">New listing</option>
-              <option value="price_drop">Price drop</option>
-            </select>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: text3, marginBottom: 4 }}>Max price (₦)</div>
-            <input type="number" style={INP} value={newAlert.max_price_ngn} onChange={e => setNewAlert({ ...newAlert, max_price_ngn: e.target.value })} placeholder="Optional" />
-          </div>
-          <button onClick={addAlert} disabled={adding || !newAlert.neighborhood}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.65rem 1.1rem', fontWeight: 700, fontSize: 13, cursor: adding || !newAlert.neighborhood ? 'default' : 'pointer', opacity: !newAlert.neighborhood ? 0.5 : 1 }}>
-            <Plus size={14} /> {adding ? 'Adding…' : 'Add'}
-          </button>
-        </div>
-      </div>
-
-      {alerts.length === 0 ? (
-        <div style={{ textAlign: 'center' as const, padding: '2rem', color: text3, background: bg3, border: `1px solid ${border}`, borderRadius: 10 }}>
-          <Bell size={22} style={{ marginBottom: 8, opacity: 0.5 }} />
-          <div style={{ fontSize: 13 }}>No alerts set. Add one above to get notified of new listings and price changes.</div>
-        </div>
-      ) : (
-        alerts.map((al: Alert) => (
-          <div key={al.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 8, boxShadow: cardShadow }}>
-            <div>
-              <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-                {al.neighborhood}{al.city ? `, ${al.city}` : ''} — {al.alert_type.replace(/_/g, ' ')}
-                {al.max_price_ngn ? ` (≤${fmtNGN(al.max_price_ngn)})` : ''}
-              </div>
-              <div style={{ fontSize: 11, color: text3 }}>
-                Created {fmtDate(al.created_at)}{al.last_triggered ? ` · Last triggered ${fmtDate(al.last_triggered)}` : ' · Never triggered'}
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button onClick={() => toggleAlert(al.id, !al.active)}
-                style={{ width: 36, height: 20, borderRadius: 100, background: al.active ? '#0D9488' : border, border: 'none', cursor: 'pointer', position: 'relative' }}>
-                <div style={{ position: 'absolute', top: 2, left: al.active ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
-              </button>
-              <button onClick={() => removeAlert(al.id)} style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 4 }}>
-                <Trash2 size={14} />
-              </button>
-            </div>
-          </div>
-        ))
       )}
     </>
   )

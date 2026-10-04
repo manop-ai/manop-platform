@@ -12,8 +12,7 @@
 //
 // Deliberately does NOT claim more than MANOP actually verifies —
 // no "guaranteed", no shield/lock icons implying legal/financial
-// certainty. Matches the existing MAPE philosophy: a badge means MANOP
-// reviewed specific submitted information within a stated scope, not
+// certainty. A badge means MANOP reviewed specific submitted information within a stated scope, not
 // a blanket endorsement.
 
 interface VerifiedBadgeProps {
