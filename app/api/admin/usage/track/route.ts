@@ -1,9 +1,9 @@
 // app/api/usage/track/route.ts — records one anonymous page view (see lib/usage.ts for what is and is not stored).
 // Never fails loudly: the page must not care. Needs sql/phase28 (usage_events); without it, nothing is recorded and nothing breaks.
 import { NextRequest, NextResponse } from 'next/server'
-import { sbAdmin } from '../../../../lib/supabase/admin'
-import { sbFromRequest } from '../../../../lib/supabase/route-client'
-import { VISITOR_ID_RE, countablePath, isBot, referrerHost, shouldRecord } from '../../../../lib/usage'
+import { sbAdmin } from '../../../../../lib/supabase/admin'
+import { sbFromRequest } from '../../../../../lib/supabase/route-client'
+import { VISITOR_ID_RE, countablePath, isBot, referrerHost, shouldRecord } from '../../../../../lib/usage'
 
 export const dynamic = 'force-dynamic'
 const done = () => new NextResponse(null, { status: 204 })

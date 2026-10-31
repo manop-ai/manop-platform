@@ -13,6 +13,7 @@ manop_ingest_cw.py
 **/ingest*.py
 **/ingest*.js
 
+
 # Data files and templates
 *.xlsx
 *.xls

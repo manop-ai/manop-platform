@@ -13,7 +13,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin } from '../../../../lib/admin-guard'
+import { requireAdmin } from '../../../../../lib/admin-guard'
 
 const sbAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
