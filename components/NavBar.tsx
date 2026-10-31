@@ -157,7 +157,7 @@ export default function NavBar() {
             style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', position: 'relative', zIndex: 1001 }}
             onClick={() => setMenuOpen(false)}
           >
-            <ManopLogo height={80} dark={dark} />
+            <ManopLogo tight height={40} dark={dark} priority />
           </Link>
 
           {/* ── Desktop ─────────────────────────────────── */}

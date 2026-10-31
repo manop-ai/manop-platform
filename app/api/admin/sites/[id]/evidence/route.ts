@@ -2,24 +2,34 @@
 //
 // Inserts a manually-recorded evidence/data-source finding into
 // site_intelligence_layers — the admin counterpart to the automated
-// spatial intersection. Same table, same provenance columns, so a
-// manually-added row and an automated one render identically on the
-// Site Intelligence Profile page.
+// spatial intersection. Same table, same provenance columns.
+//
+// Auth model: the caller is verified as admin by requireAdmin(), then the
+// write goes through the service-role client. site_intelligence_layers has
+// no user-facing write policy by design (MANOP-curated data), so this is
+// the correct path rather than loosening RLS.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { requireAdmin } from '../../../../../../lib/require-admin'
+import { sbAdmin } from '../../../../../../lib/supabase/admin'
+
+const CATEGORIES = ['survey_plan','planning','environmental','infrastructure','development_activity','market_context']
+const SOURCE_TYPES = ['official_government','professional_survey','user_submitted','third_party_public','manop_derived']
+const STATUSES = ['provided','source_derived','cross_referenced','reviewed','unable_to_establish','requires_further_verification']
+const CONFIDENCES = ['high','medium','low','unconfirmed']
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await requireAdmin(req)
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
   const body = await req.json()
+  if (!CATEGORIES.includes(body.layer_category)) return NextResponse.json({ error: 'Invalid category.' }, { status: 400 })
+  if (!SOURCE_TYPES.includes(body.source_type)) return NextResponse.json({ error: 'Invalid source type.' }, { status: 400 })
+  if (!STATUSES.includes(body.evidence_status)) return NextResponse.json({ error: 'Invalid evidence status.' }, { status: 400 })
+  if (!CONFIDENCES.includes(body.confidence)) return NextResponse.json({ error: 'Invalid confidence.' }, { status: 400 })
+  if (!body.label || !body.source || !body.layer_type) return NextResponse.json({ error: 'Label and source are required.' }, { status: 400 })
 
-  const authHeader = req.headers.get('authorization')
-  const sb = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    authHeader ? { global: { headers: { Authorization: authHeader } } } : undefined,
-  )
-
-  const { error } = await sb.from('site_intelligence_layers').upsert({
+  const { error } = await sbAdmin.from('site_intelligence_layers').upsert({
     site_id: params.id,
     layer_category: body.layer_category,
     layer_type: body.layer_type,

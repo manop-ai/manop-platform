@@ -1,373 +1,231 @@
 'use client'
-// app/register/RegisterContent.tsx — REBUILT FOR SPRINT 1
+// app/register/RegisterContent.tsx
 //
-// ROOT CAUSE OF OLD SYSTEM:
-// Registration collected name + email only — no password.
-// This made it impossible for /login (signInWithPassword) to ever work.
-//
-// NEW ARCHITECTURE:
-// Step 1: Select account type
-// Step 2: Name + email + password → sb.auth.signUp() → profile insert → "Check your email"
-// Step 3: User verifies email → /verify → routed to correct setup page
-//
-// ONE system. No custom tokens. No localStorage auth hacks.
+// One screen: who you are → account details → acknowledgement → create account.
+// Account types are the ones the product already routes (/verify → setup pages):
+// buyer, diaspora, agency, developer. No new roles are introduced.
+//   Sign up → verify email → /verify routes to the matching workspace setup.
+// The acknowledgement is required before signUp() is called and is recorded in
+// user_metadata.consent (see lib/consent.ts).
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { sb } from '../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../lib/theme'
 import ManopLogo from '../../components/ManopLogo'
+import { CONSENT_VERSION, EVIDENCE_NOTICE, PRIVACY_URL, TERMS_URL, consentRecord, hasLegalLinks } from '../../lib/consent'
 
 type AccountType = 'buyer' | 'diaspora' | 'agency' | 'developer'
 
-const ACCOUNT_TYPES: { key: AccountType; label: string; sub: string; icon: string; color: string }[] = [
-  { key: 'buyer',     label: 'Home Buyer',       sub: 'Find and evaluate properties',        icon: '🏠', color: '#5B2EFF' },
-  { key: 'diaspora',  label: 'Diaspora Investor', sub: 'Invest from abroad — USD pricing',    icon: '🌍', color: '#14B8A6' },
-  { key: 'agency',    label: 'Agency',            sub: 'List properties and manage opportunities', icon: '🏢', color: '#7C5FFF' },
-  { key: 'developer', label: 'Developer',         sub: 'Showcase projects, track unit sales', icon: '🏗️', color: '#F59E0B' },
+const ACCOUNT_TYPES: { key: AccountType; label: string; sub: string; color: string }[] = [
+  { key: 'developer', label: 'Developer',           sub: 'Present and update your developments', color: '#F59E0B' },
+  { key: 'agency',    label: 'Agency',              sub: 'Submit and track developments',        color: '#7C5FFF' },
+  { key: 'diaspora',  label: 'Investor (diaspora)', sub: 'Assess developments from abroad',      color: '#14B8A6' },
+  { key: 'buyer',     label: 'Buyer',               sub: 'Understand a development first',       color: '#5B2EFF' },
 ]
 
 export default function RegisterContent() {
-  const router       = useRouter()
-  const params       = useSearchParams()
+  const params = useSearchParams()
   const [dark, setDark] = useState(getInitialDark)
-  const [step, setStep] = useState<1 | 2>(1)
+  const initial = params.get('type')
   const [type, setType] = useState<AccountType | null>(
-    (params.get('type') as AccountType | null) || null
+    ACCOUNT_TYPES.some(t => t.key === initial) ? (initial as AccountType) : null,
   )
-
-  // Form fields
-  const [name,     setName]     = useState('')
-  const [email,    setEmail]    = useState('')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
+  const [agreed, setAgreed] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [errorField, setErrorField] = useState<'type' | 'name' | 'email' | 'password' | 'consent' | ''>('')
+  const [done, setDone] = useState(false)
 
-  // State
-  const [saving, setSaving]   = useState(false)
-  const [error,  setError]    = useState('')
-  const [done,   setDone]     = useState(false)
+  useEffect(() => listenTheme(d => setDark(d)), [])
 
-  useEffect(() => {
-    return listenTheme(d => setDark(d))
-  }, [])
+  const bg = dark ? '#0F172A' : '#F8FAFC'
+  const text = dark ? '#F8FAFC' : '#0F172A'
+  const text2 = dark ? 'rgba(248,250,252,0.7)' : 'rgba(15,23,42,0.7)'
+  const text3 = dark ? 'rgba(248,250,252,0.45)' : 'rgba(15,23,42,0.5)'
+  const border = dark ? 'rgba(248,250,252,0.12)' : 'rgba(15,23,42,0.14)'
+  const accent = ACCOUNT_TYPES.find(t => t.key === type)?.color || '#5B2EFF'
+  const fieldBorder = (f: string) => (errorField === f ? '#EF4444' : border)
 
-  // Auto-advance to step 2 if type passed in URL
-  useEffect(() => {
-    if (params.get('type') && ACCOUNT_TYPES.find(t => t.key === params.get('type'))) {
-      setStep(2)
-    }
-  }, [params])
-
-  const bg     = dark ? '#0F172A' : '#F8FAFC'
-  const bg2    = dark ? '#1E293B' : '#F1F5F9'
-  const bg3    = dark ? '#162032' : '#FFFFFF'
-  const text   = dark ? '#F8FAFC' : '#0F172A'
-  const text2  = dark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.65)'
-  const text3  = dark ? 'rgba(248,250,252,0.35)' : 'rgba(15,23,42,0.35)'
-  const border = dark ? 'rgba(248,250,252,0.08)' : 'rgba(15,23,42,0.08)'
-
-  const INP: React.CSSProperties = {
-    width: '100%', padding: '0.75rem 0.875rem',
+  const INP = (f: string): React.CSSProperties => ({
+    width: '100%', minHeight: 48, padding: '0.75rem 0.9rem', boxSizing: 'border-box',
     background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-    border: `1.5px solid ${border}`, borderRadius: 9,
-    color: text, fontSize: '0.9rem', outline: 'none',
-    fontFamily: 'inherit', boxSizing: 'border-box',
-    transition: 'border-color 0.15s',
-  }
+    border: `1.5px solid ${fieldBorder(f)}`, borderRadius: 10, color: text,
+    fontSize: 16, // 16px stops iOS zooming on focus
+    outline: 'none', fontFamily: 'inherit',
+  })
+  const LBL: React.CSSProperties = { display: 'block', fontSize: 13, fontWeight: 600, color: text2, marginBottom: 6 }
 
-  const selectedType = ACCOUNT_TYPES.find(t => t.key === type)
+  function fail(field: typeof errorField, msg: string) { setErrorField(field); setError(msg) }
 
   async function handleRegister() {
-    setError('')
-    const cleanName  = name.trim()
+    setError(''); setErrorField('')
+    const cleanName = name.trim()
     const cleanEmail = email.trim().toLowerCase()
-
-    if (!cleanName)  { setError('Please enter your full name.'); return }
-    if (!cleanEmail || !cleanEmail.includes('@')) { setError('Enter a valid email address.'); return }
-    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
-    if (!type) { setError('Please select an account type.'); return }
+    if (!type) return fail('type', 'Choose the option that describes you.')
+    if (!cleanName) return fail('name', 'Enter your full name.')
+    if (!cleanEmail || !cleanEmail.includes('@')) return fail('email', 'Enter a valid email address.')
+    if (password.length < 8) return fail('password', 'Password must be at least 8 characters.')
+    if (!agreed) return fail('consent', 'Please confirm the acknowledgement below to create your account.')
 
     setSaving(true)
     try {
-      // Step 1: Create Supabase Auth user with role in metadata
-      const redirectUrl = `${window.location.origin}/verify`
       const { data: authData, error: authErr } = await sb.auth.signUp({
-        email:    cleanEmail,
+        email: cleanEmail,
         password,
         options: {
-          emailRedirectTo: redirectUrl,
-          data: {
-            full_name:  cleanName,
-            user_role:  type,
-          },
+          emailRedirectTo: `${window.location.origin}/verify`,
+          data: { full_name: cleanName, user_role: type, consent: consentRecord() },
         },
       })
-
       if (authErr) {
-        if (authErr.message.includes('already registered')) {
-          setError('An account with this email already exists. Sign in at /login or reset your password.')
-        } else {
-          setError(authErr.message)
-        }
-        setSaving(false)
+        fail('email', authErr.message.includes('already registered')
+          ? 'An account with this email already exists. Sign in instead, or reset your password.'
+          : authErr.message)
         return
       }
+      if (!authData.user) { fail('', 'Something went wrong. Please try again.'); return }
 
-      if (!authData.user) {
-        setError('Something went wrong. Please try again.')
-        setSaving(false)
-        return
-      }
-
-      const userId = authData.user.id
-
-      // Step 2: Insert into the correct profile table
-      // Use the anon key here — RLS allows user to insert their own row
       if (type === 'buyer' || type === 'diaspora') {
         await sb.from('user_profiles').insert({
-          id:         userId,
-          full_name:  cleanName,
-          email:      cleanEmail,
-          user_role:  type,
-          created_at: new Date().toISOString(),
+          id: authData.user.id, full_name: cleanName, email: cleanEmail,
+          user_role: type, created_at: new Date().toISOString(),
         })
-        // Ignore error — profile can be created later in setup flow
+        // Ignored on failure: the profile is completed in the setup step.
       }
+      // Developer and agency rows are created during onboarding, after email verification.
 
-      // Agency and developer profile rows are created later during onboarding,
-      // after the user verifies their email and signs in.
-
-      // Log the registration signal
       fetch('/api/signals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          signal_type: 'user_registered',
-          metadata: { type, email: cleanEmail },
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signal_type: 'user_registered', metadata: { type, consent_version: CONSENT_VERSION } }),
       }).catch(() => {})
 
       setDone(true)
-
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Registration failed. Please try again.')
+      fail('', e instanceof Error ? e.message : 'Registration failed. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
-  // ── Done state — "Check your email" ──────────────────────────
+  const shell: React.CSSProperties = { background: bg, minHeight: '100vh', display: 'flex', justifyContent: 'center', padding: 'clamp(1.25rem,5vw,2.5rem) 1.25rem', color: text }
+
   if (done) return (
-    <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
+    <div style={{ ...shell, alignItems: 'center' }}>
       <div style={{ maxWidth: 440, width: '100%', textAlign: 'center' }}>
-        <div style={{ width: 72, height: 72, borderRadius: 18, background: 'rgba(91,46,255,0.1)', border: '1.5px solid rgba(91,46,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', fontSize: '2rem' }}>
-          📬
-        </div>
-        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#5B2EFF', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '0.75rem' }}>
-          Account created
-        </div>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.04em', color: text, marginBottom: '0.875rem', lineHeight: 1.1 }}>
-          Check your email
-        </h1>
-        <p style={{ fontSize: '0.9rem', color: text2, lineHeight: 1.7, marginBottom: '2rem' }}>
-          We sent a verification link to <strong style={{ color: text }}>{email}</strong>.
-          Click the link in that email to activate your account and set up your profile.
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 12 }}>Account created</div>
+        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em', margin: '0 0 12px' }}>Check your email</h1>
+        <p style={{ fontSize: 15, color: text2, lineHeight: 1.7, margin: '0 0 24px' }}>
+          We sent a verification link to <strong style={{ color: text }}>{email.trim()}</strong>. Open it to confirm your address —
+          you&apos;ll then go straight to setting up your MANOP workspace.
         </p>
-        <div style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', fontSize: '0.8rem', color: text2, lineHeight: 1.6, marginBottom: '1.5rem' }}>
-          <strong style={{ color: text }}>Didn't get it?</strong> Check your spam folder. The email comes from Supabase on behalf of Manop.
-        </div>
-        <Link href="/login" style={{ fontSize: '0.82rem', color: text3, textDecoration: 'none' }}>
-          Already verified? Sign in →
-        </Link>
+        <p style={{ fontSize: 13, color: text3, lineHeight: 1.6, margin: '0 0 20px' }}>
+          Nothing in your inbox after a few minutes? Check your spam folder.
+        </p>
+        <Link href="/login" style={{ fontSize: 14, color: '#14B8A6', textDecoration: 'none', fontWeight: 600 }}>Already verified? Enter MANOP →</Link>
       </div>
     </div>
   )
 
-  // ── Step 1: Account type selector ────────────────────────────
-  if (step === 1) return (
-    <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
-      <div style={{ maxWidth: 520, width: '100%' }}>
-        <Link href="/" style={{ display: 'inline-flex', textDecoration: 'none', marginBottom: '2.5rem' }}>
-          <ManopLogo height={80} dark={dark} />
-        </Link>
-
-        <h1 style={{ fontSize: 'clamp(1.5rem,4vw,2rem)', fontWeight: 800, letterSpacing: '-0.04em', color: text, lineHeight: 1.1, marginBottom: '0.5rem' }}>
-          Create your account
-        </h1>
-        <p style={{ fontSize: '0.88rem', color: text2, lineHeight: 1.6, marginBottom: '2rem' }}>
-          What brings you to Manop?
-        </p>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: '1.5rem' }}>
-          {ACCOUNT_TYPES.map(t => (
-            <button
-              key={t.key}
-              onClick={() => { setType(t.key); setStep(2) }}
-              style={{
-                background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                border: `1.5px solid ${border}`,
-                borderRadius: 12, padding: '1.25rem',
-                cursor: 'pointer', textAlign: 'left',
-                fontFamily: 'inherit', color: text,
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = t.color
-                e.currentTarget.style.background = `${t.color}10`
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = border
-                e.currentTarget.style.background = dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'
-              }}
-            >
-              <div style={{ fontSize: '1.4rem', marginBottom: '0.6rem' }}>{t.icon}</div>
-              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: text, marginBottom: '0.3rem' }}>{t.label}</div>
-              <div style={{ fontSize: '0.72rem', color: text3, lineHeight: 1.4 }}>{t.sub}</div>
-            </button>
-          ))}
-        </div>
-
-        <p style={{ fontSize: '0.78rem', color: text3, textAlign: 'center' }}>
-          Already have an account?{' '}
-          <Link href="/login" style={{ color: '#14B8A6', fontWeight: 600, textDecoration: 'none' }}>Sign in →</Link>
-        </p>
-      </div>
-    </div>
-  )
-
-  // ── Step 2: Registration form ─────────────────────────────────
   return (
-    <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', color: text }}>
-      <div style={{ maxWidth: 440, width: '100%' }}>
-
-        <Link href="/" style={{ display: 'inline-flex', textDecoration: 'none', marginBottom: '2.5rem' }}>
-          <ManopLogo height={80} dark={dark} />
+    <div style={{ ...shell, alignItems: 'flex-start' }}>
+      <div style={{ maxWidth: 460, width: '100%' }}>
+        <Link href="/" aria-label="MANOP home" style={{ display: 'inline-flex', textDecoration: 'none', marginBottom: 'clamp(1.25rem,4vw,2rem)' }}>
+          <ManopLogo height={64} dark={dark} />
         </Link>
 
-        {/* Type badge */}
-        {selectedType && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.5rem' }}>
-            <button
-              onClick={() => setStep(1)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: `${selectedType.color}12`,
-                border: `1px solid ${selectedType.color}30`,
-                borderRadius: 20, padding: '4px 12px',
-                cursor: 'pointer', color: selectedType.color,
-                fontSize: '0.72rem', fontWeight: 700,
-                fontFamily: 'inherit',
-              }}
-            >
-              {selectedType.icon} {selectedType.label} · Change ↗
-            </button>
-          </div>
-        )}
-
-        <h1 style={{ fontSize: 'clamp(1.4rem,3.5vw,1.8rem)', fontWeight: 800, letterSpacing: '-0.04em', color: text, lineHeight: 1.1, marginBottom: '0.5rem' }}>
-          Create your account
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 8 }}>
+          Think through the development
+        </div>
+        <h1 style={{ fontSize: 'clamp(1.6rem,5vw,2rem)', fontWeight: 800, letterSpacing: '-0.035em', lineHeight: 1.12, margin: '0 0 8px' }}>
+          Create your MANOP account
         </h1>
-        <p style={{ fontSize: '0.82rem', color: text2, lineHeight: 1.6, marginBottom: '1.75rem' }}>
-          You'll verify your email before accessing your dashboard.
+        <p style={{ fontSize: 14.5, color: text2, lineHeight: 1.65, margin: '0 0 24px' }}>
+          The intelligence partner for real estate development: evidence, context and analysis in one place.
         </p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: text2, marginBottom: 5 }}>
-              Full name *
-            </label>
-            <input
-              style={INP}
-              placeholder="Your full name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              autoFocus
-              onFocus={e => (e.target.style.borderColor = selectedType?.color || '#5B2EFF')}
-              onBlur={e => (e.target.style.borderColor = border)}
-            />
+        <fieldset style={{ border: 'none', padding: 0, margin: '0 0 18px' }}>
+          <legend style={{ ...LBL, padding: 0 }}>I am joining as</legend>
+          <div role="radiogroup" aria-label="Account type" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 8 }}>
+            {ACCOUNT_TYPES.map(t => {
+              const on = t.key === type
+              return (
+                <button key={t.key} type="button" role="radio" aria-checked={on} onClick={() => { setType(t.key); if (errorField === 'type') { setError(''); setErrorField('') } }}
+                  style={{
+                    textAlign: 'left', minHeight: 56, padding: '0.7rem 0.9rem', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', color: text,
+                    background: on ? `${t.color}18` : 'transparent', border: `1.5px solid ${on ? t.color : fieldBorder('type')}`,
+                  }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{t.label}</div>
+                  <div style={{ fontSize: 12, color: text3, marginTop: 2, lineHeight: 1.4 }}>{t.sub}</div>
+                </button>
+              )
+            })}
           </div>
+        </fieldset>
 
+        <div style={{ display: 'grid', gap: 14 }}>
           <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: text2, marginBottom: 5 }}>
-              Email address *
-            </label>
-            <input
-              style={INP}
-              type="email"
+            <label htmlFor="su-name" style={LBL}>Full name</label>
+            <input id="su-name" style={INP('name')} autoComplete="name" value={name} onChange={e => setName(e.target.value)} aria-invalid={errorField === 'name'} />
+          </div>
+          <div>
+            <label htmlFor="su-email" style={LBL}>Email address</label>
+            <input id="su-email" style={INP('email')} type="email" inputMode="email" autoComplete="email" autoCapitalize="none"
               placeholder={type === 'agency' || type === 'developer' ? 'you@company.com' : 'you@email.com'}
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              onFocus={e => (e.target.style.borderColor = selectedType?.color || '#5B2EFF')}
-              onBlur={e => (e.target.style.borderColor = border)}
-            />
+              value={email} onChange={e => setEmail(e.target.value)} aria-invalid={errorField === 'email'} />
           </div>
-
           <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: text2, marginBottom: 5 }}>
-              Password * <span style={{ color: text3, fontWeight: 400 }}>(min 8 characters)</span>
-            </label>
+            <label htmlFor="su-pass" style={LBL}>Password <span style={{ color: text3, fontWeight: 400 }}>(at least 8 characters)</span></label>
             <div style={{ position: 'relative' }}>
-              <input
-                style={{ ...INP, paddingRight: '3rem' }}
-                type={showPass ? 'text' : 'password'}
-                placeholder="At least 8 characters"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleRegister()}
-                onFocus={e => (e.target.style.borderColor = selectedType?.color || '#5B2EFF')}
-                onBlur={e => (e.target.style.borderColor = border)}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPass(v => !v)}
-                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: text3, fontSize: '0.75rem', padding: 0, fontFamily: 'inherit' }}
-              >
+              <input id="su-pass" style={{ ...INP('password'), paddingRight: '4.25rem' }} type={showPass ? 'text' : 'password'} autoComplete="new-password"
+                value={password} onChange={e => setPassword(e.target.value)} aria-invalid={errorField === 'password'}
+                onKeyDown={e => e.key === 'Enter' && handleRegister()} />
+              <button type="button" onClick={() => setShowPass(v => !v)} aria-label={showPass ? 'Hide password' : 'Show password'}
+                style={{ position: 'absolute', right: 4, top: 0, bottom: 0, minWidth: 56, background: 'none', border: 'none', cursor: 'pointer', color: text3, fontSize: 13, fontFamily: 'inherit' }}>
                 {showPass ? 'Hide' : 'Show'}
               </button>
             </div>
           </div>
         </div>
 
+        {/* Acknowledgement — required, visible, not small print */}
+        <div style={{ marginTop: 18, padding: '0.9rem', borderRadius: 10, border: `1.5px solid ${fieldBorder('consent')}`, background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+          <label htmlFor="su-consent" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer' }}>
+            <input id="su-consent" type="checkbox" checked={agreed} aria-describedby="su-consent-text"
+              onChange={e => { setAgreed(e.target.checked); if (e.target.checked && errorField === 'consent') { setError(''); setErrorField('') } }}
+              style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0, accentColor: accent, cursor: 'pointer' }} />
+            <span id="su-consent-text" style={{ fontSize: 14, lineHeight: 1.6, color: text2 }}>
+              {hasLegalLinks() && (
+                <>I agree to MANOP&apos;s <a href={TERMS_URL} target="_blank" rel="noreferrer" style={{ color: '#14B8A6' }}>Terms of Use</a> and
+                  acknowledge MANOP&apos;s <a href={PRIVACY_URL} target="_blank" rel="noreferrer" style={{ color: '#14B8A6' }}>Privacy Policy</a>. </>
+              )}
+              {EVIDENCE_NOTICE}
+            </span>
+          </label>
+        </div>
+
         {error && (
-          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '0.7rem 0.875rem', fontSize: '0.8rem', color: '#EF4444', marginTop: 14, lineHeight: 1.5 }}>
+          <div role="alert" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '0.7rem 0.9rem', fontSize: 13.5, color: dark ? '#FCA5A5' : '#B91C1C', marginTop: 14, lineHeight: 1.5 }}>
             {error}
           </div>
         )}
 
-        <button
-          onClick={handleRegister}
-          disabled={saving}
-          style={{
-            width: '100%', marginTop: 16, height: 50,
-            background: selectedType?.color || '#5B2EFF',
-            color: '#fff', border: 'none', borderRadius: 10,
-            fontSize: '0.95rem', fontWeight: 700,
-            cursor: saving ? 'default' : 'pointer',
-            fontFamily: 'inherit',
-            opacity: saving ? 0.75 : 1,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            transition: 'opacity 0.15s',
-          }}
-        >
-          {saving ? (
-            <>
-              <div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
-              Creating account…
-            </>
-          ) : 'Create account →'}
+        <button type="button" onClick={handleRegister} disabled={saving}
+          style={{ width: '100%', marginTop: 16, minHeight: 52, background: accent, color: '#fff', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: 700,
+            cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.75 : 1 }}>
+          {saving ? 'Creating account…' : 'Create account'}
         </button>
 
-        <p style={{ fontSize: '0.72rem', color: text3, textAlign: 'center', marginTop: '1.25rem', lineHeight: 1.6 }}>
+        <p style={{ fontSize: 14, color: text3, textAlign: 'center', margin: '20px 0 8px' }}>
           Already have an account?{' '}
-          <Link href="/login" style={{ color: '#14B8A6', fontWeight: 600, textDecoration: 'none' }}>Sign in →</Link>
-        </p>
-
-        <p style={{ fontSize: '0.68rem', color: text3, textAlign: 'center', marginTop: '0.75rem', lineHeight: 1.6 }}>
-          By registering you agree to our data commitment: accurate listings only, no fake properties.
+          <Link href="/login" style={{ color: '#14B8A6', fontWeight: 600, textDecoration: 'none' }}>Enter MANOP →</Link>
         </p>
       </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 }

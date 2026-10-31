@@ -105,7 +105,7 @@ export default function LoginPage() {
     width: '100%', padding: '0.75rem 0.875rem',
     background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
     border: `1.5px solid ${border}`, borderRadius: 9,
-    color: text, fontSize: '0.9rem', outline: 'none',
+    color: text, fontSize: 16, outline: 'none', minHeight: 48,
     fontFamily: 'inherit', boxSizing: 'border-box' as const,
     transition: 'border-color 0.15s',
   }
@@ -194,20 +194,21 @@ export default function LoginPage() {
 
         <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 16, padding: '2rem' }}>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: text, marginBottom: '0.35rem' }}>
-            {resetMode ? 'Reset your password' : 'Sign in'}
+            {resetMode ? 'Reset your password' : 'Enter MANOP'}
           </h1>
           <p style={{ fontSize: '0.82rem', color: text2, marginBottom: '1.5rem' }}>
             {resetMode
               ? 'Enter your email and we\'ll send a reset link.'
-              : 'Sign in to your MANOP account.'}
+              : 'Think through the development. The intelligence partner for real estate development.'}
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: text2, marginBottom: '0.35rem' }}>
+              <label htmlFor="li-email" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: text2, marginBottom: '0.35rem' }}>
                 Email address
               </label>
               <input
+                id="li-email"
                 style={INP}
                 type="email"
                 placeholder="you@example.com"
@@ -220,12 +221,13 @@ export default function LoginPage() {
 
             {!resetMode && (
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: text2, marginBottom: '0.35rem' }}>
+                <label htmlFor="li-pass" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: text2, marginBottom: '0.35rem' }}>
                   Password
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
-                    style={{ ...INP, paddingRight: '2.75rem' }}
+                    id="li-pass"
+                    style={{ ...INP, paddingRight: '3.5rem' }}
                     type={showPass ? 'text' : 'password'}
                     placeholder="Your password"
                     value={password}
@@ -244,7 +246,7 @@ export default function LoginPage() {
             )}
 
             {error && (
-              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '0.65rem 0.875rem', fontSize: '0.82rem', color: '#FCA5A5', lineHeight: 1.5 }}>
+              <div role="alert" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '0.65rem 0.875rem', fontSize: '0.82rem', color: '#FCA5A5', lineHeight: 1.5 }}>
                 {error}
               </div>
             )}
@@ -253,7 +255,7 @@ export default function LoginPage() {
               onClick={resetMode ? handleReset : handleLogin}
               disabled={loading}
               style={{
-                width: '100%', padding: '0.75rem', borderRadius: 9,
+                width: '100%', padding: '0.75rem', minHeight: 50, borderRadius: 9,
                 background: loading ? 'rgba(91,46,255,0.5)' : '#5B2EFF',
                 color: '#fff', border: 'none', fontSize: '0.9rem',
                 fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer',
@@ -262,8 +264,8 @@ export default function LoginPage() {
               }}
             >
               {loading
-                ? (resetMode ? 'Sending…' : 'Signing in…')
-                : (resetMode ? 'Send Reset Link' : 'Sign In')}
+                ? (resetMode ? 'Sending…' : 'Entering…')
+                : (resetMode ? 'Send Reset Link' : 'Enter MANOP')}
             </button>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
@@ -275,7 +277,7 @@ export default function LoginPage() {
               </button>
               {!resetMode && (
                 <Link href="/register" style={{ fontSize: '0.8rem', color: '#14B8A6', textDecoration: 'none' }}>
-                  Create account
+                  Create an account
                 </Link>
               )}
             </div>

@@ -9,18 +9,50 @@ import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Radio, CheckCircle2, Banknote, Building2, Globe,
   BarChart3, Construction, LogOut, Sun, Moon, Home, ClipboardCheck,
-  Clock, Plus, Star,
+  Clock, Plus, Star, LineChart, Wallet, TrendingUp, HardHat, FileText,
+  Landmark, RefreshCw, Archive, Inbox,
 } from 'lucide-react'
 import { getInitialDark, setTheme, listenTheme } from '../../lib/theme'
 import { sb } from '../../lib/supabase/client'
+import { getFinanceSuitabilityLabel } from '../../lib/finance-intelligence'
+import { PlatformGlance, ActivityPanel } from '../../components/AdminActivityPanel'
+import { isStale, STALENESS_THRESHOLD_DAYS, type FinanceProduct } from '../../lib/finance-products'
+import { fetchJson, withTimeout } from '../../lib/fetch-json'
+import LenderProductsPanel from '../../components/LenderProductsPanel'
+import RequestHandoverPanel from '../../components/RequestHandoverPanel'
+import { fromFinancingRequest } from '../../lib/request-handover'
 
+// Never waits forever: a stuck auth lock resolves to '' so the caller can say "sign in again".
 async function getToken() {
-  const { data: { session } } = await sb.auth.getSession()
-  return session?.access_token ?? ''
+  const r = await withTimeout(sb.auth.getSession(), 8000, null as any)
+  return r?.data?.session?.access_token ?? ''
 }
 
 // ── Types ────────────────────────────────────────────────────
-type Tab = 'command'|'signals'|'verify'|'agencies'|'associations'|'financing'|'onboard'
+type Tab = 'command'|'activity'|'signals'|'verify'|'agencies'|'associations'|'financing'|'financeintel'|'financeproducts'|'onboard'
+
+// PHASE 7 — Admin Finance Intelligence. Distinct from the existing
+// "financing" tab above: that tab is the manual lender-matching pipeline
+// for financing_requests (mortgage/NHF/diaspora-remittance requests a
+// human admin routes to a partner institution). This is read visibility
+// into finance_analyses — the calc-engine runs MyFinancePanel (Phase 6)
+// also shows users their own copy of: every Buyer Affordability and
+// Investment Intelligence a buyer/investor/developer/agency has actually
+// produced platform-wide, so MANOP can see usage and spot qualified
+// interest without a buyer having to separately submit a financing_requests
+// row. It never shows a lender decision — see FinanceSuitabilityLabel /
+// getInvestmentVerdict in lib/finance-intelligence.ts for the only labels
+// this surfaces (MANOP explains, lenders decide).
+interface FinanceAnalysisRow {
+  id: string
+  reference: string | null
+  analysis_type: string
+  inputs: Record<string, any> | null
+  outputs: Record<string, any> | null
+  user_id: string | null
+  property_id: string | null
+  created_at: string
+}
 
 interface PlatformIntel {
   total_signals_7d: number
@@ -79,6 +111,70 @@ const STATUS_COLORS: Record<string,string> = {
   mortgage:'#5B2EFF', nhf:'#14B8A6', diaspora_remittance:'#f59e0b', developer_plan:'#3b82f6',
   financing:'#f59e0b',
   trust_signal:'#14B8A6', transaction:'#3b82f6', participation:'#8b5cf6',
+  // PHASE 7 — Finance Intelligence analysis types + the only verdict/
+  // suitability labels lib/finance-intelligence.ts is allowed to emit.
+  // Never add an "approved"/"guaranteed" style label here — this module
+  // explains, lenders decide.
+  buyer_affordability:'#5B2EFF', investment_intelligence:'#14B8A6',
+  payment_plan:'#3b82f6', development_finance:'#f59e0b',
+  viable:'#22c55e', borderline:'#f59e0b', notviable:'#ef4444',
+  'Lower loan share indicated: lender review still required':'#22c55e', 'Moderate loan share indicated: lender review required':'#3b82f6', 'High equity contribution indicated':'#f59e0b', 'Very high loan share indicated: a developer plan or larger deposit may be worth exploring':'#8b5cf6', 'Insufficient information to assess':'#64748b',
+  'Mortgage Suitable Candidate':'#22c55e', 'Possible — Lender Review Required':'#3b82f6',
+  'High Equity Required':'#f59e0b', 'Developer Payment Plan Likely':'#8b5cf6',
+  'Cash Buyer Likely':'#14B8A6', 'Finance Status Unknown':'#64748b',
+  // lib/construction-appraisal.ts's getViabilityLabel() — the developer's
+  // own tool output, computed from their own inputs (see that file's
+  // LANGUAGE NOTE for why this keeps recommendation-style wording MANOP's
+  // other evidence labels deliberately avoid).
+  'Strong candidate':'#22c55e', 'Viable — check risks':'#3b82f6',
+  'Thin margin':'#f59e0b', 'Renegotiate':'#f59e0b', 'Reject / not viable':'#ef4444',
+  withdrawn:'#64748b',
+}
+
+// Same shape-per-type approach as components/MyFinancePanel.tsx's
+// summarize() — kept as its own copy here (not imported) since the admin
+// view surfaces a couple more fields (LTV suitability label, DSCR) than
+// a user needs to see about their own analysis.
+const FI_TYPE_LABEL: Record<string,string> = {
+  buyer_affordability: 'Affordability Assessment',
+  investment_intelligence: 'Investment Intelligence',
+  payment_plan: 'Payment Plan Intelligence',
+  development_finance: 'Development Finance',
+}
+const FI_TYPE_ICON: Record<string, any> = {
+  buyer_affordability: Wallet,
+  investment_intelligence: TrendingUp,
+  payment_plan: FileText,
+  development_finance: HardHat,
+}
+function fiSummarize(row: { analysis_type: string; outputs: Record<string,any> | null }): { text: string; pillValue: string | null } {
+  const o = row.outputs || {}
+  if (row.analysis_type === 'buyer_affordability') {
+    const label = getFinanceSuitabilityLabel(o.ltv_pct ?? null)
+    const parts = [
+      o.ltv_pct != null ? `${Number(o.ltv_pct).toFixed(0)}% LTV` : null,
+      o.indicative_monthly_repayment_ngn ? `₦${(o.indicative_monthly_repayment_ngn/1e6).toFixed(1)}M/mo` : null,
+    ].filter(Boolean).join(' · ')
+    return { text: parts || 'Assessment saved', pillValue: label }
+  }
+  if (row.analysis_type === 'investment_intelligence') {
+    const parts = [
+      o.gross_yield_pct != null ? `${Number(o.gross_yield_pct).toFixed(1)}% yield` : null,
+      o.dscr != null ? `DSCR ${Number(o.dscr).toFixed(2)}x` : null,
+    ].filter(Boolean).join(' · ')
+    return { text: parts || 'Analysis saved', pillValue: o.verdict ?? null }
+  }
+  // PHASE 5: Construction Appraisal runs now also land here (written by
+  // app/api/sites/[id]/appraisals/route.ts alongside its own site_appraisals
+  // row, which stays the system of record for Site Intelligence's history).
+  if (row.analysis_type === 'development_finance') {
+    const parts = [
+      o.residual_land_value_ngn != null ? `RLV ₦${(o.residual_land_value_ngn/1e6).toFixed(0)}M` : null,
+      o.residual_margin_pct != null ? `${(Number(o.residual_margin_pct)*100).toFixed(0)}% margin` : null,
+    ].filter(Boolean).join(' · ')
+    return { text: parts || 'Appraisal saved', pillValue: o.viability_label ?? null }
+  }
+  return { text: 'Saved', pillValue: null }
 }
 
 function SignalBar({ label, value, total, color }: { label:string; value:number; total:number; color:string }) {
@@ -109,6 +205,13 @@ export default function AdminCommandCenter() {
   const [assocs, setAssocs]             = useState<any[]>([])
   const [financing, setFinancing]       = useState<any[]>([])
   const [finPartners, setFinPartners]   = useState<any[]>([])
+  const [financeAnalyses, setFinanceAnalyses] = useState<FinanceAnalysisRow[]>([])
+  const [fiTypeFilter, setFiTypeFilter] = useState<'all'|'buyer_affordability'|'investment_intelligence'|'payment_plan'|'development_finance'>('all')
+
+  // PHASE 8 — Lender Products
+  const [financeProducts, setFinanceProducts] = useState<FinanceProduct[]>([])
+  const [fpStatus, setFpStatus]   = useState<'idle'|'loading'|'error'>('idle')
+  const [fpError, setFpError]     = useState('')
   const [search, setSearch]             = useState('')
   const [agFilter, setAGF]              = useState<'all'|'verified'|'pending'|'active'>('all')
 
@@ -117,6 +220,7 @@ export default function AdminCommandCenter() {
   const [rm, setRM]             = useState<{id:string;name:string}|null>(null)
   const [rr, setRR]             = useState('')
   const [am, setAM]             = useState<any|null>(null)
+  const [fd, setFD]             = useState<any|null>(null) // financing request detail
   const [an, setAN]             = useState('')
   const [ap, setAP]             = useState('')
 
@@ -136,17 +240,30 @@ export default function AdminCommandCenter() {
 
   // ── Auth guard ─────────────────────────────────────────────
   useEffect(() => {
-    const { data: { subscription } } = sb.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!session?.user) { router.replace('/login'); return }
-        if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN') return
-        const role = session.user.user_metadata?.user_role
-        if (role !== 'admin' && role !== 'super_admin') { router.replace('/developments'); return }
-        await loadAll()
-        setLoading(false)
-      }
-    )
-    return () => subscription.unsubscribe()
+    // IMPORTANT: Supabase runs this callback while it HOLDS its auth lock. Any supabase call awaited
+    // inside it (sb.from(...), getSession()) queues behind that same lock and never returns, which
+    // freezes every later auth call on the page (the product save's getToken(), the next page's
+    // useAuth). So the callback stays synchronous and the data loads are deferred out of it.
+    // (The role check here only chooses what to show; RLS is what actually protects the data.)
+    let cancelled = false
+    const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
+      if (!session?.user) { router.replace('/login'); return }
+      if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN') return
+      const role = session.user.user_metadata?.user_role
+      if (role !== 'admin' && role !== 'super_admin') { router.replace('/developments'); return }
+      setTimeout(async () => {
+        if (cancelled) return
+        try {
+          await loadAll()
+          await loadFinanceProducts()
+        } catch (e) {
+          console.error('Admin Command Center load failed', e)
+        } finally {
+          if (!cancelled) setLoading(false)
+        }
+      }, 0)
+    })
+    return () => { cancelled = true; subscription.unsubscribe() }
   }, [])
 
   const loadAll = useCallback(async () => {
@@ -157,6 +274,7 @@ export default function AdminCommandCenter() {
       { data: as_ },
       { data: fr },
       { data: fp },
+      { data: fa },
     ] = await Promise.all([
       // Platform intelligence snapshot
       sb.from('platform_intelligence')
@@ -180,6 +298,14 @@ export default function AdminCommandCenter() {
       // Financing partners
       sb.from('financing_partners')
         .select('id,name,partner_type,cities_covered').eq('active',true),
+      // PHASE 7: Finance Intelligence analyses (Buyer Affordability /
+      // Investment Intelligence / Payment Plan / Development Finance runs).
+      // Best-effort like every other finance_analyses read in this codebase
+      // (MyFinancePanel) — an empty/undefined result just renders an empty
+      // state here rather than breaking the command center.
+      sb.from('finance_analyses')
+        .select('id,reference,analysis_type,inputs,outputs,user_id,property_id,created_at')
+        .order('created_at',{ascending:false}).limit(200),
     ])
 
     setIntel(pi as PlatformIntel)
@@ -193,6 +319,21 @@ export default function AdminCommandCenter() {
     setAssocs(as_ ?? [])
     setFinancing(fr ?? [])
     setFinPartners(fp ?? [])
+    setFinanceAnalyses((fa ?? []) as FinanceAnalysisRow[])
+  }, [])
+
+  // PHASE 8 — Lender Products: goes through the admin API route (RLS-gated,
+  // same as sql/phase8_finance_products.sql defines) rather than a direct
+  // sb.from() read, mirroring how onboard() below already calls its own
+  // API route with a bearer token for a privileged admin action.
+  const loadFinanceProducts = useCallback(async () => {
+    setFpStatus('loading'); setFpError('')
+    const token = await getToken()
+    if (!token) { setFpStatus('error'); setFpError('Your session could not be read. Sign in again.'); return }
+    const r = await fetchJson('/api/admin/finance-products', { headers: { Authorization: `Bearer ${token}` } })
+    if (!r.ok) { setFpStatus('error'); setFpError(r.error); return }
+    setFinanceProducts(r.data.products ?? [])
+    setFpStatus('idle')
   }, [])
 
   // ── Actions ─────────────────────────────────────────────────
@@ -258,6 +399,18 @@ export default function AdminCommandCenter() {
     const mf = agFilter==='all'?true : agFilter==='verified'?a.verification_status==='verified' : agFilter==='pending'?a.verification_status==='pending' : agFilter==='active'?a.active : true
     return ms && mf
   })
+
+  // PHASE 7 — Finance Intelligence derived view: type filter + the three
+  // KPI counts (total, last-30-days, by-type) the command strip below needs.
+  const filteredFinanceAnalyses = fiTypeFilter === 'all'
+    ? financeAnalyses
+    : financeAnalyses.filter(r => r.analysis_type === fiTypeFilter)
+  const fi30dAgo = Date.now() - 30*24*60*60*1000
+  const fiCountsByType = financeAnalyses.reduce((acc: Record<string,number>, r) => {
+    acc[r.analysis_type] = (acc[r.analysis_type]||0) + 1
+    return acc
+  }, {})
+  const fiLast30d = financeAnalyses.filter(r => new Date(r.created_at).getTime() >= fi30dAgo).length
 
   // ── CSS ─────────────────────────────────────────────────────
   const css = `
@@ -394,17 +547,27 @@ export default function AdminCommandCenter() {
   const navGroups = [
     { label:'Intelligence', items:[
       { k:'command',      l:'Command Center', i:<LayoutDashboard size={14} /> },
+      { k:'activity',     l:'Activity',       i:<Clock size={14} /> },
       { k:'signals',      l:'Signal Monitor', i:<Radio size={14} /> },
+      { k:'research',     l:'Research (Articles)', i:<FileText size={14} />, external: '/admin/research' },
+      { k:'agreements',   l:'Agreement Requests', i:<ClipboardCheck size={14} />, external: '/admin/agreements' },
     ]},
     { label:'Operations', items:[
       { k:'verify',       l:'Verify Queue',   i:<CheckCircle2 size={14} />,  n: verQueue.length },
-      { k:'financing',    l:'Financing',       i:<Banknote size={14} />, n: financing.filter((f:any)=>f.status==='submitted').length },
+      { k:'leads',        l:'Introductions',   i:<Inbox size={14} />, external: '/admin/leads' },
+      { k:'financing',    l:'Financing',      i:<Banknote size={14} />, n: financing.filter((f:any)=>f.status==='submitted').length },
+      { k:'financeintel', l:'Finance Intelligence', i:<LineChart size={14} /> },
+      { k:'financeproducts', l:'Lender Products', i:<Landmark size={14} />, n: financeProducts.filter(p => p.status==='active' && isStale(p.last_verified_at)).length },
       { k:'agencies',     l:'Agencies',        i:<Building2 size={14} /> },
+      { k:'mandate-letters', l:'Mandate Letters', i:<FileText size={14} />, external: '/admin/mandate-letters' },
+      { k:'fees',         l:'Fees & Payments', i:<ClipboardCheck size={14} />, external: '/admin/fees' },
+      { k:'usage',        l:'Usage',           i:<Globe size={14} />, external: '/admin/usage' },
       { k:'associations', l:'Associations',    i:<Globe size={14} /> },
       { k:'onboard',      l:'Onboard Assoc.', i:<Plus size={14} /> },
     ]},
     { label:'Reviewed Developments', items:[
-      { k:'developments', l:'Developers & Projects', i:<Construction size={14} />, external: '/admin/developments' },
+      { k:'developments', l:'Add / Manage Developments', i:<Construction size={14} />, external: '/admin/developments' },
+      { k:'review-submissions', l:'Review Submissions', i:<ClipboardCheck size={14} />, external: '/admin/developments/review' },
       { k:'comparables', l:'Comparables', i:<BarChart3 size={14} />, external: '/admin/comparables' },
     ]},
     { label:'Site Intelligence', items:[
@@ -413,12 +576,15 @@ export default function AdminCommandCenter() {
   ]
   const topbarText: Record<Tab, { title:string; sub:string }> = {
     command:      { title:'Intelligence Command Center',  sub:'Platform-wide signal intelligence snapshot' },
+    activity:     { title:'Activity',                     sub:'What is actually happening across MANOP' },
     signals:      { title:'Signal Monitor',               sub:'Real-time signal volume and neighborhood intelligence' },
     verify:       { title:'Verification Queue',           sub:`${verQueue.length} pending review` },
     agencies:     { title:'Agency Management',            sub:`${agencies.length} agencies on platform` },
     associations: { title:'Associations',                 sub:`${assocs.length} partners` },
     onboard:      { title:'Onboard New Association',      sub:'Full setup — no SQL required' },
     financing:    { title:'Financing Requests',           sub:`${financing.filter((f:any)=>f.status==='submitted').length} new, unreviewed` },
+    financeintel: { title:'Finance Intelligence',          sub:`${financeAnalyses.length} analyses saved platform-wide` },
+    financeproducts: { title:'Lender Products',             sub:`${financeProducts.filter(p=>p.status==='active').length} active · ${financeProducts.filter(p=>p.status==='active' && isStale(p.last_verified_at)).length} stale` },
   }
 
   if (loading) return (
@@ -486,6 +652,7 @@ export default function AdminCommandCenter() {
             {/* ══ COMMAND CENTER ══ */}
             {tab==='command'&&(
               <>
+                <PlatformGlance />
                 {/* Platform KPIs */}
                 <div className="kpi-grid">
                   <KPI label="Total Agencies"      value={intel?.total_agencies??agencies.length}           accent="#5B2EFF" icon={<Building2 size={16} />} sub={`${intel?.active_agencies_30d??0} active this month`}/>
@@ -565,6 +732,9 @@ export default function AdminCommandCenter() {
                 </div>
               </>
             )}
+
+            {/* ══ ACTIVITY ══ */}
+            {tab==='activity'&&<ActivityPanel />}
 
             {/* ══ SIGNAL MONITOR ══ */}
             {tab==='signals'&&(
@@ -662,6 +832,7 @@ export default function AdminCommandCenter() {
                             <td className="mono" style={{color:'var(--muted)'}}>{new Date(r.submitted_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</td>
                             <td>
                               <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                                <button className="btn btn-g btn-sm" onClick={()=>setFD(r)}>Details / Copy</button>
                                 {r.status==='submitted'&&<button className="btn btn-ok btn-sm" onClick={()=>updateFinancingStatus(r.id,'reviewing')}>Review</button>}
                                 {['reviewing','submitted'].includes(r.status)&&<button className="btn btn-ok btn-sm" onClick={()=>{setAM(r);setAP('');setAN('')}}>Route →</button>}
                                 {['sent_to_partner','partner_contacted','in_progress'].includes(r.status)&&<button className="btn btn-ok btn-sm" onClick={()=>updateFinancingStatus(r.id,'closed')}>Close</button>}
@@ -675,6 +846,94 @@ export default function AdminCommandCenter() {
                   )}
                 </div>
               </>
+            )}
+
+            {/* ══ FINANCE INTELLIGENCE (PHASE 7) ══
+                 Read visibility into finance_analyses — the calc-engine
+                 runs from Buyer Affordability and Investment Intelligence,
+                 across every dashboard. Distinct from the Financing tab
+                 above, which is the manual lender-routing pipeline for
+                 financing_requests. This tab never shows a lender decision,
+                 only MANOP's own analytical labels. */}
+            {tab==='financeintel'&&(
+              <>
+                <div className="kpi-grid-3" style={{gridTemplateColumns:'repeat(5,1fr)'}}>
+                  <KPI label="Total Analyses"      value={financeAnalyses.length}                              accent="#5B2EFF" icon={<LineChart size={16} />}/>
+                  <KPI label="Last 30 Days"        value={fiLast30d}                                           accent="#14B8A6" icon={<Clock size={16} />}/>
+                  <KPI label="Affordability"        value={fiCountsByType['buyer_affordability']??0}            accent="#5B2EFF" icon={<Wallet size={16} />}/>
+                  <KPI label="Investment Intel."    value={fiCountsByType['investment_intelligence']??0}        accent="#14B8A6" icon={<TrendingUp size={16} />}/>
+                  <KPI label="Payment Plan"         value={fiCountsByType['payment_plan']??0}                   accent="#3b82f6" icon={<FileText size={16} />}/>
+                </div>
+
+                <div className="info-box">
+                  <strong style={{color:'var(--text)'}}>MANOP explains, lenders decide.</strong><br/>
+                  These are analytical outputs a buyer, investor, developer or agency produced themselves —
+                  not a MANOP or lender decision. Use them to spot genuine demand and follow up directly;
+                  nothing here is an approval.
+                </div>
+
+                <div className="toolbar">
+                  {(['all','buyer_affordability','investment_intelligence','payment_plan','development_finance'] as const).map(f=>(
+                    <button key={f} className={`filter ${fiTypeFilter===f?'on':''}`} onClick={()=>setFiTypeFilter(f)}>
+                      {f==='all'?'All':FI_TYPE_LABEL[f]}
+                    </button>
+                  ))}
+                  <span className="mono" style={{color:'var(--muted)',marginLeft:'auto'}}>{filteredFinanceAnalyses.length} shown</span>
+                </div>
+
+                <div className="tbl">
+                  <div className="tbl-hd">
+                    <span className="tbl-title">Saved Analyses</span>
+                    <span className="tbl-count">{filteredFinanceAnalyses.length} of {financeAnalyses.length}</span>
+                  </div>
+                  {filteredFinanceAnalyses.length===0?(
+                    <div className="empty">No Finance Intelligence analyses saved yet. These are created from Buyer Affordability (Get Financed) and Investment Intelligence across the platform.</div>
+                  ):(
+                    <table>
+                      <thead><tr><th>Type</th><th>Reference</th><th>Summary</th><th>Attribution</th><th>Saved</th></tr></thead>
+                      <tbody>
+                        {filteredFinanceAnalyses.map(r=>{
+                          const Icon = FI_TYPE_ICON[r.analysis_type] || FileText
+                          const { text, pillValue } = fiSummarize(r)
+                          return (
+                            <tr key={r.id}>
+                              <td>
+                                <div style={{display:'flex',alignItems:'center',gap:6,fontWeight:700,color:'var(--text)'}}>
+                                  <Icon size={13} style={{color:'var(--accent)'}}/> {FI_TYPE_LABEL[r.analysis_type]||r.analysis_type}
+                                </div>
+                              </td>
+                              <td className="mono">{r.reference||'—'}</td>
+                              <td>
+                                <div style={{fontSize:12,color:'var(--text2)'}}>{text}</div>
+                                {pillValue && <div style={{marginTop:4}}><Pill v={pillValue} map={STATUS_COLORS}/></div>}
+                              </td>
+                              <td style={{fontSize:11,color:'var(--muted)'}}>{r.user_id ? <span className="mono">{r.user_id.slice(0,8)}…</span> : 'Guest (not logged in)'}</td>
+                              <td className="mono" style={{color:'var(--muted)'}}>{new Date(r.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'})}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ══ LENDER PRODUCTS (PHASE 8) ══
+                 Add/withdraw/re-verify published lender criteria here.
+                 This is the data Finance Suitability matching (see
+                 lib/finance-products.ts, called from FinancingModal) reads
+                 against — with none added yet, that matching will
+                 correctly show "no verified lender products yet" rather
+                 than a lending decision it has no basis for. */}
+            {tab==='financeproducts'&&(
+              <LenderProductsPanel
+                products={financeProducts}
+                loadState={fpStatus}
+                loadError={fpError}
+                reload={loadFinanceProducts}
+                getToken={getToken}
+              />
             )}
 
             {/* ══ AGENCIES ══ */}
@@ -792,6 +1051,20 @@ export default function AdminCommandCenter() {
       </div>
 
       {/* ══ FINANCING ROUTE MODAL ══ */}
+      {fd&&(
+        <div id="admin-root"><style>{css}</style>
+        <div className="overlay" onClick={()=>setFD(null)}>
+          <div className="modal" style={{maxWidth:720,maxHeight:'90vh',overflow:'auto'}} onClick={(e:any)=>e.stopPropagation()}>
+            <div className="modal-title">Financing request {fromFinancingRequest(fd).reference}</div>
+            <RequestHandoverPanel request={fromFinancingRequest(fd)}/>
+            <div className="row" style={{justifyContent:'flex-end',marginTop:10}}>
+              <button className="btn btn-g" onClick={()=>setFD(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+        </div>
+      )}
+
       {am&&(
         <div id="admin-root"><style>{css}</style>
         <div className="overlay" onClick={()=>setAM(null)}>

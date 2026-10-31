@@ -6,18 +6,21 @@
 // always sees who pays MANOP and when, before they submit anything.
 
 import { useState } from 'react'
+import { sb } from '../lib/supabase/client'
+import { describeUnit, priceLine, type UnitRow } from '../lib/unit-selection'
 
 interface Props {
   developerId: string
   projectId:   string
-  unitTypeId?: string | null
+  // The development's own units. The buyer may name one; nothing is chosen for them.
+  units?: UnitRow[]
   neighborhood?: string | null
   city?: string | null
   countryCode?: string
   dark:        boolean
 }
 
-export default function DevelopmentEnquiryModal({ developerId, projectId, unitTypeId, neighborhood, city, countryCode = 'NG', dark }: Props) {
+export default function DevelopmentEnquiryModal({ developerId, projectId, units, neighborhood, city, countryCode = 'NG', dark }: Props) {
   const [open,     setOpen]     = useState(false)
   const [name,     setName]     = useState('')
   const [email,    setEmail]    = useState('')
@@ -27,6 +30,10 @@ export default function DevelopmentEnquiryModal({ developerId, projectId, unitTy
   const [sending,  setSending]  = useState(false)
   const [sent,     setSent]     = useState(false)
   const [error,    setError]    = useState('')
+  const [attribution, setAttribution] = useState(false)
+  const [reference, setReference] = useState<string | null>(null)
+  const [duplicate, setDuplicate] = useState(false)
+  const [unitId, setUnitId] = useState('')   // '' = no specific unit; never defaulted
 
   const bg3    = dark ? '#162032' : '#FFFFFF'
   const text   = dark ? '#F8FAFC' : '#0F172A'
@@ -46,16 +53,24 @@ export default function DevelopmentEnquiryModal({ developerId, projectId, unitTy
     setError('')
     if (!name.trim())                    { setError('Please enter your name.'); return }
     if (!phone.trim() && !email.trim())  { setError('Please enter a phone number or email.'); return }
+    if (!attribution)                    { setError('Please confirm how MANOP will record and share this introduction.'); return }
 
     setSending(true)
     try {
+      // The signed-in buyer is identified SERVER-SIDE from this token — the
+      // request body no longer carries a user_id, so one account can't attach
+      // an enquiry to another. Anonymous enquiries still work (no token).
+      const { data: { session } } = await sb.auth.getSession()
+
       const res = await fetch('/api/developer-leads', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({
-          developer_id:  developerId,
           project_id:    projectId,
-          unit_type_id:  unitTypeId || null,
+          unit_type_id:  unitId || null,
           name:          name.trim(),
           email:         email.trim().toLowerCase() || null,
           phone:         phone.trim() || null,
@@ -66,10 +81,13 @@ export default function DevelopmentEnquiryModal({ developerId, projectId, unitTy
           neighborhood:  neighborhood || null,
           city:          city || null,
           country_code:  countryCode,
+          attribution_acknowledged: attribution,
         }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to send enquiry.'); setSending(false); return }
+      setReference(data.manop_lead_id || null)
+      setDuplicate(!!data.duplicate)
       setSent(true)
     } catch {
       setError('Network error. Please try again.')
@@ -81,6 +99,7 @@ export default function DevelopmentEnquiryModal({ developerId, projectId, unitTy
   function handleClose() {
     setOpen(false); setSent(false); setError('')
     setName(''); setEmail(''); setPhone(''); setCountry(''); setNote('')
+    setAttribution(false); setReference(null); setDuplicate(false); setUnitId('')
   }
 
   return (
@@ -113,8 +132,13 @@ export default function DevelopmentEnquiryModal({ developerId, projectId, unitTy
             {sent ? (
               <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
                 <div style={{ fontSize: 32, marginBottom: 10 }}>✓</div>
-                <div style={{ fontWeight: 700, color: text, marginBottom: 6 }}>Enquiry sent</div>
-                <div style={{ fontSize: 13, color: text2 }}>MANOP will pass this to the developer and follow up with you directly.</div>
+                <div style={{ fontWeight: 700, color: text, marginBottom: 6 }}>{duplicate ? 'You already have an introduction here' : 'Enquiry sent'}</div>
+                <div style={{ fontSize: 13, color: text2 }}>
+                  {duplicate
+                    ? 'We have added your message to the introduction already open for this development rather than creating a second one.'
+                    : 'MANOP will review your enquiry and route it to the developer or partner in charge. They will then contact you.'}
+                </div>
+                {reference && <div style={{ fontSize: 12, color: text3, marginTop: 10 }}>Introduction reference: <strong style={{ color: text }}>{reference}</strong></div>}
                 <button onClick={handleClose} style={{ marginTop: 16, background: 'transparent', border: `1px solid ${border}`, color: text, borderRadius: 8, padding: '0.5rem 1rem', cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
               </div>
             ) : (
@@ -128,7 +152,23 @@ export default function DevelopmentEnquiryModal({ developerId, projectId, unitTy
                 <input style={INP} placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
                 <input style={INP} placeholder="Phone (with country code)" value={phone} onChange={e => setPhone(e.target.value)} />
                 <input style={INP} placeholder="Country you're based in (if diaspora)" value={country} onChange={e => setCountry(e.target.value)} />
+                {units && units.length > 0 && (
+                  <>
+                    <select aria-label="Unit you are asking about" style={INP} value={unitId} onChange={e => setUnitId(e.target.value)}>
+                      <option value="">No specific unit yet</option>
+                      {units.map(u => { const v = describeUnit(u); return <option key={u.id} value={u.id}>{v.label} — {priceLine(v)}</option> })}
+                    </select>
+                  </>
+                )}
                 <textarea style={{ ...INP, minHeight: 70 }} placeholder="Anything specific you'd like to know?" value={note} onChange={e => setNote(e.target.value)} />
+
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 11.5, color: text2, lineHeight: 1.5, marginBottom: 10, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={attribution} onChange={e => setAttribution(e.target.checked)} style={{ marginTop: 2 }} />
+                  <span>
+                    I consent to MANOP recording this enquiry, reviewing it, and then sharing my details with the developer or
+                    authorised partner in charge so they can contact me. This does not commit me to buy anything. <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>How MANOP handles your details</a>.
+                  </span>
+                </label>
 
                 {error && <div style={{ color: '#EF4444', fontSize: 12, marginBottom: 10 }}>{error}</div>}
 

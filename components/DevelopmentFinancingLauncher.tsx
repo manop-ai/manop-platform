@@ -1,54 +1,39 @@
 'use client'
 // components/DevelopmentFinancingLauncher.tsx
 //
-// FinancingModal expects an external trigger + open/close state (see
-// PropertyDetailClient.tsx's `showFinancing` pattern) — it doesn't manage
-// its own button the way DevelopmentEnquiryModal does. app/development/[id]
-// is a server component, so that state can't live there directly without
-// turning the whole page client-side (losing the force-dynamic/notFound
-// behavior its own comments are explicit about needing). This is the
-// smallest fix: a self-contained client wrapper, mounted next to
-// DevelopmentEnquiryModal in the sidebar, that owns the button and the
-// open/close state and renders FinancingModal with the Reviewed
-// Development's own identifiers — not a resale propertyId.
+// Self-contained client wrapper for the Get Financed button on /development/[id]
+// (that page is a server component, so the open/close state cannot live there).
 //
-// FIX: this used to `return null` outright when the first unit had no
-// price_ngn set — on a real development with unpriced units (the "Test"
-// development the button was reported missing on), the entire Get
-// Financed entry point silently vanished with nothing on the page to
-// explain why, which reads as broken rather than "working as designed".
-// It now always renders something: a disabled, explained state when
-// there's no price to run an assessment against, and the real button
-// once there is one. `developerId` is also now nullable — an
-// agency-managed development can have a null developer_id (see the
-// agency-mandate fallback in app/api/developer-leads/route.ts), and this
-// component shouldn't assume a developer account exists.
+// UNIT SELECTION FIX: this used to receive ONE unit's id and price — the page passed
+// units[0] whatever the buyer wanted — so a buyer interested in a 2-bedroom was shown
+// and recorded against the first unit's price. It now receives the development's whole
+// unit list and FinancingModal makes the buyer choose the unit and the request type.
+// Nothing here picks a unit or a price.
+//
+// The button is available whenever the development has unit types, including units with
+// no recorded price: those can still be used to ask MANOP to confirm price and availability.
+// It is disabled, with an explanation, only when no unit types are recorded at all.
+// `developerId` stays nullable: an agency-managed development may have no developer account.
 
 import { useState } from 'react'
 import { Landmark } from 'lucide-react'
 import { getDesignColors } from '../lib/theme'
+import type { UnitRow } from '../lib/unit-selection'
 import FinancingModal from './FinancingModal'
 
 interface Props {
   developerId: string | null
   projectId: string
-  unitTypeId: string | null
-  estimatedPriceNgn: number | null
+  units: UnitRow[]
   developmentName: string
   dark?: boolean
 }
 
-export default function DevelopmentFinancingLauncher({
-  developerId, projectId, unitTypeId, estimatedPriceNgn, developmentName, dark = true,
-}: Props) {
+export default function DevelopmentFinancingLauncher({ developerId, projectId, units, developmentName, dark = true }: Props) {
   const [open, setOpen] = useState(false)
   const c = getDesignColors(dark)
 
-  // No priced unit yet — nothing to run an affordability assessment
-  // against. Previously this returned null and the button just
-  // disappeared; now it stays visible but explains the gap, matching
-  // DevelopmentEnquiryModal's own posture of always rendering something.
-  if (!estimatedPriceNgn) {
+  if (!units || units.length === 0) {
     return (
       <div>
         <button
@@ -64,8 +49,8 @@ export default function DevelopmentFinancingLauncher({
           <Landmark size={16} /> Get Financed
         </button>
         <div style={{ fontSize: 11, color: c.textFaint, marginTop: 8, lineHeight: 1.5 }}>
-          Financing tools need a published unit price. This will become available once the
-          developer or submitting agency confirms pricing for this development.
+          No unit types are recorded for this development yet, so there is nothing to request financing or a price
+          confirmation for. Use the enquiry button to ask MANOP directly.
         </div>
       </div>
     )
@@ -90,9 +75,8 @@ export default function DevelopmentFinancingLauncher({
         <FinancingModal
           developerId={developerId || undefined}
           projectId={projectId}
-          unitTypeId={unitTypeId}
+          units={units}
           propertyAddress={developmentName}
-          estimatedPriceNgn={estimatedPriceNgn}
           onClose={() => setOpen(false)}
           dark={dark}
         />

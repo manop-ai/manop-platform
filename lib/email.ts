@@ -61,3 +61,14 @@ export function notificationHtml(title: string, rows: Array<[string, string | nu
     </div>
   `
 }
+
+// notificationHtml() does not escape its values, so anything a user typed must be escaped by the caller.
+export function escapeHtml(v: unknown): string {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+/** Which of the three variables sendAdminNotification() needs are missing. Safe to show to admins. */
+export function adminEmailConfig(): { configured: boolean; missing: string[] } {
+  const missing = ['RESEND_API_KEY', 'MANOP_ADMIN_EMAIL', 'RESEND_FROM_EMAIL'].filter(k => !process.env[k])
+  return { configured: missing.length === 0, missing }
+}

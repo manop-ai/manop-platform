@@ -1,0 +1,26 @@
+/* app/developments/listing.css — reviewed-developments listing. Uses the same MANOP tokens as the dossier (.dx variables). */
+.dxl{min-height:100vh}
+.dxl-wrap{padding:24px 16px 80px;max-width:1280px;margin:0 auto}
+@media(min-width:900px){.dxl-wrap{padding:32px 32px 96px}}
+.dxl-grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.dxl-card{display:flex;flex-direction:column;background:var(--dx-panel);border:1px solid var(--dx-line);border-radius:18px;overflow:hidden;transition:transform .25s,border-color .25s,box-shadow .25s;color:var(--dx-text)}
+.dxl-card:hover{transform:translateY(-4px);border-color:var(--dx-accent);box-shadow:var(--dx-shadow)}
+.dxl-card .im{position:relative;aspect-ratio:4/3;background:var(--dx-panel2);overflow:hidden}
+.dxl-card .im img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .6s}
+.dxl-card:hover .im img{transform:scale(1.05)}
+.dxl-card .noimg{height:100%;display:flex;align-items:center;justify-content:center;color:var(--dx-faint);font-size:13px}
+.dxl-card .tag{position:absolute;left:12px;top:12px;font-size:11px;font-weight:700;letter-spacing:.04em;padding:5px 11px;border-radius:99px;backdrop-filter:blur(6px);background:rgba(15,23,42,.78)}
+.dxl-card .tag.new{color:#2DD4BF}.dxl-card .tag.off{color:#A78BFA}
+.dxl-card .save{position:absolute;right:10px;top:10px;z-index:2}
+.dxl-card .bd{padding:16px 18px 18px;display:flex;flex-direction:column;gap:6px;flex:1}
+.dxl-card .rv{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dx-teal)}
+.dxl-card h2{font-size:20px;font-weight:700;letter-spacing:-.02em;margin:0}
+.dxl-card .l{font-size:13.5px;color:var(--dx-muted)}
+.dxl-card .dv{font-size:13px;color:var(--dx-muted)}
+.dxl-card .ft{display:flex;gap:18px;margin-top:10px;padding-top:12px;border-top:1px solid var(--dx-line)}
+.dxl-card .ft small{display:block;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dx-faint);margin-bottom:2px;font-weight:600}
+.dxl-card .ft b{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.dxl-card .ft b.s{font-size:14px;font-weight:600;letter-spacing:0}
+.dxl-card .ev{margin-top:auto;padding-top:12px;display:grid;gap:6px;font-size:12px;color:var(--dx-muted)}
+.dxl-card .bar{display:flex;height:6px;border-radius:99px;overflow:hidden;background:var(--dx-panel2);gap:2px}
+.dxl-card .bar i{display:block;min-width:3px}

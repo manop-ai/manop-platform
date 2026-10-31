@@ -75,10 +75,10 @@ export default function ManopFooter() {
         {/* Brand column */}
         <div>
           <Link href="/" style={{ display: 'inline-flex', textDecoration: 'none', marginBottom: '1.25rem' }}>
-            <ManopLogoSVG height={72} dark={dark} showText />
+            <ManopLogoSVG tight height={36} dark={dark} showText />
           </Link>
           <p style={{ fontSize: '0.78rem', color: text2, lineHeight: 1.75, maxWidth: 240, margin: '0 0 1.25rem' }}>
-            MANOP is building intelligence and trust infrastructure for African real estate — connecting site, development, market and financial intelligence to help people make better-informed decisions. Private beta, starting in Lagos.
+            MANOP is building intelligence and trust infrastructure for African real estate and the built environment, connecting site, development, market and financial intelligence to help people make better-informed decisions. Private beta, with Nigeria as the current operating focus.
           </p>
           {/* Single market badge, matching the homepage's actual beta
                claim — was NG/GH/KE, which overstated coverage the same
@@ -144,7 +144,7 @@ export default function ManopFooter() {
       </div>
 
       {/* Mobile responsive override */}
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media (max-width: 768px) {
           footer > div:first-child {
             grid-template-columns: 1fr 1fr !important;
@@ -158,7 +158,7 @@ export default function ManopFooter() {
             grid-template-columns: 1fr !important;
           }
         }
-      `}</style>
+      ` }} />
     </footer>
   )
 }

@@ -9,20 +9,19 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { Plus, Trash2, Download, Lock } from 'lucide-react'
 import { BackToDiscovery } from '../../../../components/SiteIntelligenceNav'
 import { computeAppraisal, AppraisalInputs, UnitMixRow, AppraisalOutputs } from '../../../../lib/construction-appraisal'
 import { getDesignColors, designTokens } from '../../../../lib/theme'
 import { authedFetch } from '../../../../lib/authed-fetch'
+// PHASE 5 touch-up: this previously called createClient() directly instead
+// of using the canonical shared client — the one standing rule in this
+// codebase that's about data-layer consistency, not visual identity, so
+// it's fixed here rather than left while I'm already in this exact file.
+import { sb } from '../../../../lib/supabase/client'
 
 const dark = true
 const c = getDesignColors(dark)
-
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
 
 const DEFAULT_INPUTS: AppraisalInputs = {
   landowner_asking_price_ngn: null,
@@ -65,7 +64,7 @@ export default function AppraisalPage() {
     const scenarioId = searchParams.get('scenario_id')
     if (!scenarioId) return
 
-    fetch(`/api/scenarios/${scenarioId}`).then(r => r.json()).then((data) => {
+    authedFetch(`/api/scenarios/${scenarioId}`).then(r => r.json()).then((data) => {
       const scenario = data.scenario
       const readings = data.readings || []
       if (!scenario) return

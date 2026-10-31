@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { sb } from '../../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
+import { authedFetch } from '../../../lib/authed-fetch'
 import { ManopLogoSVG } from '@/components/ManopLogo'
 
 const CITIES = ['Lagos', 'Abuja', 'Port Harcourt', 'Accra', 'Nairobi', 'Kano', 'Ibadan', 'Other']
@@ -80,49 +81,29 @@ export default function DeveloperOnboardPage() {
       const cleanEmail = email.trim().toLowerCase()
 
       // ── Claim step ────────────────────────────────────────────
-      // If MANOP already created an unclaimed record for this developer
-      // (admin-sourced, no login yet), find it by email BEFORE deciding
-      // whether to update-by-auth_user_id or insert new — otherwise a
-      // real developer's own signup creates a duplicate account instead
-      // of attaching to the one with real due-diligence data on it.
-      const { data: unclaimedMatch } = await sb.from('developer_accounts')
-        .select('id')
-        .eq('account_status', 'unclaimed')
-        .is('auth_user_id', null)
-        .ilike('email', cleanEmail)
-        .maybeSingle()
-
-      if (unclaimedMatch) {
-        const { error: claimErr } = await sb.from('developer_accounts')
-          .update({
-            auth_user_id:   user.id,
-            account_status: 'claimed',
-            company_name:   companyName.trim(),
-            contact_name:   contactName.trim(),
-            email:          cleanEmail,
-            phone:          phone.trim() || null,
-            website:        website.trim() || null,
-            description:    description.trim() || null,
-            cities,
-            project_scale:  projectScale || null,
-            active:         true,
-            updated_at:     new Date().toISOString(),
-          })
-          .eq('id', unclaimedMatch.id)
-
-        if (claimErr) throw new Error(claimErr.message)
-
+      // If MANOP already created an unclaimed record for this developer (admin-sourced, no login yet),
+      // the SERVER attaches this login to it, matching on the email Supabase Auth has confirmed for this
+      // account, not on the email typed above. (This used to be a client-side ilike on the typed email,
+      // which let anyone claim any unclaimed account.) A 404 means there is nothing to claim.
+      const claimRes = await authedFetch('/api/developer/claim', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact_name: contactName.trim(), phone: phone.trim() || null, website: website.trim() || null,
+          description: description.trim() || null, cities, project_scale: projectScale || null,
+        }),
+      })
+      if (claimRes.ok) {
         fetch('/api/signals', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            signal_type: 'developer_account_claimed',
-            metadata: { company: companyName.trim() },
-          }),
+          body: JSON.stringify({ signal_type: 'developer_account_claimed', metadata: { company: companyName.trim() } }),
         }).catch(() => {})
-
         router.replace('/developer/dashboard')
         return
+      }
+      if (claimRes.status !== 404) {
+        const j = await claimRes.json().catch(() => ({}))
+        throw new Error(j.error || 'Could not check for an existing MANOP-created account. Please try again.')
       }
 
       // ── No unclaimed match — existing update-or-insert path ────

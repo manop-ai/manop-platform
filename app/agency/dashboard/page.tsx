@@ -18,6 +18,16 @@ import ManopLoader from '../../../components/ManopLoader'
 import ImageUploader from '../../../components/ImageUploader'
 import { ExternalLink, Plus, Trash2, Building2, BadgeCheck, ShieldCheck, Clock, Mail, CheckCircle2 } from 'lucide-react'
 import { supabase as sb } from '../../../lib/supabase'
+import MyFinancePanel from '../../../components/MyFinancePanel'
+import DevelopmentUpdates, { UpdateUnit } from '../../../components/DevelopmentUpdates'
+import DevelopmentCompleteness from '../../../components/DevelopmentCompleteness'
+import DealRoomPanel from '../../../components/DealRoomPanel'
+import PartnerFeesPanel from '../../../components/PartnerFeesPanel'
+import AgreementRequestPanel from '../../../components/agreements/AgreementRequestPanel'
+import AgencyCommercialModelPanel from '../../../components/AgencyCommercialModelPanel'
+import MandateLetterUploader from '../../../components/MandateLetterUploader'
+import DevelopmentProgress from '../../../components/DevelopmentProgress'
+import { logDevelopmentChange } from '../../../lib/log-development-change'
 
 // ─── Neighbourhood → [lng, lat] centre coords ─────────────────
 const HOOD_COORDS: Record<string, [number, number]> = {
@@ -106,7 +116,7 @@ interface Txn {
   verification_status: string; sold_at: string
 }
 
-type Tab = 'overview' | 'developments' | 'leads' | 'finance' | 'transactions' | 'verify' | 'settings'
+type Tab = 'overview' | 'developments' | 'updates' | 'agreement' | 'leads' | 'finance' | 'transactions' | 'verify' | 'settings'
 
 const NEIGHBORHOODS = [
   'Lekki Phase 1','Lekki Phase 2','Ikoyi','Victoria Island','Eko Atlantic','Banana Island',
@@ -455,6 +465,64 @@ function VerificationTab({ partner, dark, border, text, text2, text3, bg3, onSta
   )
 }
 
+
+// ─────────────────────────────────────────────────────────────
+// UPDATES TAB — agency posts to the SAME development_updates timeline
+// as developers and admin (posted_by_role 'agency'). Ownership is
+// enforced by RLS (see supabase/migrations/20261006_*), not by the
+// list below, which only scopes what the agency sees.
+// ─────────────────────────────────────────────────────────────
+function AgencyUpdatesTab({ developments, dark, border, text, text2, text3, onSaved }: {
+  developments: Development[]; dark: boolean
+  border: string; text: string; text2: string; text3: string
+  onSaved: () => void
+}) {
+  const [selectedId, setSelectedId] = useState<string>(developments[0]?.id ?? '')
+  const [units, setUnits] = useState<UpdateUnit[]>([])
+  const selected = developments.find(d => d.id === selectedId) ?? developments[0] ?? null
+
+  const loadUnits = useCallback(async (projectId: string) => {
+    const { data } = await sb.from('developer_unit_types')
+      .select('id,unit_type,price_ngn,available_count').eq('project_id', projectId)
+    setUnits((data as UpdateUnit[]) || [])
+  }, [])
+
+  useEffect(() => { if (selected) loadUnits(selected.id); else setUnits([]) }, [selected?.id, loadUnits])
+
+  if (developments.length === 0) {
+    return (
+      <div style={{ textAlign: 'center' as const, padding: '2rem', color: text3, fontSize: 13 }}>
+        <Building2 size={22} style={{ marginBottom: 8, opacity: 0.5 }} />
+        <div>Submit a development first — updates are posted against a development you submitted.</div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div style={{ fontSize: 11, fontWeight: 700, color: text3, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 8 }}>Development</div>
+      <select value={selected?.id ?? ''} onChange={e => setSelectedId(e.target.value)}
+        style={{ width: '100%', minHeight: 44, padding: '0.6rem 0.8rem', borderRadius: 8, border: `1px solid ${border}`, background: 'transparent', color: text, fontSize: 16, fontFamily: 'inherit', marginBottom: 16 }}>
+        {developments.map(d => <option key={d.id} value={d.id} style={{ color: '#0F172A' }}>{d.name}</option>)}
+      </select>
+      {selected && (
+        <div style={{ marginBottom: 20 }}>
+          <DevelopmentCompleteness projectId={selected.id} dark={dark} tier="submitter" reloadToken={units.length} />
+        </div>
+      )}
+      {selected && (
+        <DevelopmentUpdates
+          key={selected.id}
+          projectId={selected.id} projectName={selected.name}
+          neighborhood={selected.neighborhood} city={selected.city} countryCode={selected.country_code}
+          role="agency" dark={dark} units={units}
+          onSaved={() => { loadUnits(selected.id); onSaved() }}
+        />
+      )}
+    </>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────
 // MAIN DASHBOARD
 // ─────────────────────────────────────────────────────────────
@@ -464,8 +532,11 @@ export default function AgencyDashboard() {
   const [partner, setPartner]   = useState<Partner | null>(null)
   const [developments, setDevelopments] = useState<Development[]>([])
   const [leads, setLeads]       = useState<Lead[]>([])
+  const [roomLead, setRoomLead] = useState<string | null>(null)
   const [transactions, setTransactions] = useState<Txn[]>([])
   const [tab, setTab]           = useState<Tab>('overview')
+  const [agreementFor, setAgreementFor]   = useState<string | null>(null)   // development chosen on its progress panel
+  const [agreementOpen, setAgreementOpen] = useState<string | null>(null)
   const [loading, setLoading]   = useState(false)
   const [saveMsg, setSaveMsg]   = useState('')
 
@@ -575,6 +646,8 @@ export default function AgencyDashboard() {
   const TABS: { key: Tab; label: string }[] = [
     { key: 'overview',     label: 'Overview' },
     { key: 'developments', label: `Developments (${developments.length})` },
+    { key: 'updates',      label: 'Updates' },
+    { key: 'agreement',    label: 'Agreement' },
     { key: 'leads',        label: `Leads (${leads.length})` },
     { key: 'finance',      label: `Finance (${financeLeads.length})` },
     { key: 'transactions', label: 'Transactions' },
@@ -696,6 +769,7 @@ export default function AgencyDashboard() {
                     {d.name} — {d.neighborhood}, {d.city}
                   </div>
                   <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>{d.stage || '—'} · {d.total_units ?? '—'} units</div>
+                  <details style={{ marginTop: 4 }}><summary style={{ fontSize: 11, cursor: 'pointer', color: text3 }}>Where this stands</summary><DevelopmentProgress projectId={d.id} dark={dark} onRequestAgreement={id => { setAgreementFor(id); setTab('agreement') }} onOpenAgreement={rid => { setAgreementOpen(rid); setTab('agreement') }} /></details>
                 </div>
                 <span style={{ fontSize: 10, fontWeight: 700, color: d.reviewed_at ? '#0D9488' : '#F59E0B', background: d.reviewed_at ? 'rgba(13,148,136,0.1)' : 'rgba(245,158,11,0.1)', borderRadius: 20, padding: '3px 8px', flexShrink: 0 }}>
                   {d.reviewed_at ? 'MANOP Review' : d.publish_status}
@@ -719,6 +793,20 @@ export default function AgencyDashboard() {
           />
         )}
 
+        {/* ── Updates — same canonical development_updates system as developer/admin ── */}
+        {tab === 'updates' && partner && (
+          <AgencyUpdatesTab
+            developments={developments} dark={dark}
+            border={border} text={text} text2={text2} text3={text3}
+            onSaved={() => loadAgencyData(partner.id)}
+          />
+        )}
+
+        {/* ── Agreement — commercial agreement requests (proposed terms only) ── */}
+        {tab === 'agreement' && partner && <AgencyCommercialModelPanel dark={dark} />}
+        {tab === 'agreement' && partner && <AgreementRequestPanel role="agency" dark={dark} startForProject={agreementFor} openRequestId={agreementOpen} onHandled={() => { setAgreementFor(null); setAgreementOpen(null) }} />}
+        {tab === 'agreement' && <PartnerFeesPanel dark={dark} />}
+
         {/* ── Leads — real developer_leads for this agency's developments ── */}
         {tab === 'leads' && partner && (
           <>
@@ -733,7 +821,8 @@ export default function AgencyDashboard() {
               </div>
             ) : (
               leads.map(l => (
-                <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.875rem 1rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 8, boxShadow: cardShadow }}>
+                <div key={l.id} style={{ marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.875rem 1rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 8, boxShadow: cardShadow }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: text }}>{l.name} — {l.project_name || 'Development'}</div>
                     <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>
@@ -741,6 +830,9 @@ export default function AgencyDashboard() {
                     </div>
                   </div>
                   <span style={{ fontSize: 10, fontWeight: 700, color: text3, background: bg2, borderRadius: 20, padding: '3px 8px', textTransform: 'capitalize' as const }}>{l.stage}</span>
+                </div>
+                <button onClick={() => setRoomLead(roomLead === l.id ? null : l.id)} style={{ fontSize: 11, marginTop: 6, background: 'transparent', color: text2, border: `1px solid ${border}`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}>{roomLead === l.id ? 'Hide deal room' : 'Open deal room'}</button>
+                {roomLead === l.id && <div style={{ marginTop: 8 }}><DealRoomPanel leadId={l.id} dark={dark} /></div>}
                 </div>
               ))
             )}
@@ -792,6 +884,19 @@ export default function AgencyDashboard() {
                 Open Investment Intelligence <ExternalLink size={12} />
               </Link>
             </div>
+
+            {/* PHASE 6: this agency's OWN saved analyses — distinct from
+                financeLeads above, which are inbound buyer enquiries on
+                this agency's mandated developments, not something the
+                agency itself produced. */}
+            {user && (
+              <div style={{ marginTop: 18 }}>
+                <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>
+                  My Finance
+                </div>
+                <MyFinancePanel userId={user.id} dark={dark} />
+              </div>
+            )}
           </>
         )}
 
@@ -949,7 +1054,7 @@ function AgencyDevelopmentsTab({ partner, developments, dark, bg2, bg3, border, 
   const [description, setDescription]   = useState('')
   const [developerName, setDeveloperName] = useState('')
   const [mandateType, setMandateType]   = useState<'direct_authority' | 'developer_mandate'>('direct_authority')
-  const [mandateDocUrl, setMandateDocUrl] = useState('')
+  const [mandateLetterId, setMandateLetterId] = useState<string | null>(null)
   const [feeModel, setFeeModel]         = useState<'developer_success_fee' | 'agency_commission_share'>('developer_success_fee')
   const [feeSharePct, setFeeSharePct]   = useState('25')
   const [images, setImages]             = useState<string[]>([])
@@ -978,7 +1083,7 @@ function AgencyDevelopmentsTab({ partner, developments, dark, bg2, bg3, border, 
   function resetForm() {
     setEditingId(null)
     setName(''); setNeighborhood(''); setTotalUnits(''); setHandoverDate('')
-    setDeveloperName(''); setMandateDocUrl(''); setDescription('')
+    setDeveloperName(''); setMandateLetterId(null); setDescription('')
     setImages([]); setUnitRows([emptyUnitRow()]); setDocRows([emptyDocRow()])
   }
 
@@ -1043,7 +1148,7 @@ function AgencyDevelopmentsTab({ partner, developments, dark, bg2, bg3, border, 
     if (!name.trim())          { setError('Development name is required'); return }
     if (!neighborhood.trim())  { setError('Neighborhood is required'); return }
     if (!developerName.trim()) { setError('Developer name is required — the developer this belongs to, even if unclaimed on MANOP yet'); return }
-    if (!mandateDocUrl.trim()) { setError('A mandate document is required — MANOP does not accept submissions without proof of authority to list'); return }
+    if (!mandateLetterId) { setError('Upload your mandate letter first — MANOP does not accept submissions without proof of authority to list'); return }
 
     setSubmitting(true)
     try {
@@ -1091,13 +1196,17 @@ function AgencyDevelopmentsTab({ partner, developments, dark, bg2, bg3, border, 
         submitted_via:        'agency_submission',
         submitting_agency_id: partner.id,
         mandate_type:         mandateType,
-        mandate_document_url: mandateDocUrl.trim(),
+        mandate_letter_id:    mandateLetterId,
         fee_model:            feeModel,
         agency_fee_share_pct: feeModel === 'agency_commission_share' ? parseFloat(feeSharePct) : null,
       }).select('id').single()
 
       if (projErr) throw new Error(projErr.message)
       const projectId = newProject.id
+      void sb.auth.getUser().then(({ data: { user: u } }) => logDevelopmentChange(sb, 'development_submitted', {
+        projectId, projectName: name.trim(), neighborhood: neighborhood.trim(), city: city.trim() || null,
+        countryCode, actorUserId: u?.id ?? null, actorRole: 'agency',
+      }, { agency_id: partner.id }))
 
       // Unit types — only rows where the agency actually filled something in
       const validUnits = unitRows.filter(r => r.unit_type.trim() && r.price_ngn.trim())
@@ -1127,21 +1236,13 @@ function AgencyDevelopmentsTab({ partner, developments, dark, bg2, bg3, border, 
             document_name: r.document_name.trim(),
             document_url:  r.document_url.trim(),
             provided_by:   partner.name,
+            publicly_visible: false,   // uploading never publishes a document; only an admin can
           }))
         )
         if (docErr) console.error('[documents]', docErr.message) // non-fatal
       }
 
-      // Always the mandate letter itself, recorded as a document too —
-      // not just the free-text URL field on developer_projects.
-      await sb.from('developer_documents').insert({
-        developer_id:  developerId,
-        project_id:    projectId,
-        document_type: 'other',
-        document_name: 'Mandate letter',
-        document_url:  mandateDocUrl.trim(),
-        provided_by:   partner.name,
-      })
+      // The mandate letter is an uploaded, privately stored document linked by mandate_letter_id (see sql/phase23). No link is stored.
 
       // Straight to MANOP's inbox — a new submission needs review before
       // anything happens with it.
@@ -1319,7 +1420,7 @@ function AgencyDevelopmentsTab({ partner, developments, dark, bg2, bg3, border, 
                 </label>
               ))}
             </div>
-            <input style={INP} value={mandateDocUrl} onChange={e => setMandateDocUrl(e.target.value)} placeholder="Mandate document URL * — required, MANOP does not accept submissions without one" />
+            <MandateLetterUploader dark={dark} onReady={setMandateLetterId} compact />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
               <div>
                 <label style={LBL}>Fee model</label>

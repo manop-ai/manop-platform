@@ -96,6 +96,13 @@ export class ThreeMassingLayer implements mapboxgl.CustomLayerInterface {
 
     this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl as any, antialias: true })
     this.renderer.autoClear = false
+    // Without this, MeshPhysicalMaterial's glass transmission (added in
+    // the facade/window rework) tends to render flat or washed out even
+    // though the material itself is set up correctly — ACES is the
+    // standard choice for making PBR materials read with real contrast
+    // under a single directional "sun" light, no environment map needed.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+    this.renderer.toneMappingExposure = 1.05
   }
 
   /** Converts a real lng/lat into local metres relative to this

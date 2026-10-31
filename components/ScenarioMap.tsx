@@ -103,6 +103,13 @@ export interface ScenarioMapProps {
   selectedBuildingId?: string | null
   onSelectBuilding?: (id: string | null) => void
   onBuildingMoved?: (id: string, polygon: GeoJSON.Polygon) => void
+  /** Open space selection/move — kept independent from the building
+   * selection above rather than overloading selectedBuildingId, since
+   * the building inspector panel (rotate/resize/storeys/form) assumes
+   * that id always refers to a building. */
+  selectedOpenSpaceId?: string | null
+  onSelectOpenSpace?: (id: string | null) => void
+  onOpenSpaceMoved?: (id: string, polygon: GeoJSON.Polygon) => void
 }
 
 function styleUrl(mode: MapStyleMode, dark: boolean): string {
@@ -115,6 +122,7 @@ export default function ScenarioMap({
   is3D, mapStyle, showBoundary = true, showFootprint = true,
   drawMode = 'none', onDrawFinish, onDrawBuildingFinish, onDrawOpenSpaceFinish, onDrawParkingFinish,
   buildings = [], openSpaces = [], realParkingLots = [], selectedBuildingId = null, onSelectBuilding, onBuildingMoved,
+  selectedOpenSpaceId = null, onSelectOpenSpace, onOpenSpaceMoved,
   developmentCategory = 'multifamily_residential', indicativeParkingStallCount = null,
   intelligenceLayers = [], showOrientationMarker = false, showContextBuildings = false, zoningEnvelope = null,
 }: ScenarioMapProps) {
@@ -497,15 +505,27 @@ export default function ScenarioMap({
   // not currently in a drawing mode. ────────────────────────────────
   useEffect(() => {
     const map = mapRef.current
-    if (!map || drawMode !== 'none' || !onSelectBuilding) return
+    if (!map || drawMode !== 'none' || (!onSelectBuilding && !onSelectOpenSpace)) return
 
     const handler = (e: import('mapbox-gl').MapMouseEvent) => {
-      const features = map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] })
-      onSelectBuilding(features.length > 0 ? (features[0].properties?.id as string) : null)
+      const buildingHits = map.queryRenderedFeatures(e.point, { layers: ['buildings-fill'] })
+      if (buildingHits.length > 0) {
+        onSelectBuilding?.(buildingHits[0].properties?.id as string)
+        onSelectOpenSpace?.(null)
+        return
+      }
+      const openSpaceHits = map.queryRenderedFeatures(e.point, { layers: ['open-spaces-fill'] })
+      if (openSpaceHits.length > 0) {
+        onSelectOpenSpace?.(openSpaceHits[0].properties?.id as string)
+        onSelectBuilding?.(null)
+        return
+      }
+      onSelectBuilding?.(null)
+      onSelectOpenSpace?.(null)
     }
     map.on('click', handler)
     return () => { map.off('click', handler) }
-  }, [drawMode, onSelectBuilding])
+  }, [drawMode, onSelectBuilding, onSelectOpenSpace])
 
   // ── Drag-to-move the SELECTED building. mousedown on it starts a
   // drag (disables map panning for the duration), mousemove updates
@@ -565,6 +585,64 @@ export default function ScenarioMap({
     return () => { map.off('mousedown', 'buildings-fill', onMouseDown) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawMode, selectedBuildingId, buildings, onBuildingMoved])
+
+  // ── Drag-to-move the SELECTED open space — same mechanics as the
+  // building drag above, kept as a separate effect/ref rather than
+  // merged into it, so the working building drag path is never at
+  // risk from this addition. ──────────────────────────────────────
+  const openSpaceDragRef = useRef<{ id: string; original: GeoJSON.Polygon; lastLngLat: { lat: number; lng: number } } | null>(null)
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || drawMode !== 'none' || !onOpenSpaceMoved) return
+
+    const onMouseDown = (e: import('mapbox-gl').MapMouseEvent) => {
+      if (!selectedOpenSpaceId) return
+      const features = map.queryRenderedFeatures(e.point, { layers: ['open-spaces-fill'] })
+      const hit = features.find(f => f.properties?.id === selectedOpenSpaceId)
+      if (!hit) return
+      const openSpace = openSpaces.find(o => o.id === selectedOpenSpaceId)
+      if (!openSpace) return
+
+      e.preventDefault()
+      map.dragPan.disable()
+      openSpaceDragRef.current = { id: selectedOpenSpaceId, original: openSpace.geojson, lastLngLat: { lat: e.lngLat.lat, lng: e.lngLat.lng } }
+
+      const onMouseMove = (moveEvt: import('mapbox-gl').MapMouseEvent) => {
+        if (!openSpaceDragRef.current) return
+        const dLatM = (moveEvt.lngLat.lat - openSpaceDragRef.current.lastLngLat.lat) * METERS_PER_DEGREE_LAT
+        const dLngM = (moveEvt.lngLat.lng - openSpaceDragRef.current.lastLngLat.lng) * metersPerDegreeLng(moveEvt.lngLat.lat)
+        const moved = translatePolygon(openSpaceDragRef.current.original, dLatM, dLngM)
+        openSpaceDragRef.current.original = moved
+        openSpaceDragRef.current.lastLngLat = { lat: moveEvt.lngLat.lat, lng: moveEvt.lngLat.lng }
+        const src = map.getSource('open-spaces') as import('mapbox-gl').GeoJSONSource | undefined
+        if (src) {
+          const m = spatialModelRef.current
+          src.setData(modelToOpenSpacesFeatureCollection({
+            ...m,
+            openSpaces: m.openSpaces.map(o => o.id === openSpaceDragRef.current!.id ? { ...o, geojson: moved } : o),
+          }))
+        }
+      }
+
+      const onMouseUp = () => {
+        map.off('mousemove', onMouseMove)
+        map.off('mouseup', onMouseUp)
+        map.dragPan.enable()
+        if (openSpaceDragRef.current) {
+          onOpenSpaceMoved(openSpaceDragRef.current.id, openSpaceDragRef.current.original)
+        }
+        openSpaceDragRef.current = null
+      }
+
+      map.on('mousemove', onMouseMove)
+      map.on('mouseup', onMouseUp)
+    }
+
+    map.on('mousedown', 'open-spaces-fill', onMouseDown)
+    return () => { map.off('mousedown', 'open-spaces-fill', onMouseDown) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawMode, selectedOpenSpaceId, openSpaces, onOpenSpaceMoved])
 
   // never on a style/3D toggle (those are handled below without
   // tearing the whole map down).

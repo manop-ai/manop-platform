@@ -122,6 +122,7 @@ export default function SiteStudioPage() {
   // ScenarioMap/spatial model fall back to the indicative preview honestly.
   const [parkingLots, setParkingLots] = useState<{ id: string; label: string; geojson: GeoJSON.Polygon; footprint_sqm: number | null }[]>([])
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(null)
+  const [selectedOpenSpaceId, setSelectedOpenSpaceId] = useState<string | null>(null)
   // Composable-scenario toggles (not persisted — see lib/building-forms.ts):
   // buildingForm is inferred from how many buildings currently exist
   // (1=bar, 2=l, 3=u, 4=courtyard) whenever it hasn't been explicitly
@@ -129,6 +130,7 @@ export default function SiteStudioPage() {
   // sensible active toggle instead of nothing selected.
   const [buildingFormOverride, setBuildingFormOverride] = useState<BuildingForm | null>(null)
   const [parkingEnabled, setParkingEnabled] = useState(true)
+  const [showRealParking, setShowRealParking] = useState(true)
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -311,6 +313,18 @@ export default function SiteStudioPage() {
     const res = await authedFetch(`/api/scenarios/${activeScenario!.id}/buildings/${id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ geojson: polygon, footprint_sqm: building.footprint_sqm }),
+    })
+    const data = await res.json()
+    if (res.ok) setReadings(data.readings || readings)
+  }
+
+  async function openSpaceMoved(id: string, polygon: GeoJSON.Polygon) {
+    const openSpace = openSpaces.find(o => o.id === id)
+    if (!openSpace) return
+    setOpenSpaces(prev => prev.map(o => o.id === id ? { ...o, geojson: polygon } : o)) // optimistic
+    const res = await authedFetch(`/api/scenarios/${activeScenario!.id}/buildings/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ geojson: polygon }),
     })
     const data = await res.json()
     if (res.ok) setReadings(data.readings || readings)
@@ -646,9 +660,26 @@ export default function SiteStudioPage() {
                   <a href={shareUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: c.intelligencePurple }}>Open report</a>
                   <button onClick={() => setShareUrl(null)} style={{ background: 'none', border: 'none', color: c.textFaint, fontSize: 11.5, cursor: 'pointer' }}>Close</button>
                 </div>
+                <div style={{ borderTop: `1px solid ${c.border}`, marginTop: 10, paddingTop: 10 }}>
+                  <a
+                    href={`/site-intelligence/${siteId}/studio/report?scenario_id=${activeScenario.id}`}
+                    target="_blank" rel="noreferrer"
+                    style={{ fontSize: 11.5, color: c.intelligencePurple, display: 'block' }}
+                  >
+                    Download Report (PDF) — for professionals
+                  </a>
+                  <div style={{ fontSize: 10.5, color: c.textFaint, marginTop: 2 }}>
+                    Full evidence, assumptions, unknowns, and who to confirm each with. Requires your MANOP sign-in — print or save as PDF from the report page.
+                  </div>
+                </div>
               </div>
             )}
           </div>
+        )}
+        {activeScenario && (
+          <a href={`/site-intelligence/${siteId}/studio/report?scenario_id=${activeScenario.id}`} target="_blank" rel="noreferrer" style={{ ...secondaryBtn(c), textDecoration: 'none' }}>
+            Report
+          </a>
         )}
         {activeScenario && (
           <a href={`/site-intelligence/${siteId}/appraisal?scenario_id=${activeScenario.id}`} style={{ ...primaryBtn(c, false), textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -836,7 +867,7 @@ export default function SiteStudioPage() {
             onDrawOpenSpaceFinish={drawOpenSpaceFinish}
             onDrawParkingFinish={drawParkingFinish}
             buildings={buildings}
-            realParkingLots={parkingLots}
+            realParkingLots={showRealParking ? parkingLots : []}
             developmentCategory={activeScenario?.development_category}
             indicativeParkingStallCount={parkingEnabled ? (parkingReading?.numeric_value ?? null) : null}
             intelligenceLayers={activeIntelligenceLayers}
@@ -847,6 +878,9 @@ export default function SiteStudioPage() {
             selectedBuildingId={selectedBuildingId}
             onSelectBuilding={setSelectedBuildingId}
             onBuildingMoved={buildingMoved}
+            selectedOpenSpaceId={selectedOpenSpaceId}
+            onSelectOpenSpace={setSelectedOpenSpaceId}
+            onOpenSpaceMoved={openSpaceMoved}
           />
 
           {layersOpen && (
@@ -957,14 +991,17 @@ export default function SiteStudioPage() {
                 </div>
               </div>
 
-              {parkingLots.length === 0 ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <span style={{ fontSize: 12.5, color: c.textMuted }}>Parking (indicative preview)</span>
-                  <ToggleGroup c={c} value={parkingEnabled ? 'on' : 'off'} onChange={(v) => setParkingEnabled(v === 'on')} options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]} />
-                </div>
-              ) : (
-                <Fact c={c} label="Parking" value={`${parkingLots.length} placed lot${parkingLots.length === 1 ? '' : 's'}`} />
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontSize: 12.5, color: c.textMuted }}>
+                  {parkingLots.length === 0 ? 'Parking (indicative preview)' : `Parking (${parkingLots.length} placed lot${parkingLots.length === 1 ? '' : 's'})`}
+                </span>
+                <ToggleGroup
+                  c={c}
+                  value={(parkingLots.length === 0 ? parkingEnabled : showRealParking) ? 'on' : 'off'}
+                  onChange={(v) => (parkingLots.length === 0 ? setParkingEnabled(v === 'on') : setShowRealParking(v === 'on'))}
+                  options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
+                />
+              </div>
 
               <Fact c={c} label="Buildings" value={buildings.length > 0 ? String(buildings.length) : (massing?.footprint_sqm != null ? '1 (auto-generated)' : '0')} />
               <Fact c={c} label="Open Space" value={String(openSpaces.length)} />

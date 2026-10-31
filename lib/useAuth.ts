@@ -18,8 +18,15 @@ interface AuthState {
 }
 
 export const ROLE_ROUTES: Record<string, string> = {
-  buyer:                      '/developments',
-  diaspora:                   '/developments',
+  // FIX: both roles used to route to /developments — the exact same
+  // public listing a logged-out visitor sees, with no workspace at all.
+  // Real preference data was already captured for both at signup
+  // (app/profile/setup-buyer, setup-diaspora) and simply discarded on
+  // redirect. app/dashboard/page.tsx is the canonical workspace that
+  // now surfaces it — see sql/phase9_user_workspace.sql for the one
+  // schema addition (developer_leads.user_id) this required.
+  buyer:                      '/dashboard',
+  diaspora:                   '/dashboard',
   investor:                   '/investor/dashboard',
   agency:                     '/agency/dashboard',
   developer:                  '/developer/dashboard',

@@ -28,11 +28,19 @@ const FLOOR_HEIGHT_M = 3.2
  * confirm matters (a printed window pattern on a flat-shaded volume,
  * not a modeled window per unit). Cached per color pair since the
  * same few facade tones repeat across every building in a scenario. */
-const wallTextureCache = new Map<string, THREE.CanvasTexture>()
+const wallTextureCache = new Map<number, THREE.CanvasTexture>()
 
-function wallTexture(baseHex: number, windowHex: number): THREE.CanvasTexture {
-  const key = `${baseHex}-${windowHex}`
-  const cached = wallTextureCache.get(key)
+// REWORKED (3D realism pass): this used to paint window squares
+// directly into the wall's texture — flat pixels on a flat
+// MeshLambertMaterial, which is the actual reason windows never
+// looked like glass no matter what colour they were. Windows are now
+// real geometry with a physically-based glass material (see
+// buildWindowPanes below) — this texture's only job now is a subtle
+// panel/seam pattern on the SOLID wall area between windows, giving
+// the facade a little texture without implying window positions that
+// no longer match where the real glass actually is.
+function wallTexture(baseHex: number): THREE.CanvasTexture {
+  const cached = wallTextureCache.get(baseHex)
   if (cached) return cached
 
   const size = 128
@@ -41,25 +49,141 @@ function wallTexture(baseHex: number, windowHex: number): THREE.CanvasTexture {
   const ctx = canvas.getContext('2d')!
   ctx.fillStyle = `#${baseHex.toString(16).padStart(6, '0')}`
   ctx.fillRect(0, 0, size, size)
-  ctx.fillStyle = `#${windowHex.toString(16).padStart(6, '0')}`
-  const cols = 5, rows = 3
-  const cellW = size / cols, cellH = size / rows
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const pad = cellW * 0.18
-      ctx.fillRect(c * cellW + pad, r * cellH + pad * 1.3, cellW - pad * 2, cellH - pad * 2.4)
-    }
-  }
+  // Faint vertical panel seams — just enough to break up a perfectly
+  // flat fill under directional light, not a pattern meant to read as
+  // anything specific.
+  ctx.strokeStyle = `#${darken(baseHex, 14).toString(16).padStart(6, '0')}`
+  ctx.lineWidth = 1
+  for (let x = 0; x <= size; x += size / 5) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, size); ctx.stroke() }
   const texture = new THREE.CanvasTexture(canvas)
   texture.wrapS = THREE.RepeatWrapping
   texture.wrapT = THREE.RepeatWrapping
   texture.repeat.set(1, 1)
-  wallTextureCache.set(key, texture)
+  wallTextureCache.set(baseHex, texture)
   return texture
 }
 
-function wallMaterial(baseHex: number, windowHex: number): THREE.MeshLambertMaterial {
-  return new THREE.MeshLambertMaterial({ map: wallTexture(baseHex, windowHex) })
+function wallMaterial(baseHex: number): THREE.MeshStandardMaterial {
+  // MeshStandardMaterial (PBR), not MeshLambertMaterial — picks up
+  // specular response from the scene's directional "sun" light
+  // (see ThreeMassingLayer's lighting rig) instead of pure flat
+  // diffuse, which is part of why the whole model used to read as flat.
+  return new THREE.MeshStandardMaterial({ map: wallTexture(baseHex), roughness: 0.82, metalness: 0.04 })
+}
+
+function outwardNormalForEdge(ring: LocalPoint2D[], i: number, centroid: LocalPoint2D): LocalPoint2D {
+  const a = ring[i], b = ring[(i + 1) % ring.length]
+  const dx = b.x - a.x, dz = b.z - a.z
+  const len = Math.sqrt(dx * dx + dz * dz) || 1
+  const dirX = dx / len, dirZ = dz / len
+  const candidateA = { x: -dirZ, z: dirX }
+  const candidateB = { x: dirZ, z: -dirX }
+  const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2
+  // OUTWARD = further from centroid, opposite of the zoning envelope's
+  // inward-normal helper — same logic, opposite comparison.
+  const distA = (midX + candidateA.x - centroid.x) ** 2 + (midZ + candidateA.z - centroid.z) ** 2
+  const distB = (midX + candidateB.x - centroid.x) ** 2 + (midZ + candidateB.z - centroid.z) ** 2
+  return distA > distB ? candidateA : candidateB
+}
+
+let cachedGlassMaterial: THREE.MeshPhysicalMaterial | null = null
+let cachedFrameMaterial: THREE.MeshStandardMaterial | null = null
+let unitPlaneGeometry: THREE.PlaneGeometry | null = null
+
+/**
+ * Real glass window panes for one floor — actual geometry, not paint.
+ *
+ * TWO deliberate engineering choices in this version (3D realism pass 2):
+ *
+ * 1. NO `transmission`. The first version used MeshPhysicalMaterial's
+ *    transmission, which makes Three.js render the whole scene into an
+ *    extra offscreen target every frame. This layer shares Mapbox's own
+ *    WebGL context (see ThreeMassingLayer), and a transmission pass
+ *    rebinds the framebuffer in ways that context may not tolerate —
+ *    and it cannot be verified from the build environment. Glass is now
+ *    plain transparency + a glossy clearcoat, which still catches the sun
+ *    light as a highlight but needs no extra render pass. Lower risk,
+ *    lower cost, nearly the same read at massing scale.
+ *
+ * 2. INSTANCED. One InstancedMesh for all panes on a floor (and one for
+ *    the frames) instead of two separate meshes per window. A four-wing
+ *    courtyard building previously meant ~2,000 individual meshes; this
+ *    is a couple of dozen draw calls. Every pane shares one unit plane,
+ *    sized and rotated per-instance through its matrix.
+ *
+ * Bay spacing is a fixed ~2.6m rhythm, independent of any texture grid.
+ */
+function buildWindowPanes(ring: LocalPoint2D[], floorBaseY: number, centroid: LocalPoint2D): THREE.Group {
+  const group = new THREE.Group()
+  const paneHeight = FLOOR_HEIGHT_M * 0.56
+  const sillHeight = FLOOR_HEIGHT_M * 0.26
+  const bayWidth = 2.6
+  const paneWidthRatio = 0.76
+  const cy = floorBaseY + sillHeight + paneHeight / 2
+
+  if (!cachedGlassMaterial) {
+    cachedGlassMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0x6f93ad, metalness: 0.25, roughness: 0.1,
+      clearcoat: 0.6, clearcoatRoughness: 0.08,
+      transparent: true, opacity: 0.82, side: THREE.DoubleSide, depthWrite: false,
+    })
+  }
+  if (!cachedFrameMaterial) {
+    cachedFrameMaterial = new THREE.MeshStandardMaterial({ color: 0x20242e, roughness: 0.6, metalness: 0.15 })
+  }
+  if (!unitPlaneGeometry) unitPlaneGeometry = new THREE.PlaneGeometry(1, 1)
+
+  const specs: { gx: number; gz: number; fx: number; fz: number; angle: number; w: number }[] = []
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length]
+    const dx = b.x - a.x, dz = b.z - a.z
+    const edgeLength = Math.sqrt(dx * dx + dz * dz)
+    if (edgeLength < 1.8) continue // too short a run to bother glazing
+
+    const n = outwardNormalForEdge(ring, i, centroid)
+    // rotateY by atan2(nx, nz) sends the plane's default facing direction
+    // (+Z) onto this outward normal and its width axis (+X) onto the edge.
+    const angle = Math.atan2(n.x, n.z)
+
+    const numBays = Math.max(1, Math.floor(edgeLength / bayWidth))
+    const actualBayWidth = edgeLength / numBays
+    const paneWidth = actualBayWidth * paneWidthRatio
+
+    for (let bay = 0; bay < numBays; bay++) {
+      const t = (bay + 0.5) / numBays
+      specs.push({
+        gx: a.x + dx * t + n.x * 0.06, gz: a.z + dz * t + n.z * 0.06,
+        fx: a.x + dx * t + n.x * 0.02, fz: a.z + dz * t + n.z * 0.02,
+        angle, w: paneWidth,
+      })
+    }
+  }
+  if (specs.length === 0) return group
+
+  const glass = new THREE.InstancedMesh(unitPlaneGeometry, cachedGlassMaterial, specs.length)
+  const frame = new THREE.InstancedMesh(unitPlaneGeometry, cachedFrameMaterial, specs.length)
+  // Culling an instanced mesh off its single unit-plane bounding sphere
+  // would hide whole floors incorrectly; buildings are small, so just
+  // never cull these.
+  glass.frustumCulled = false
+  frame.frustumCulled = false
+
+  const m = new THREE.Matrix4()
+  const q = new THREE.Quaternion()
+  const pos = new THREE.Vector3()
+  const scl = new THREE.Vector3()
+  const yAxis = new THREE.Vector3(0, 1, 0)
+  specs.forEach((sp, i) => {
+    q.setFromAxisAngle(yAxis, sp.angle)
+    pos.set(sp.gx, cy, sp.gz); scl.set(sp.w, paneHeight, 1)
+    m.compose(pos, q, scl); glass.setMatrixAt(i, m)
+    pos.set(sp.fx, cy, sp.fz); scl.set(sp.w * 1.08, paneHeight * 1.06, 1)
+    m.compose(pos, q, scl); frame.setMatrixAt(i, m)
+  })
+  glass.instanceMatrix.needsUpdate = true
+  frame.instanceMatrix.needsUpdate = true
+  group.add(frame, glass) // frame first so the glass draws over it
+  return group
 }
 
 
@@ -93,13 +217,13 @@ function footprintCentroid(points: LocalPoint2D[]): LocalPoint2D {
  * floors actually read visually instead of looking like one
  * unbroken box — this is most of what turns a "box" into a
  * "building" at this level of abstraction. Walls carry the printed
- * window-grid texture; windowHex defaults to a lighter tint of the
- * base color when not given explicitly. */
-function floorSlab(points: LocalPoint2D[], color: number, windowHex?: number): THREE.Mesh {
+ * wall texture — windows are now real glass geometry added separately
+ * by the caller via buildWindowPanes, not painted into this material. */
+function floorSlab(points: LocalPoint2D[], color: number): THREE.Mesh {
   const shape = footprintShape(points)
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: FLOOR_HEIGHT_M - 0.18, bevelEnabled: false })
   geometry.rotateX(-Math.PI / 2) // extrude along Z by default; rotate so it extrudes along Y (up)
-  const material = wallMaterial(color, windowHex ?? lighten(color))
+  const material = wallMaterial(color)
   return new THREE.Mesh(geometry, material)
 }
 
@@ -175,16 +299,20 @@ export function buildMassing(spec: BuildingSpec): THREE.Group {
     case 'mixed_use': {
       // Podium (wider, lower, commercial-toned) + a set-back tower above.
       const podiumStoreys = Math.min(2, storeys)
+      const podiumCentroid = footprintCentroid(ring)
       for (let f = 0; f < podiumStoreys; f++) {
         const slab = floorSlab(ring, 0x64748b) // neutral commercial tone for the podium
         slab.position.y = f * FLOOR_HEIGHT_M
         group.add(slab)
+        group.add(buildWindowPanes(ring, f * FLOOR_HEIGHT_M, podiumCentroid)) // retail / commercial glazing
       }
       const towerRing = insetRing(ring, 0.82)
+      const towerCentroid = footprintCentroid(towerRing)
       for (let f = podiumStoreys; f < storeys; f++) {
         const slab = floorSlab(towerRing, baseColor)
         slab.position.y = f * FLOOR_HEIGHT_M
         group.add(slab)
+        group.add(buildWindowPanes(towerRing, f * FLOOR_HEIGHT_M, towerCentroid))
         if ((f - podiumStoreys) % 2 === 0) group.add(balconyLedge(towerRing, f, accentColor))
       }
       group.add(roofParapet(towerRing, storeys * FLOOR_HEIGHT_M, baseColor))
@@ -196,13 +324,19 @@ export function buildMassing(spec: BuildingSpec): THREE.Group {
       // wide roof — deliberately reads differently from residential
       // at a glance rather than being the same slab in a different colour.
       const commercialFloorHeight = FLOOR_HEIGHT_M * 1.35
+      const commercialCentroid = footprintCentroid(ring)
       for (let f = 0; f < storeys; f++) {
         const shape = footprintShape(ring)
         const geometry = new THREE.ExtrudeGeometry(shape, { depth: commercialFloorHeight - 0.2, bevelEnabled: false })
         geometry.rotateX(-Math.PI / 2)
-        const slab = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color: baseColor }))
+        const slab = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, metalness: 0.08 }))
         slab.position.y = f * commercialFloorHeight
         group.add(slab)
+        // Commercial glazing reads as a wider ribbon than residential
+        // punched windows — larger panes, fewer piers. Reuses the same
+        // real-glass generator, just with a taller/wider bay.
+        const ribbon = buildWindowPanes(ring, f * commercialFloorHeight, commercialCentroid)
+        group.add(ribbon)
       }
       group.add(roofParapet(ring, storeys * commercialFloorHeight, baseColor))
       break
@@ -212,10 +346,14 @@ export function buildMassing(spec: BuildingSpec): THREE.Group {
     case 'single_family_residential': {
       // A simple pitched roof rather than a flat parapet — the
       // clearest single cue that this isn't an apartment slab.
+      const homeCentroid = footprintCentroid(ring)
       for (let f = 0; f < storeys; f++) {
         const slab = floorSlab(ring, baseColor)
         slab.position.y = f * FLOOR_HEIGHT_M
         group.add(slab)
+        // Houses are glazed on every floor, ground included (unlike a
+        // tower's unglazed plinth) — windows and doors face the street.
+        group.add(buildWindowPanes(ring, f * FLOOR_HEIGHT_M, homeCentroid))
       }
       const centroid = footprintCentroid(ring)
       const spanX = Math.max(...ring.map(p => p.x)) - Math.min(...ring.map(p => p.x))
@@ -247,15 +385,15 @@ export function buildMassing(spec: BuildingSpec): THREE.Group {
 
     case 'multifamily_residential':
     default: {
+      const buildingCentroid = footprintCentroid(ring)
       for (let f = 0; f < storeys; f++) {
         // Ground floor reads as a base/plinth (lobby, entries) — darker
-        // and without the upper floors' window rhythm — rather than
-        // simply repeating the same slab from the ground up.
-        const slab = f === 0
-          ? floorSlab(ring, darken(baseColor), darken(baseColor, 20))
-          : floorSlab(ring, baseColor)
+        // and with no residential window rhythm — rather than simply
+        // repeating the same glazed slab from the ground up.
+        const slab = f === 0 ? floorSlab(ring, darken(baseColor)) : floorSlab(ring, baseColor)
         slab.position.y = f * FLOOR_HEIGHT_M
         group.add(slab)
+        if (f > 0) group.add(buildWindowPanes(ring, f * FLOOR_HEIGHT_M, buildingCentroid))
         if (f > 0 && f % 2 === 0) group.add(balconyLedge(ring, f, accentColor))
       }
       group.add(roofParapet(ring, storeys * FLOOR_HEIGHT_M, baseColor))

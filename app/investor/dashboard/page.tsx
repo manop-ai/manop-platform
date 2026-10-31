@@ -28,23 +28,33 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import BuyerPackButton from '../../../components/BuyerPackButton'
 import { supabase as sb } from '../../../lib/supabase'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
 import { ManopLogoSVG } from '../../../components/ManopLogo'
 import ManopLoader from '../../../components/ManopLoader'
 import MediaLightbox, { MediaItem } from '../../../components/MediaLightbox'
+import MyFinancePanel from '../../../components/MyFinancePanel'
+import MyBuyerPacksPanel from '../../../components/MyBuyerPacksPanel'
 import {
   Search, Building2, ExternalLink, CheckCircle2,
 } from 'lucide-react'
 
-type Tab = 'overview' | 'developments' | 'profile'
+type Tab = 'overview' | 'developments' | 'packs' | 'myfinance' | 'profile'
 
+// Field names below match what app/profile/setup-investor/page.tsx
+// actually writes to investor_profiles (confirmed by reading that
+// file's upsert call) — NOT the plural/renamed fields this interface
+// used to declare (investment_goals, is_diaspora, country_of_residence,
+// preferred_currency), none of which that form ever writes. Those were
+// read as undefined on every real row; swapped for the real columns:
+// investment_goal (singular) and location_type ('local'|'diaspora'),
+// with country doubling as country_of_residence for a diaspora investor.
 interface InvestorProfile {
   budget_min: number | null; budget_max: number | null
-  preferred_markets: string[] | null; investment_goals: string[] | null
-  is_diaspora: boolean | null; country_of_residence: string | null
-  preferred_currency: string | null
+  preferred_markets: string[] | null; investment_goal: string | null
+  location_type: 'local' | 'diaspora' | null; country: string | null
 }
 const GOAL_LABELS: Record<string, string> = {
   capital_growth: 'Capital Growth', rental_income: 'Rental Income',
@@ -81,16 +91,25 @@ export default function InvestorDashboard() {
     setLoading(true)
     setUserName(user.email?.split('@')[0] || 'Investor')
 
-    // user_profiles.id is a separate, table-owned id — NOT the auth id.
-    // Every lookup that joins through user_profiles needs THIS id.
-    const { data: up } = await sb.from('user_profiles').select('id').eq('auth_user_id', user.id).maybeSingle()
-    const upId = up?.id || null
-
+    // FIX: this used to resolve a "user_profiles.id" through
+    // user_profiles.auth_user_id before querying investor_profiles —
+    // but `select id, auth_user_id, user_role from user_profiles`
+    // against the real database (run 2026-10-07) shows auth_user_id is
+    // NULL on every row; nothing in the codebase ever writes it
+    // (app/profile/setup-investor/page.tsx upserts user_profiles with
+    // `id: user.id` directly, and investor_profiles with
+    // `user_id: user.id` directly — the auth id IS the join key, with
+    // no indirection). The old lookup therefore always returned null,
+    // upId was always null, and `profile` below was always null for
+    // every real investor regardless of what they'd filled in —
+    // Profile tab silently showed blank / fallback state for 100% of
+    // users. Fixed to use user.id directly, matching the convention
+    // every write path actually uses.
     const [{ data: ip }, { data: devs }] = await Promise.all([
-      upId ? sb.from('investor_profiles').select('*').eq('user_id', upId).maybeSingle() : Promise.resolve({ data: null }),
+      sb.from('investor_profiles').select('*').eq('user_id', user.id).maybeSingle(),
       sb.from('investor_watchlist')
         .select('id, developer_projects(id, name, neighborhood, city, reviewed_at, images)')
-        .eq('user_id', user.id).not('project_id', 'is', null).limit(12),
+        .eq('user_id', user.id).not('project_id', 'is', null).order('created_at', { ascending: false }).limit(50),
     ])
 
     setProfile(ip || null)
@@ -119,7 +138,9 @@ export default function InvestorDashboard() {
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'overview',     label: 'Overview' },
-    { key: 'developments', label: `Saved developments (${savedDevelopments.length})` },
+    { key: 'developments', label: 'Find developments' },
+    { key: 'packs',        label: 'Buyer Packs' },
+    { key: 'myfinance',    label: 'My Finance' },
     { key: 'profile',      label: 'Profile' },
   ]
 
@@ -142,7 +163,7 @@ export default function InvestorDashboard() {
           <div style={{ width: 1, height: 20, background: border }} />
           <div>
             <div style={{ fontWeight: 700, color: text, fontSize: 14 }}>{userName}</div>
-            <div style={{ fontSize: 11, color: text3 }}>{profile?.is_diaspora ? `Diaspora investor${profile.country_of_residence ? ' · ' + profile.country_of_residence : ''}` : 'Investor'}</div>
+            <div style={{ fontSize: 11, color: text3 }}>{profile?.location_type === 'diaspora' ? `Diaspora investor${profile.country ? ' · ' + profile.country : ''}` : 'Investor'}</div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -180,43 +201,60 @@ export default function InvestorDashboard() {
               </div>
             </div>
 
-            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Recent developments</div>
+            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.12em', marginBottom: 10 }}>Your saved developments</div>
             {savedDevelopments.length === 0 ? (
               <div style={{ textAlign: 'center' as const, padding: '2rem', color: text3, background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 16 }}>
                 <Building2 size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
                 <div style={{ fontSize: 13, marginBottom: 10 }}>Nothing saved yet.</div>
-                <button onClick={() => setTab('developments')} style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.5rem 1.25rem', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <button onClick={() => setTab('developments')} style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.5rem 1.25rem', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                   Browse reviewed developments →
                 </button>
               </div>
             ) : (
               <div style={{ marginBottom: 16 }}>
-                {savedDevelopments.slice(0, 5).map(item => {
+                {savedDevelopments.map(item => {
                   const d = Array.isArray(item.developer_projects) ? item.developer_projects[0] : item.developer_projects
                   if (!d) return null
                   return (
-                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0.75rem', background: bg3, border: `1px solid ${border}`, borderRadius: 10, marginBottom: 6, boxShadow: cardShadow }}>
-                      <div style={{ width: 56, height: 44, borderRadius: 6, flexShrink: 0, background: d.images?.[0] ? `url(${d.images[0]}) center/cover` : bg2 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
-                        <div style={{ fontSize: 11.5, color: text3 }}>{d.neighborhood}, {d.city}</div>
+                    <div key={item.id} style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '0.75rem', marginBottom: 8, boxShadow: cardShadow }}>
+                      <Link href={`/development/${d.id}`} style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: text, minHeight: 44 }}>
+                        <div style={{ width: 56, height: 44, borderRadius: 6, flexShrink: 0, background: d.images?.[0] ? `url(${d.images[0]}) center/cover` : bg2 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
+                          <div style={{ fontSize: 11.5, color: text3 }}>{[d.neighborhood, d.city].filter(Boolean).join(', ')}</div>
+                        </div>
+                        {d.reviewed_at && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, color: '#0D9488', background: 'rgba(13,148,136,0.1)', borderRadius: 4, padding: '2px 8px', whiteSpace: 'nowrap' as const }}>
+                            <CheckCircle2 size={11} /> MANOP Review
+                          </span>
+                        )}
+                      </Link>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const, marginTop: 8, alignItems: 'flex-start' }}>
+                        <BuyerPackButton projectId={d.id} dark={dark} compact />
+                        <button onClick={async () => { if (!user) return; const { error } = await sb.from('investor_watchlist').delete().eq('id', item.id).eq('user_id', user.id); if (!error) setSavedDevelopments(prev => prev.filter(x => x.id !== item.id)) }}
+                          style={{ minHeight: 36, padding: '0.3rem 0.8rem', borderRadius: 4, border: `1px solid ${border}`, background: 'transparent', color: text2, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Remove</button>
                       </div>
-                      {d.reviewed_at && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, color: '#0D9488', background: 'rgba(13,148,136,0.1)', borderRadius: 20, padding: '3px 8px', flexShrink: 0 }}>
-                          <CheckCircle2 size={11} /> MANOP Review
-                        </span>
-                      )}
                     </div>
                   )
                 })}
               </div>
             )}
 
+            <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', boxShadow: cardShadow }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Your enquiries</div>
+              <div style={{ fontSize: 13, color: text2, lineHeight: 1.6, marginBottom: 8 }}>Follow the enquiries and information requests you have sent to developers, and any responses.</div>
+              <Link href="/dashboard" style={{ fontSize: 13, fontWeight: 700, color: '#5B2EFF', textDecoration: 'none' }}>Open my enquiries →</Link>
+            </div>
+
           </>
         )}
 
         {/* ── Developments — real search, real detail view ── */}
         {tab === 'developments' && <DevelopmentsTab dark={dark} bg2={bg2} bg3={bg3} border={border} text={text} text2={text2} text3={text3} cardShadow={cardShadow} INP={INP} />}
+
+        {/* ── My Finance — Phase 6 workspace panel ── */}
+        {tab === 'packs' && <MyBuyerPacksPanel dark={dark} />}
+        {tab === 'myfinance' && user && <MyFinancePanel userId={user.id} dark={dark} />}
 
         {/* ── Profile ── */}
         {tab === 'profile' && <ProfileTab bg3={bg3} border={border} text={text} text2={text2} text3={text3} cardShadow={cardShadow} profile={profile} />}
@@ -235,10 +273,13 @@ function DevelopmentsTab({ dark, bg2, bg3, border, text, text2, text3, cardShado
 
   async function handleSearch() {
     if (!query.trim()) return
+    // The text goes inside a PostgREST filter string: strip the characters that can change its structure.
+    const term = query.trim().replace(/[,()*\\%_]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!term) return
     const { data } = await sb.from('developer_projects')
       .select('*, developer_accounts(company_name)')
       .eq('publish_status', 'published')
-      .or(`neighborhood.ilike.%${query}%,city.ilike.%${query}%`)
+      .or(`neighborhood.ilike.%${term}%,city.ilike.%${term}%`)
     setResults(data || [])
   }
 
@@ -262,6 +303,10 @@ function DevelopmentsTab({ dark, bg2, bg3, border, text, text2, text3, cardShado
             </span>
           )}
         </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginBottom: 14 }}>
+          <Link href={`/development/${selected.id}`} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0.6rem 1.1rem', borderRadius: 4, background: '#5B2EFF', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>View full development page</Link>
+          <div style={{ minWidth: 200 }}><BuyerPackButton projectId={selected.id} dark={dark} /></div>
+        </div>
         <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 12, padding: '1.25rem', boxShadow: cardShadow }}>
           <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#14B8A6', textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 10 }}>MANOP Review</div>
           <div style={{ fontSize: 13, marginBottom: 8 }}><strong>What we checked:</strong> {selected.manop_checked_note || 'Not yet documented.'}</div>
@@ -284,7 +329,7 @@ function DevelopmentsTab({ dark, bg2, bg3, border, text, text2, text3, cardShado
       {results === null && <div style={{ fontSize: 13, color: text3, textAlign: 'center' as const, padding: '2rem 0' }}>Search an area above to see reviewed developments there.</div>}
       {results !== null && results.length === 0 && <div style={{ fontSize: 13, color: text3, textAlign: 'center' as const, padding: '2rem 0' }}>No reviewed developments in that area yet.</div>}
       {results !== null && results.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
           {results.map(d => (
             <div key={d.id} onClick={() => setSelected(d)} style={{ cursor: 'pointer', background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '1rem', boxShadow: cardShadow }}>
               <div style={{ height: 120, borderRadius: 8, background: d.images?.[0] ? `url(${d.images[0]}) center/cover` : bg2, marginBottom: 10 }} />
@@ -305,7 +350,7 @@ function DevelopmentsTab({ dark, bg2, bg3, border, text, text2, text3, cardShado
 
 // ── Profile tab ─────────────────────────────────────────────────
 function ProfileTab({ bg3, border, text, text2, text3, cardShadow, profile }: any) {
-  const goals = profile?.investment_goals || []
+  const goals = profile?.investment_goal ? [profile.investment_goal] : []
   const markets = profile?.preferred_markets || []
 
   return (
@@ -319,8 +364,8 @@ function ProfileTab({ bg3, border, text, text2, text3, cardShadow, profile }: an
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20 }}>
           {[
             { label: 'Budget range', value: profile?.budget_min && profile?.budget_max ? `${fmtNGN(profile.budget_min)} — ${fmtNGN(profile.budget_max)}` : profile?.budget_min ? `From ${fmtNGN(profile.budget_min)}` : '—' },
-            { label: 'Currency preference', value: profile?.preferred_currency || '—' },
-            { label: 'Diaspora status', value: profile?.is_diaspora ? `Yes — ${profile.country_of_residence || 'location not set'}` : 'No' },
+            { label: 'Based in', value: profile?.country || '—' },
+            { label: 'Diaspora status', value: profile?.location_type === 'diaspora' ? `Yes — ${profile.country || 'location not set'}` : profile?.location_type === 'local' ? 'No' : '—' },
           ].map(s => (
             <div key={s.label} style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 10, padding: '0.875rem' }}>
               <div style={{ fontSize: '0.6rem', fontWeight: 700, color: text3, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 6 }}>{s.label}</div>

@@ -8,6 +8,7 @@ import './globals.css'
 import NavBar from '../components/NavBar'
 import ManopFooter from '../components/ManopFooter'
 import DashboardShell from '../components/DashboardShell'
+import UsageTracker from '../components/UsageTracker'
 
 export const metadata: Metadata = {
   title: 'Manop - Africa Property Intelligence',
@@ -33,7 +34,7 @@ const themeScript = `
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           /investor/dashboard - it renders children only (no NavBar, no Footer).
           For all other routes - renders NavBar + children + Footer as before.
         */}
+        <UsageTracker />
         <DashboardShell>
           {children}
         </DashboardShell>

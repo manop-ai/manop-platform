@@ -22,8 +22,12 @@ import { sb } from '../../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
 import ManopLoader from '../../../components/ManopLoader'
+import { authedFetch } from '../../../lib/authed-fetch'
+import DealRoomPanel from '../../../components/DealRoomPanel'
+import UnitRequestSummary from '../../../components/UnitRequestSummary'
+import { LEAD_STAGES, CLOSED_STAGES } from '../../../lib/deal-room'
 
-const STAGES = ['enquiry', 'contacted', 'viewing', 'negotiating', 'reserved', 'sold', 'lost'] as const
+const STAGES = LEAD_STAGES
 const FEE_STATUSES = ['not_applicable', 'pending', 'invoiced', 'paid', 'disputed', 'waived'] as const
 
 interface Lead {
@@ -88,7 +92,13 @@ export default function AdminLeadsPage() {
     return listenTheme(setDark)
   }, [])
 
+  // The spinner must always end: any exception becomes a visible error instead of an endless loader.
   const loadAll = useCallback(async () => {
+    try { await loadAllInner() }
+    catch (e: any) { setLoadError(e?.message || 'Could not load introductions.'); setLoading(false) }
+  }, [])
+
+  const loadAllInner = useCallback(async () => {
     setLoading(true)
     setLoadError('')
 
@@ -140,20 +150,14 @@ export default function AdminLeadsPage() {
   }, [user, loadAll])
 
   async function changeStage(lead: Lead, newStage: string) {
-    const { error } = await sb
-      .from('developer_leads')
-      .update({ stage: newStage, updated_at: new Date().toISOString() })
-      .eq('id', lead.id)
-
-    if (error) { flash(`Error: ${error.message}`, false); return }
-
-    await sb.from('lead_stage_log').insert({
-      lead_id: lead.id,
-      manop_lead_id: lead.manop_lead_id,
-      from_stage: lead.stage,
-      to_stage: newStage,
-      changed_by: 'admin',
+    const note = ['completed', 'transaction'].includes(newStage) || ['completed', 'lost'].includes(lead.stage)
+      ? (window.prompt('Moving to or from this stage needs a recorded reason (used if the confirmed milestone is missing):') || '')
+      : ''
+    const res = await authedFetch('/api/deal-room/stage', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_id: lead.id, to_stage: newStage, note }),
     })
+    if (!res.ok) { const j = await res.json().catch(() => ({})); flash(`Error: ${j.error || 'could not change stage'}`, false); return }
 
     setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage: newStage } : l))
     flash('✓ Stage updated', true)
@@ -222,12 +226,15 @@ export default function AdminLeadsPage() {
     )
   }
 
-  const filtered = stageFilter === 'all' ? leads : leads.filter(l => l.stage === stageFilter)
+  // introductions waiting for MANOP to route them to the developer/partner in charge come first
+  const needsRouting = (l: any) => l.manop_routing_required === true && !l.referred_to_developer_at
+  const filtered = (stageFilter === 'all' ? leads : leads.filter(l => l.stage === stageFilter))
+    .slice().sort((a, b) => Number(needsRouting(b)) - Number(needsRouting(a)))
 
   const stats = {
     total: leads.length,
-    active: leads.filter(l => !['sold', 'lost'].includes(l.stage)).length,
-    closedWon: leads.filter(l => l.stage === 'sold').length,
+    active: leads.filter(l => !CLOSED_STAGES.includes(l.stage)).length,
+    closedWon: leads.filter(l => l.stage === 'completed').length,
     totalDeclaredNGN: leads.reduce((s, l) => s + (l.declared_txn_value || 0), 0),
     totalFeesPending: leads.filter(l => l.fee_status === 'pending' || l.fee_status === 'invoiced')
       .reduce((s, l) => s + (l.fee_amount || 0), 0),
@@ -330,7 +337,9 @@ export default function AdminLeadsPage() {
                 <div key={lead.id} style={CARD}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{lead.name}</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{lead.name}
+                        {needsRouting(lead) && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: '#B45309', background: 'rgba(245,158,11,0.15)', borderRadius: 20, padding: '2px 8px' }}>NEEDS ROUTING</span>}
+                      </div>
                       <div style={{ fontSize: '0.75rem', color: text3, marginTop: 2 }}>
                         {lead.phone || lead.email || 'No contact provided'}
                         {lead.is_diaspora && ' · Diaspora'}
@@ -341,11 +350,7 @@ export default function AdminLeadsPage() {
                         {' — '}
                         {developer?.company_name || 'Unclaimed / unlinked developer'}
                       </div>
-                      {lead.unit_interest && (
-                        <div style={{ fontSize: '0.72rem', color: text3, marginTop: 2 }}>
-                          Interested in: {lead.unit_interest}
-                        </div>
-                      )}
+                      <UnitRequestSummary lead={lead as any} dark={dark} compact />
                       {lead.note && (
                         <div style={{ fontSize: '0.75rem', color: text2, marginTop: 4, fontStyle: 'italic' }}>
                           &ldquo;{lead.note}&rdquo;
@@ -386,6 +391,10 @@ export default function AdminLeadsPage() {
                       )}
                     </div>
                   </div>
+
+                  {expanded && (
+                    <div style={{ marginTop: 12 }}><DealRoomPanel leadId={lead.id} dark={dark} /></div>
+                  )}
 
                   {expanded && draft && (
                     <div style={{

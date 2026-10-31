@@ -1,189 +1,154 @@
-'use client'
 // app/finance/page.tsx
 //
-// Front door for MANOP Finance Intelligence. Not a separate product — it
-// points into the places where finance already lives (a property's
-// "Get Financed" flow, Investment Intelligence, Construction Appraisal in
-// Site Studio) and says plainly which parts are live and which are not yet.
-// Status labels here are deliberate: nothing is presented as available
-// unless a real route or flow exists for it today.
+// Front door for MANOP Finance Intelligence. Not a separate product: it points into the places where finance already lives (a development's
+// "Get Financed" flow, Investment Intelligence, Construction Appraisal in Site Studio) and says plainly which parts are live and which are not yet.
+// Status labels are deliberate: nothing is presented as available unless a real route or flow exists for it today.
 //
-// Theme: every color comes from getDesignColors(dark), and the page follows
-// the global light/dark toggle live (getInitialDark + listenTheme), the same
-// pattern as the Site Studio landing page.
-
+// Server component: the theme follows the site-wide light/dark choice with no flash, and the page carries real metadata. The earlier stock photograph
+// is gone; the picture is an illustrative diagram built from the page's own content.
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import type { Metadata } from 'next'
 import type { LucideIcon } from 'lucide-react'
-import {
-  ArrowRight, Wallet, LineChart, HardHat, CalendarClock, Landmark,
-  ShieldCheck, Sigma, CircleHelp,
-} from 'lucide-react'
-import { getInitialDark, listenTheme, getDesignColors, designTokens } from '../../lib/theme'
+import { ArrowRight, Wallet, LineChart, HardHat, CalendarClock, Landmark, ShieldCheck, Sigma, CircleHelp } from 'lucide-react'
+import '../../components/home/home.css'
+import '../../components/public/pub.css'
+import { SITE_URL } from '../../lib/market-intelligence'
 
-type Status = 'available' | 'in_development' | 'planned'
-
-interface Module {
-  title: string
-  icon: LucideIcon
-  status: Status
-  body: string
-  where: string
-  href?: string
-  cta?: string
+export const metadata: Metadata = {
+  title: 'Finance Intelligence | MANOP',
+  description: 'Understand what an opportunity means financially before you commit further: buyer affordability, payment plans, investment analysis and development economics, each traced to the numbers behind it. MANOP is not a lender.',
+  alternates: { canonical: `${SITE_URL}/finance` },
+  openGraph: { title: 'Finance Intelligence | MANOP', description: 'Affordability, payment plans, investment analysis and development economics, with every figure traced to its inputs.', url: `${SITE_URL}/finance`, type: 'website' },
 }
 
+type Status = 'available' | 'in_development'
+interface Module { title: string; icon: LucideIcon; status: Status; who: string; body: string; where: string; href?: string; cta?: string }
+
 const MODULES: Module[] = [
-  {
-    title: 'Affordability Assessment',
-    icon: Wallet,
-    status: 'available',
-    body: 'Set a property price against the deposit you have. See the amount you would need to borrow, the loan-to-value, an indicative monthly repayment and the cash needed now — using your own assumptions.',
-    where: 'Currently reachable only from an individual listing on the legacy search flow, not yet from a Reviewed Development. Flagged in the ongoing architecture reconciliation.',
-    // No href/cta here on purpose — the honest destination depends on context,
-    // which is the flow this reconciliation is questioning. Pointing a
-    // Finance Intelligence CTA at it was the bug: it made a legacy-model
-    // page look like the current, intended path. Restore a CTA once this
-    // is reachable from Reviewed Developments instead.
-  },
-  {
-    title: 'Investment Intelligence',
-    icon: LineChart,
-    status: 'available',
+  { title: 'Affordability Assessment', icon: Wallet, status: 'available', who: 'For buyers',
+    body: 'Set a property price against the deposit you have. See the amount you would need to borrow, the loan-to-value, an indicative monthly repayment and the cash needed now, using your own assumptions.',
+    where: 'Reachable from “Get Financed” on any reviewed development. Saved assessments carry a MANOP reference and surface again in My Finance.',
+    href: '/developments', cta: 'Browse reviewed developments' },
+  { title: 'Payment Plan Intelligence', icon: CalendarClock, status: 'available', who: 'For buyers',
+    body: 'Turns a developer’s own deposit and instalment schedule into a buyer cashflow: the deposit due, the recurring monthly burden and how long it runs, using the actual terms that unit’s developer has published.',
+    where: 'Shown inline on unit pricing for reviewed developments where the developer has set deposit and instalment terms.' },
+  { title: 'Investment Intelligence', icon: LineChart, status: 'available', who: 'For investors',
     body: 'Rent, operating costs and financing structure in; gross yield, net income, debt service, cash-on-cash and debt cover out. Every figure traces back to the numbers you entered.',
-    href: '/calculator',
-    where: 'Available now, no account needed to run an analysis.',
-    cta: 'Open Investment Intelligence',
-  },
-  {
-    title: 'Construction Appraisal',
-    icon: HardHat,
-    status: 'available',
+    where: 'Available now. No account is needed to run an analysis.', href: '/calculator', cta: 'Open Investment Intelligence' },
+  { title: 'Construction Appraisal', icon: HardHat, status: 'available', who: 'For developers',
     body: 'Development economics for a site scenario: gross development value, build and professional costs, finance cost and required profit, leading to an indicative residual land value with sensitivity.',
-    href: '/site-intelligence/studio',
-    where: 'Runs on scenarios created in Site Studio.',
-    cta: 'Go to Site Studio',
-  },
-  {
-    title: 'Payment Plan Intelligence',
-    icon: CalendarClock,
-    status: 'in_development',
-    body: 'Turns a developer payment schedule into a buyer cashflow: cash needed at reservation, the recurring burden, the completion balance, and where a mortgage take-out may be needed.',
-    where: 'Being built alongside the Reviewed Developments payment-plan data.',
-  },
-  {
-    title: 'Finance Suitability',
-    icon: Landmark,
-    status: 'planned',
+    where: 'Runs on scenarios created in Site Studio. Detailed quantity take-offs and cost plans are not part of it yet.', href: '/site-intelligence/studio', cta: 'Go to Site Studio' },
+  { title: 'Finance Suitability', icon: Landmark, status: 'in_development', who: 'Mortgage, NHF and diaspora products',
     body: 'Compares a property against published lender criteria. Only ever shown with its source and the date it was last checked, and withdrawn when that information goes stale.',
-    where: 'Starts once lender product data can be sourced and dated properly.',
-  },
+    where: 'The matching engine is live inside Get Financed. It has no lender products to compare against yet, so it currently shows that honestly rather than a result.' },
+]
+const STATUS_LABEL: Record<Status, string> = { available: 'Available', in_development: 'In development' }
+
+const PRINCIPLES = [
+  { icon: Sigma, title: 'Calculated, not guessed', body: 'Repayments, yields, debt cover and appraisal arithmetic come from a deterministic engine. Language models explain results; they never produce the numbers.' },
+  { icon: ShieldCheck, title: 'Sourced and dated', body: 'Anything drawn from a lender or public source carries where it came from and when it was last checked. Stale information is withdrawn, not shown as current.' },
+  { icon: CircleHelp, title: 'Unknown stays unknown', body: 'Where evidence is missing, MANOP says so. Your own assumptions are labelled as yours. They are never quietly promoted to facts.' },
 ]
 
-const STATUS_LABEL: Record<Status, string> = {
-  available: 'Available',
-  in_development: 'In development',
-  planned: 'Planned',
+function Diagram() {
+  return (
+    <div className="pg-dia" role="img" aria-label="Illustration: buyer affordability and payment plans on one side, investment analysis and development economics on the other, both connected to the development. Financing pathways are in development.">
+      <div className="cols" aria-hidden="true">
+        <div className="col"><small>Buyer side</small><span>Affordability</span><span>Payment plan cashflow</span></div>
+        <div className="col"><small>Investor and developer side</small><span>Investment analysis</span><span>Construction Appraisal</span></div>
+      </div>
+      <div className="mid" aria-hidden="true">One development</div>
+      <div className="path" aria-hidden="true"><b>In development:</b> matching to published mortgage, NHF and diaspora products. Information only; MANOP does not lend, arrange or approve finance.</div>
+    </div>
+  )
 }
 
 export default function FinanceOverviewPage() {
-  const [dark, setDark] = useState(getInitialDark)
-  useEffect(() => { return listenTheme(setDark) }, [])
-  const c = getDesignColors(dark)
-
-  const statusColor = (s: Status) =>
-    s === 'available' ? c.verificationTeal : s === 'in_development' ? c.statusAmber : c.textMuted
-  const statusBg = (s: Status) =>
-    s === 'available' ? c.verificationTealBg : s === 'in_development' ? c.statusAmberBg : c.surfaceCardHigh
-
   return (
-    <div style={{ background: c.background, color: c.textPrimary, fontFamily: designTokens.font.family, minHeight: '70vh' }}>
-
-      {/* ── HERO ─────────────────────────────────────────── */}
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '72px 24px 40px' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: c.intelligencePurple, marginBottom: 18 }}>
-          FINANCE INTELLIGENCE
+    <div className="hm">
+      {/* HERO */}
+      <section className="pg-hero">
+        <div className="hm-wrap pg-two">
+          <div>
+            <span className="hm-eyebrow">Finance Intelligence</span>
+            <h1 className="pg-h1">Understand what an opportunity means financially, before you commit further.</h1>
+            <p className="pg-lead">MANOP makes the financial implications of a property, an investment or a site clearer: what it would cost, what it could produce, which assumptions drive the answer and what is still unknown.</p>
+            <p className="pg-small">Lenders make lending decisions. MANOP does not.</p>
+            <div className="pg-cta">
+              <Link href="/calculator" className="hm-btn p">Open Investment Intelligence <ArrowRight size={16} /></Link>
+              <Link href="/developments" className="hm-btn g">Browse reviewed developments</Link>
+            </div>
+          </div>
+          <Diagram />
         </div>
-        <h1 style={{ fontSize: 'clamp(36px, 5.6vw, 64px)', fontWeight: 800, lineHeight: 1.02, letterSpacing: '-0.02em', margin: '0 0 22px', maxWidth: 860 }}>
-          Understand what an opportunity means financially — before you commit further.
-        </h1>
-        <p style={{ fontSize: 17, color: c.textMuted, lineHeight: 1.6, maxWidth: 640, margin: 0 }}>
-          MANOP makes the financial implications of a property, an investment or a site clearer: what it
-          would cost, what it could produce, which assumptions drive the answer, and what is still unknown.
-          Lenders make lending decisions. MANOP does not.
-        </p>
-      </div>
+      </section>
 
-      {/* ── MODULES ──────────────────────────────────────── */}
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '16px 24px 24px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
-          {MODULES.map(m => {
-            const Icon = m.icon
-            const live = m.status === 'available'
-            return (
-              <div key={m.title} style={{
-                background: c.surfaceCard, border: `1px solid ${c.border}`, borderRadius: 12,
-                padding: 24, display: 'flex', flexDirection: 'column', opacity: live ? 1 : 0.92,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-                  <span style={{
-                    width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: c.intelligencePurpleBg,
-                  }}>
-                    <Icon size={20} color={c.intelligencePurple} />
-                  </span>
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', padding: '4px 10px',
-                    borderRadius: designTokens.radius.full, color: statusColor(m.status), background: statusBg(m.status),
-                  }}>
-                    {STATUS_LABEL[m.status]}
-                  </span>
+      {/* MODULES */}
+      <section className="pg-sec pg-alt">
+        <div className="hm-wrap">
+          <span className="hm-eyebrow">What is here</span>
+          <h2 className="pg-h2">Five parts, with their real status.</h2>
+          <p className="hm-lead">Finance Intelligence is not a separate product. It sits where finance questions already arise, and it says plainly which parts are available today and which are not yet.</p>
+          <div className="pg-cards">
+            {MODULES.map(m => {
+              const Icon = m.icon
+              return (
+                <div className="pg-card" key={m.title}>
+                  <div className="pg-top">
+                    <span className="pg-ico"><Icon size={20} /></span>
+                    <span className={`pg-chip ${m.status === 'available' ? 'on' : 'dev'}`}>{STATUS_LABEL[m.status]}</span>
+                  </div>
+                  <span className="pg-for">{m.who}</span>
+                  <h3>{m.title}</h3>
+                  <p>{m.body}</p>
+                  <div className="where">{m.where}</div>
+                  {m.href && <Link href={m.href} className="pg-link">{m.cta} <ArrowRight size={15} /></Link>}
                 </div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>{m.title}</h2>
-                <p style={{ fontSize: 14, color: c.textMuted, lineHeight: 1.6, margin: '0 0 14px', flex: 1 }}>{m.body}</p>
-                <div style={{ fontSize: 12.5, color: c.textFaint, marginBottom: m.href ? 16 : 0, lineHeight: 1.5 }}>{m.where}</div>
-                {m.href && (
-                  <Link href={m.href} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
-                    fontSize: 13.5, fontWeight: 700, color: c.intelligencePurple, textDecoration: 'none',
-                  }}>
-                    {m.cta} <ArrowRight size={15} />
-                  </Link>
-                )}
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* ── HOW IT STAYS HONEST ──────────────────────────── */}
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '48px 24px 88px' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: c.intelligencePurple, marginBottom: 10 }}>HOW WE KEEP IT HONEST</div>
-        <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: 800, margin: '0 0 32px', maxWidth: 640, lineHeight: 1.15 }}>
-          Every number says where it came from.
-        </h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
-          {[
-            { icon: Sigma, title: 'Calculated, not guessed', body: 'Repayments, yields, debt cover and appraisal arithmetic come from a deterministic engine. Language models explain results; they never produce the numbers.' },
-            { icon: ShieldCheck, title: 'Sourced and dated', body: 'Anything drawn from a lender or public source carries where it came from and when it was last checked. Stale information is withdrawn, not shown as current.' },
-            { icon: CircleHelp, title: 'Unknown stays unknown', body: 'Where evidence is missing, MANOP says so. Your own assumptions are labelled as yours — they are never quietly promoted to facts.' },
-          ].map(p => {
-            const Icon = p.icon
-            return (
-              <div key={p.title} style={{ borderTop: `2px solid ${c.intelligencePurple}`, paddingTop: 18 }}>
-                <Icon size={20} color={c.intelligencePurple} style={{ marginBottom: 12 }} />
-                <div style={{ fontSize: 15.5, fontWeight: 700, marginBottom: 6 }}>{p.title}</div>
-                <div style={{ fontSize: 13.5, color: c.textMuted, lineHeight: 1.6 }}>{p.body}</div>
-              </div>
-            )
-          })}
+      {/* TWO SIDES */}
+      <section className="pg-sec">
+        <div className="hm-wrap">
+          <span className="hm-eyebrow">Who it helps</span>
+          <h2 className="pg-h2">Two sides of finance, around one development.</h2>
+          <div className="pg-split even">
+            <div className="pg-box yes">
+              <h3>Buyers</h3>
+              <ul>
+                <li>See how much you would need to borrow and the cash needed now, from your own deposit.</li>
+                <li>Understand a developer’s payment plan as a monthly burden and how long it runs.</li>
+                <li>Know what you are committing to before you go further.</li>
+              </ul>
+            </div>
+            <div className="pg-box yes">
+              <h3>Investors and developers</h3>
+              <ul>
+                <li>Test yield, income, debt service and debt cover on your own assumptions.</li>
+                <li>Appraise a site scenario: costs, finance cost, required profit and an indicative residual land value.</li>
+                <li>See which assumptions move the answer most, through sensitivity.</li>
+              </ul>
+            </div>
+          </div>
         </div>
-        <p style={{ fontSize: 12.5, color: c.textFaint, marginTop: 40, maxWidth: 680, lineHeight: 1.6 }}>
-          Everything in Finance Intelligence is indicative and based on the information provided. It is not
-          financial, legal or investment advice, and is not a lender decision. Final terms depend on lender
-          underwriting, valuation, title review and your eligibility.
-        </p>
-      </div>
+      </section>
+
+      {/* HONEST */}
+      <section className="pg-sec pg-alt">
+        <div className="hm-wrap">
+          <span className="hm-eyebrow">How we keep it honest</span>
+          <h2 className="pg-h2">Every number says where it came from.</h2>
+          <div className="pg-pr">
+            {PRINCIPLES.map(p => (
+              <div key={p.title}><p.icon size={20} /><b>{p.title}</b><p>{p.body}</p></div>
+            ))}
+          </div>
+          <p className="pg-fine">Everything in Finance Intelligence is indicative and based on the information provided. It is not financial, legal or investment advice, and it is not a lender decision. Final terms depend on lender underwriting, valuation, title review and your eligibility.</p>
+        </div>
+      </section>
     </div>
   )
 }

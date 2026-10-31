@@ -8,9 +8,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdmin } from '../../../../../../lib/admin-guard'
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const { review_notes, considerations, reviewed, publish } = await req.json()
+  // Explicit admin check (RLS is the real enforcement; this gives a clear 401/403 and stops non-admin callers early).
+  const guard = await requireAdmin(req)
+  if ('error' in guard) return guard.error
+  const { review_notes, considerations, reviewed, publish } = await req.json().catch(() => ({}))
 
   const authHeader = req.headers.get('authorization')
   const sb = createClient(

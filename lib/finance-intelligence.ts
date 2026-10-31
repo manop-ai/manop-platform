@@ -51,7 +51,37 @@ export interface AffordabilityOutputs {
   ltv_pct: number
   indicative_monthly_repayment_ngn: number
   total_repayment_ngn: number
+  // Cash needed up front: the deposit actually applied to the price PLUS the fees entered. (Capped at the price:
+  // a "deposit" above the price used to be counted in full, overstating the cash needed.)
   cash_requirement_ngn: number
+  // Added to make the figures separable (older saved analyses simply lack them):
+  deposit_applied_ngn?: number        // deposit actually applied to the price
+  fees_included_ngn?: number          // fees counted in cash_requirement_ngn
+  excess_deposit_ngn?: number         // deposit entered beyond the price (not needed)
+  outstanding_balance_ngn?: number    // purchase balance left after the deposit (= mortgage_requirement_ngn here)
+  total_interest_ngn?: number         // total_repayment_ngn - mortgage_requirement_ngn
+}
+
+// What the affordability figures include and leave out. Shown next to the numbers so they are not read as a quote.
+export const AFFORDABILITY_ASSUMPTIONS = [
+  'Indicative repayment uses the standard amortising-loan formula on the amount left after your deposit, at the rate and tenor you entered.',
+  'Fees: only the fees you entered are counted in the cash needed up front. Legal, valuation, agency, stamp duty, insurance and any lender charges are not added unless you enter them.',
+  'The repayment excludes insurance, taxes and other charges, and a variable rate can change it.',
+  'This is a preliminary scenario from your own inputs. A lender decides eligibility, the rate and the amount after its own review.',
+]
+
+// Returns plain-language problems; an empty list means the inputs can be calculated. NaN, Infinity, negatives,
+// a zero price, an impossible rate, a non-positive tenor and a deposit above the price are all rejected.
+export function validateAffordabilityInputs(i: Partial<AffordabilityInputs>): string[] {
+  const errs: string[] = []
+  const fin = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
+  if (!fin(i.property_price_ngn) || i.property_price_ngn <= 0) errs.push('Enter a property price above zero.')
+  if (!fin(i.deposit_available_ngn) || i.deposit_available_ngn < 0) errs.push('Deposit cannot be negative.')
+  else if (fin(i.property_price_ngn) && i.property_price_ngn > 0 && i.deposit_available_ngn > i.property_price_ngn) errs.push('Deposit cannot be more than the property price.')
+  if (!fin(i.fees_ngn) || i.fees_ngn < 0) errs.push('Fees cannot be negative.')
+  if (!fin(i.interest_rate_pct) || i.interest_rate_pct < 0 || i.interest_rate_pct > 100) errs.push('Interest rate must be between 0% and 100%.')
+  if (!fin(i.loan_tenor_years) || i.loan_tenor_years <= 0 || i.loan_tenor_years > 50) errs.push('Loan tenor must be above 0 and no more than 50 years.')
+  return errs
 }
 
 export function calculateLTV(propertyPriceNgn: number, mortgageRequirementNgn: number): number {
@@ -63,10 +93,16 @@ export function calculateRequiredEquity(propertyPriceNgn: number, mortgageRequir
   return Math.max(propertyPriceNgn - mortgageRequirementNgn, 0)
 }
 
+// Callers should run validateAffordabilityInputs first and show its messages; this function does not guess for bad input.
 export function calculateAffordability(inputs: AffordabilityInputs): AffordabilityOutputs {
-  const mortgageRequirement = Math.max(inputs.property_price_ngn - inputs.deposit_available_ngn, 0)
+  const deposit = Math.max(inputs.deposit_available_ngn, 0)
+  const depositApplied = Math.min(deposit, Math.max(inputs.property_price_ngn, 0))
+  const fees = Math.max(inputs.fees_ngn, 0)
+  const mortgageRequirement = Math.max(inputs.property_price_ngn - depositApplied, 0)
   const ltv = calculateLTV(inputs.property_price_ngn, mortgageRequirement)
-  const monthlyRepayment = calculateMortgagePayment(mortgageRequirement, inputs.interest_rate_pct, inputs.loan_tenor_years)
+  const monthlyRepayment = mortgageRequirement === 0
+    ? 0
+    : calculateMortgagePayment(mortgageRequirement, inputs.interest_rate_pct, inputs.loan_tenor_years)
   const totalRepayment = monthlyRepayment * inputs.loan_tenor_years * 12
   const requiredEquity = calculateRequiredEquity(inputs.property_price_ngn, mortgageRequirement)
 
@@ -76,7 +112,12 @@ export function calculateAffordability(inputs: AffordabilityInputs): Affordabili
     ltv_pct: ltv,
     indicative_monthly_repayment_ngn: monthlyRepayment,
     total_repayment_ngn: totalRepayment,
-    cash_requirement_ngn: inputs.deposit_available_ngn + inputs.fees_ngn,
+    cash_requirement_ngn: depositApplied + fees,
+    deposit_applied_ngn: depositApplied,
+    fees_included_ngn: fees,
+    excess_deposit_ngn: Math.max(deposit - depositApplied, 0),
+    outstanding_balance_ngn: mortgageRequirement,
+    total_interest_ngn: Math.max(totalRepayment - mortgageRequirement, 0),
   }
 }
 
@@ -85,20 +126,33 @@ export function calculateAffordability(inputs: AffordabilityInputs): Affordabili
 // function; those only ever come from an actual stored lender decision
 // (a future finance_products / lender-decision record), never from this
 // calculation layer.
+// LABELS DESCRIBE THE CALCULATION, NOT A LENDER OUTCOME. The earlier names ("Mortgage Suitable Candidate",
+// "Developer Payment Plan Likely") read as a verdict on the buyer; they are renamed to say what was actually computed.
+// The thresholds (50 / 70 / 90 % loan-to-value) are MANOP model assumptions for grouping scenarios, not lender rules
+// or universal financial standards, and not advice. Stored analyses written before this rename carry the old strings;
+// LEGACY_SUITABILITY_LABELS maps them for display.
 export type FinanceSuitabilityLabel =
-  | 'Mortgage Suitable Candidate'
-  | 'Possible — Lender Review Required'
-  | 'High Equity Required'
-  | 'Developer Payment Plan Likely'
-  | 'Cash Buyer Likely'
-  | 'Finance Status Unknown'
+  | 'Lower loan share indicated: lender review still required'
+  | 'Moderate loan share indicated: lender review required'
+  | 'High equity contribution indicated'
+  | 'Very high loan share indicated: a developer plan or larger deposit may be worth exploring'
+  | 'Insufficient information to assess'
 
 export function getFinanceSuitabilityLabel(ltvPct: number | null): FinanceSuitabilityLabel {
-  if (ltvPct == null) return 'Finance Status Unknown'
-  if (ltvPct <= 50) return 'Mortgage Suitable Candidate'
-  if (ltvPct <= 70) return 'Possible — Lender Review Required'
-  if (ltvPct <= 90) return 'High Equity Required'
-  return 'Developer Payment Plan Likely'
+  if (ltvPct == null || !Number.isFinite(ltvPct) || ltvPct < 0) return 'Insufficient information to assess'
+  if (ltvPct <= 50) return 'Lower loan share indicated: lender review still required'
+  if (ltvPct <= 70) return 'Moderate loan share indicated: lender review required'
+  if (ltvPct <= 90) return 'High equity contribution indicated'
+  return 'Very high loan share indicated: a developer plan or larger deposit may be worth exploring'
+}
+
+export const LEGACY_SUITABILITY_LABELS: Record<string, string> = {
+  'Mortgage Suitable Candidate': 'Lower loan share indicated: lender review still required',
+  'Possible — Lender Review Required': 'Moderate loan share indicated: lender review required',
+  'High Equity Required': 'High equity contribution indicated',
+  'Developer Payment Plan Likely': 'Very high loan share indicated: a developer plan or larger deposit may be worth exploring',
+  'Cash Buyer Likely': 'Insufficient information to assess',
+  'Finance Status Unknown': 'Insufficient information to assess',
 }
 
 // ─── Investment Intelligence (Phase 3 — math extracted from the existing
@@ -157,9 +211,16 @@ export function calculateInvestmentCashflow(inputs: InvestmentCashflowInputs): I
     monthlyDebt = calculateMortgagePayment(loanAmount, inputs.interest_rate_pct ?? 0, inputs.loan_term_years ?? 0)
     equityIn = inputs.purchase_price_ngn * (downPct / 100)
   } else if (inputs.financing_structure === 'installment') {
-    const durationMonths = inputs.installment_duration_months ?? 1
-    monthlyDebt = inputs.purchase_price_ngn / durationMonths
+    // FIX: this used to divide the FULL price by the duration while also counting the deposit as equity, so the
+    // deposit was paid twice in the model (once up front, once inside every instalment). Only the balance after
+    // the deposit is spread over the duration. Whether a developer really spreads the balance equally is NOT
+    // known from the data; this is an indicative model, and callers must say so.
+    // A missing duration used to default to ONE month (debt = the whole price); it now yields no instalment and
+    // validateInvestmentInputs() reports it, rather than inventing a schedule.
+    const durationMonths = inputs.installment_duration_months ?? 0
     const depositPct = inputs.installment_deposit_pct ?? 30
+    const balance = inputs.purchase_price_ngn * (1 - depositPct / 100)
+    monthlyDebt = durationMonths > 0 ? balance / durationMonths : 0
     equityIn = inputs.purchase_price_ngn * (depositPct / 100)
   } else {
     monthlyDebt = 0
@@ -188,6 +249,29 @@ export function calculateInvestmentCashflow(inputs: InvestmentCashflowInputs): I
     verdict,
   }
 }
+
+// Plain-language problems with an investment scenario. No rental value, vacancy or expense is ever invented:
+// a missing or non-positive rent is reported, not defaulted.
+export function validateInvestmentInputs(i: Partial<InvestmentCashflowInputs>): string[] {
+  const errs: string[] = []
+  const fin = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
+  if (!fin(i.purchase_price_ngn) || i.purchase_price_ngn <= 0) errs.push('Enter a purchase price above zero.')
+  if (!fin(i.monthly_rent_ngn) || i.monthly_rent_ngn <= 0) errs.push('Enter the expected monthly rent: MANOP does not assume one.')
+  if (!fin(i.vacancy_pct) || i.vacancy_pct < 0 || i.vacancy_pct > 100) errs.push('Vacancy must be between 0% and 100%.')
+  if (!fin(i.operating_expenses_pct) || i.operating_expenses_pct < 0 || i.operating_expenses_pct > 100) errs.push('Operating expenses must be between 0% and 100% of rent.')
+  if (i.financing_structure === 'mortgage') {
+    if (!fin(i.down_payment_pct) || i.down_payment_pct < 0 || i.down_payment_pct > 100) errs.push('Down payment must be between 0% and 100%.')
+    if (!fin(i.interest_rate_pct) || i.interest_rate_pct < 0 || i.interest_rate_pct > 100) errs.push('Interest rate must be between 0% and 100%.')
+    if (!fin(i.loan_term_years) || i.loan_term_years <= 0 || i.loan_term_years > 50) errs.push('Loan term must be above 0 and no more than 50 years.')
+  } else if (i.financing_structure === 'installment') {
+    if (!fin(i.installment_deposit_pct) || i.installment_deposit_pct < 0 || i.installment_deposit_pct > 100) errs.push('Installment deposit must be between 0% and 100%.')
+    if (!fin(i.installment_duration_months) || i.installment_duration_months <= 0) errs.push('Enter the installment duration in months: MANOP does not assume one.')
+  }
+  return errs
+}
+
+export const INVESTMENT_VERDICT_NOTE =
+  'The viable / borderline / not-viable bands (gross yield 6% and 4%, cash-on-cash 5%, positive cash flow) are MANOP model assumptions for sorting scenarios. They are not market standards, a forecast or investment advice. Change the assumptions and the result changes.'
 
 // DSCR interpretation bands from the advisor pack — explicitly treated as
 // assumptions requiring validation, not universal financial truth. Do not
@@ -226,7 +310,12 @@ export interface UnitPaymentPlanOutputs {
 }
 
 export function calculateUnitPaymentPlan(inputs: UnitPaymentPlanInputs): UnitPaymentPlanOutputs | null {
-  if (!inputs.price_ngn || !inputs.deposit_pct || !inputs.installment_months) return null
+  // Validate explicitly instead of by truthiness: a 0% deposit is a valid plan (the old `!deposit_pct` test rejected it),
+  // while a missing, negative, non-finite or >100% value, or a missing/zero duration, is not calculable.
+  const fin = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
+  if (!fin(inputs.price_ngn) || inputs.price_ngn <= 0) return null
+  if (!fin(inputs.deposit_pct) || inputs.deposit_pct < 0 || inputs.deposit_pct > 100) return null
+  if (!fin(inputs.installment_months) || inputs.installment_months <= 0) return null
   const deposit = inputs.price_ngn * (inputs.deposit_pct / 100)
   const balance = Math.max(inputs.price_ngn - deposit, 0)
   const monthly = balance / inputs.installment_months
@@ -245,6 +334,70 @@ export function calculateUnitPaymentPlan(inputs: UnitPaymentPlanInputs): UnitPay
     monthly_installment_ngn: monthly,
     installment_months: inputs.installment_months,
     payment_pressure: pressure,
+  }
+}
+
+// What may honestly be SHOWN to a buyer for a unit's payment terms. The schema holds only deposit_pct and
+// installment_months; nothing records whether the balance really is equal monthly instalments, or who confirmed
+// the terms. So:
+//   - nothing recorded            -> say so, ask the developer;
+//   - deposit only                -> "Payment terms recorded; detailed schedule requires confirmation." (e.g. a
+//                                    deposit with a milestone-based balance: NO monthly figure is invented);
+//   - deposit + months            -> an INDICATIVE equal-instalment illustration, clearly labelled as such.
+// Official terms change only through the developer/admin process (see sql/phase18 proposal), never because a
+// buyer edited a calculator input.
+export type PaymentTermsKind = 'none_recorded' | 'terms_recorded_schedule_unconfirmed' | 'indicative_equal_installments'
+export type PaymentTermsStatus = 'developer_provided' | 'manop_reviewed' | 'awaiting_confirmation'
+
+export interface PaymentTermsDescription {
+  kind: PaymentTermsKind
+  headline: string
+  detail: string | null
+  deposit_ngn: number | null
+  plan: UnitPaymentPlanOutputs | null
+  caveats: string[]
+}
+
+export const PAYMENT_TERMS_CONFIRMATION_LINE = 'Payment terms recorded; detailed schedule requires confirmation.'
+
+export function describeUnitPaymentTerms(u: {
+  price_ngn?: number | null
+  deposit_pct?: number | null
+  installment_months?: number | null
+  terms_status?: PaymentTermsStatus | null
+}): PaymentTermsDescription {
+  const has = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
+  const price = has(u.price_ngn) && u.price_ngn > 0 ? u.price_ngn : null
+  const depositPct = has(u.deposit_pct) && u.deposit_pct >= 0 && u.deposit_pct <= 100 ? u.deposit_pct : null
+  const months = has(u.installment_months) && u.installment_months > 0 ? u.installment_months : null
+  const caveats: string[] = ['The developer must confirm its payment terms before you rely on them.']
+  if (u.terms_status === 'awaiting_confirmation') caveats.push('MANOP has asked the developer to confirm these terms.')
+  if (u.terms_status === 'developer_provided') caveats.push('Terms as provided by the developer.')
+  if (u.terms_status === 'manop_reviewed') caveats.push('Terms reviewed by MANOP against developer-supplied documents.')
+
+  if (depositPct == null && months == null) {
+    return { kind: 'none_recorded', headline: 'No payment terms recorded for this unit.', detail: 'Ask the developer through MANOP what deposit and payment structure applies.', deposit_ngn: null, plan: null, caveats }
+  }
+  const depositNgn = price != null && depositPct != null ? price * (depositPct / 100) : null
+  if (depositPct != null && months == null) {
+    return {
+      kind: 'terms_recorded_schedule_unconfirmed',
+      headline: PAYMENT_TERMS_CONFIRMATION_LINE,
+      detail: `${depositPct}% deposit recorded${depositNgn != null ? ` (about ₦${Math.round(depositNgn).toLocaleString('en-NG')})` : ''}. The structure of the balance has not been recorded, so no instalment schedule is shown.`,
+      deposit_ngn: depositNgn, plan: null, caveats,
+    }
+  }
+  const plan = price != null && depositPct != null && months != null
+    ? calculateUnitPaymentPlan({ price_ngn: price, deposit_pct: depositPct, installment_months: months }) : null
+  if (!plan) {
+    return { kind: 'terms_recorded_schedule_unconfirmed', headline: PAYMENT_TERMS_CONFIRMATION_LINE, detail: 'A deposit or duration is recorded but the figures cannot be calculated from what is on file.', deposit_ngn: depositNgn, plan: null, caveats }
+  }
+  caveats.unshift(`Indicative only: this spreads the balance equally over ${months} months. The developer has not confirmed that this is the payment schedule.`)
+  return {
+    kind: 'indicative_equal_installments',
+    headline: `Indicative: ${depositPct}% deposit, then the balance spread over ${months} months`,
+    detail: `Deposit about ₦${Math.round(plan.deposit_ngn).toLocaleString('en-NG')}; balance ₦${Math.round(plan.balance_ngn).toLocaleString('en-NG')}; about ₦${Math.round(plan.monthly_installment_ngn).toLocaleString('en-NG')} a month if spread equally.`,
+    deposit_ngn: plan.deposit_ngn, plan, caveats,
   }
 }
 

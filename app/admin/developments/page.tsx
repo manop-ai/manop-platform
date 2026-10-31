@@ -28,6 +28,14 @@ import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
 import ImageUploader from '../../../components/ImageUploader'
 import ManopLoader from '../../../components/ManopLoader'
+import DevelopmentUpdates from '../../../components/DevelopmentUpdates'
+import { isSubmission, awaitingReview } from '../../../lib/submission-origin'
+import DevelopmentStatusControls from '../../../components/admin/DevelopmentStatusControls'
+import DocumentUploader, { UploadedDocument } from '../../../components/DocumentUploader'
+import DevelopmentCompleteness from '../../../components/DevelopmentCompleteness'
+import { authedFetch } from '../../../lib/authed-fetch'
+import { DOCUMENT_STATUSES, DOC_STATUS_LABEL, hasPublicLink, isConfidentialByNature, type DocStatus } from '../../../lib/documents-access'
+import { logDevelopmentChange } from '../../../lib/log-development-change'
 
 const COUNTRIES = [
   { code: 'NG', label: 'Nigeria', currency: 'NGN' },
@@ -70,6 +78,7 @@ interface Project {
   manop_flag_note: string | null
   images: string[] | null
   video_urls: string[] | null
+  description: string | null
 }
 
 interface UnitType {
@@ -77,6 +86,7 @@ interface UnitType {
   unit_type: string
   price_ngn: number | null
   quantity: number | null
+  available_count?: number | null
   size_sqm: number | null
 }
 
@@ -87,18 +97,8 @@ interface EvidenceRow {
   source: string | null
   status: string
   next_action: string | null
-  recorded_at: string
-}
-
-interface UpdateRow {
-  id: string
-  title: string
-  body: string | null
-  stage_at_time: string | null
-  completion_pct_at_time: number | null
-  posted_by_role: string
-  verification_status: string
-  posted_at: string
+  recorded_at?: string | null
+  created_at?: string | null
 }
 
 const EVIDENCE_CATEGORIES = [
@@ -164,6 +164,7 @@ export default function AdminDevelopmentsPage() {
   const [verifiedAgencies, setVerifiedAgencies] = useState<VerifiedAgency[]>([])
   const [pending, setPending] = useState<PendingProject[]>([])
   const [showPending, setShowPending] = useState(true)
+  const [submissionsWaiting, setSubmissionsWaiting] = useState(0)
 
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const flash = (text: string, ok: boolean) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 3500) }
@@ -198,7 +199,7 @@ export default function AdminDevelopmentsPage() {
     if (!developerId) { setProjects([]); return }
     const { data } = await sb
       .from('developer_projects')
-      .select('id,name,neighborhood,city,state,country_code,stage,total_units,handover_date,virtual_viewing,remote_purchase,poa_process,international_payment,publish_status,submitted_via,submitting_agency_id,mandate_type,mandate_document_url,fee_model,agency_fee_share_pct,reviewed_at,manop_checked_note,manop_flag_note,images,video_urls')
+      .select('id,name,neighborhood,city,state,country_code,stage,total_units,handover_date,virtual_viewing,remote_purchase,poa_process,international_payment,publish_status,submitted_via,submitting_agency_id,mandate_type,mandate_document_url,fee_model,agency_fee_share_pct,reviewed_at,manop_checked_note,manop_flag_note,images,video_urls,description')
       .eq('developer_id', developerId)
       .order('created_at', { ascending: false })
     setProjects((data as Project[]) || [])
@@ -210,10 +211,14 @@ export default function AdminDevelopmentsPage() {
   const loadPending = useCallback(async () => {
     const { data } = await sb
       .from('developer_projects')
-      .select('id,name,neighborhood,city,publish_status,submitted_via,created_at,developer_id,submitting_agency_id,developer_accounts(company_name),data_partners!submitting_agency_id(name,verification_status)')
+      .select('id,name,neighborhood,city,publish_status,reviewed_at,submitted_via,created_at,developer_id,submitting_agency_id,developer_accounts(company_name),data_partners!submitting_agency_id(name,verification_status)')
       .in('publish_status', ['draft', 'pending_review'])
       .order('created_at', { ascending: false })
-    setPending(((data as any[]) || []).map(p => ({
+    const all = (data as any[]) || []
+    setSubmissionsWaiting(all.filter(p => awaitingReview(p)).length)
+    // Every development is reviewed in /admin/developments/review, whoever created it.
+    // This list is only drafts that have not been sent for review yet.
+    setPending(all.filter(p => p.publish_status === 'draft' && !isSubmission(p)).map(p => ({
       ...p,
       developer_name: Array.isArray(p.developer_accounts) ? p.developer_accounts[0]?.company_name : p.developer_accounts?.company_name,
       agency_name: Array.isArray(p.data_partners) ? p.data_partners[0]?.name : p.data_partners?.name,
@@ -276,7 +281,7 @@ export default function AdminDevelopmentsPage() {
   function emptyProjForm() {
     return {
       name: '', neighborhood: '', city: '', state: '', country_code: 'NG',
-      stage: 'Foundation', total_units: '', handover_date: '',
+      stage: 'Foundation', total_units: '', handover_date: '', description: '',
       title_type: '', virtual_viewing: false, remote_purchase: false, poa_process: false,
       international_payment: false,
       submitted_via: 'manop_direct' as 'manop_direct' | 'agency_submission',
@@ -307,6 +312,7 @@ export default function AdminDevelopmentsPage() {
       stage:                 current.stage || 'Foundation',
       total_units:           current.total_units != null ? String(current.total_units) : '',
       handover_date:         current.handover_date ? current.handover_date.slice(0, 10) : '',
+      description:           current.description || '',
       title_type:            '',
       virtual_viewing:       !!current.virtual_viewing,
       remote_purchase:       !!current.remote_purchase,
@@ -339,6 +345,7 @@ export default function AdminDevelopmentsPage() {
       stage:                   projForm.stage,
       total_units:             projForm.total_units ? parseInt(projForm.total_units) : null,
       handover_date:           projForm.handover_date || null,
+      description:             projForm.description.trim() || null,
       virtual_viewing:         projForm.virtual_viewing,
       remote_purchase:         projForm.remote_purchase,
       poa_process:             projForm.poa_process,
@@ -382,6 +389,7 @@ export default function AdminDevelopmentsPage() {
       stage:                   projForm.stage,
       total_units:             projForm.total_units ? parseInt(projForm.total_units) : null,
       handover_date:           projForm.handover_date || null,
+      description:             projForm.description.trim() || null,
       virtual_viewing:         projForm.virtual_viewing,
       remote_purchase:         projForm.remote_purchase,
       poa_process:             projForm.poa_process,
@@ -426,6 +434,39 @@ export default function AdminDevelopmentsPage() {
     flash('✓ Notes saved', true)
     await loadProjects(selectedDeveloperId)
     await loadPending()
+  }
+
+  async function sendToReview() {
+    if (!selectedProjectId) { flash('Select a development first', false); return }
+    const current = currentProject()
+    const { error } = await sb.from('developer_projects').update({ publish_status: 'pending_review' }).eq('id', selectedProjectId)
+    if (error) { flash(`Error: ${error.message}`, false); return }
+    if (current) {
+      void logDevelopmentChange(sb, 'development_submitted', {
+        projectId: current.id, projectName: current.name, neighborhood: current.neighborhood,
+        city: current.city, countryCode: current.country_code, actorUserId: user?.id ?? null, actorRole: 'admin',
+      }, { origin: 'manop_add_development' })
+    }
+    flash('✓ Sent to the review queue', true)
+    await loadProjects(selectedDeveloperId)
+    await loadPending()
+  }
+
+  // Documents uploaded here go to Cloudinary (DocumentUploader) and are stored
+  // against the development immediately — same developer_documents table the
+  // agency and developer flows use.
+  async function persistUploadedDocs(docs: UploadedDocument[]) {
+    if (!selectedProjectId || !selectedDeveloperId || docs.length === 0) return
+    const { error } = await sb.from('developer_documents').insert(
+      docs.map(d => ({
+        developer_id: selectedDeveloperId, project_id: selectedProjectId,
+        document_type: d.document_type, document_name: d.document_name,
+        document_url: d.url, provided_by: 'MANOP', publicly_visible: false,
+      })),
+    )
+    if (error) { flash(`Error: ${error.message}`, false); return }
+    flash(`✓ ${docs.length} document${docs.length > 1 ? 's' : ''} stored`, true)
+    await loadDocuments(selectedProjectId)
   }
 
   async function saveAsPendingReview() {
@@ -512,13 +553,14 @@ export default function AdminDevelopmentsPage() {
   interface AdminDoc {
     id: string; document_type: string; document_name: string; document_url: string
     verified: boolean; provided_by: string | null; provided_at: string
+    status: DocStatus | null; publicly_visible: boolean | null; verification_note: string | null
   }
   const [documents, setDocuments] = useState<AdminDoc[]>([])
 
   const loadDocuments = useCallback(async (projectId: string) => {
     if (!projectId) { setDocuments([]); return }
     const { data } = await sb.from('developer_documents')
-      .select('id,document_type,document_name,document_url,verified,provided_by,provided_at')
+      .select('id,document_type,document_name,document_url,verified,provided_by,provided_at,status,publicly_visible,verification_note')
       .eq('project_id', projectId)
       .order('provided_at', { ascending: false })
     setDocuments((data as AdminDoc[]) || [])
@@ -526,12 +568,20 @@ export default function AdminDevelopmentsPage() {
 
   useEffect(() => { loadDocuments(selectedProjectId) }, [selectedProjectId, loadDocuments])
 
-  async function toggleDocVerified(docId: string, verified: boolean) {
-    await sb.from('developer_documents').update({
-      verified,
-      verified_at: verified ? new Date().toISOString() : null,
-    }).eq('id', docId)
+  // Review status and public visibility are SEPARATE decisions, both recorded in document_review_events.
+  const [docMsg, setDocMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  async function reviewDoc(docId: string, patch: Record<string, unknown>, ok: string) {
+    setDocMsg(null)
+    const res = await authedFetch(`/api/admin/documents/${docId}/review`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
+    const j = await res.json().catch(() => ({}))
+    setDocMsg({ ok: res.ok, text: res.ok ? ok : (j.error || 'Could not update the document.') })
     await loadDocuments(selectedProjectId)
+  }
+  // Files open through the protected route (it checks who is asking) rather than a raw stored link.
+  async function openDoc(docId: string) {
+    const res = await authedFetch(`/api/documents/${docId}/file`); const j = await res.json().catch(() => ({}))
+    if (!res.ok) { setDocMsg({ ok: false, text: j.error || 'Could not open the document.' }); return }
+    window.open(j.url, '_blank', 'noopener,noreferrer')
   }
 
   // ── Unit types ───────────────────────────────────────────────
@@ -546,7 +596,7 @@ export default function AdminDevelopmentsPage() {
   const loadUnitTypes = useCallback(async (projectId: string) => {
     if (!projectId) { setUnitTypes([]); return }
     const { data } = await sb.from('developer_unit_types')
-      .select('id,unit_type,price_ngn,quantity,size_sqm')
+      .select('id,unit_type,price_ngn,quantity,available_count,size_sqm')
       .eq('project_id', projectId)
       .order('price_ngn', { ascending: true, nullsFirst: true })
     setUnitTypes((data as UnitType[]) || [])
@@ -593,89 +643,94 @@ export default function AdminDevelopmentsPage() {
   // (e.g. The Lavender) actually needs. Previously there was nowhere to
   // record this except one freeform review-notes blob.
   const [evidenceRows, setEvidenceRows] = useState<EvidenceRow[]>([])
-  const [newEvidence, setNewEvidence] = useState({
-    category: 'other', claim: '', source: '', status: 'unknown', next_action: '',
-  })
+  const emptyEvidence = { category: 'other', claim: '', source: '', status: 'unknown', next_action: '' }
+  const [newEvidence, setNewEvidence] = useState(emptyEvidence)
+  const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null)
+  const [savingEvidence, setSavingEvidence] = useState(false)
+  // Errors are shown NEXT TO the evidence form and stay until the next attempt. The page-level
+  // flash() banner sits at the top of a very long page and vanishes after 3.5s, so a failed save
+  // at the bottom looked like "nothing happened".
+  const [evidenceError, setEvidenceError] = useState<string | null>(null)
+  const [evidenceNotice, setEvidenceNotice] = useState<string | null>(null)
 
-  const loadEvidence = useCallback(async (projectId: string) => {
-    if (!projectId) { setEvidenceRows([]); return }
-    const { data } = await sb.from('development_evidence')
-      .select('id,category,claim,source,status,next_action,recorded_at')
-      .eq('project_id', projectId)
-      .order('recorded_at', { ascending: false })
-    setEvidenceRows((data as EvidenceRow[]) || [])
+  const describeDbError = (e: { message?: string; code?: string; details?: string | null; hint?: string | null }) =>
+    e.code === 'PGRST205' || e.code === '42P01'
+      ? 'The evidence register has not been created in the database yet (table development_evidence is missing). Run sql/phase12_development_evidence.sql in the Supabase SQL editor, then reload this page.'
+      : [e.message, e.code ? `(code ${e.code})` : null, e.details, e.hint].filter(Boolean).join(' ')
+
+  const loadEvidence = useCallback(async (projectId: string): Promise<EvidenceRow[] | null> => {
+    if (!projectId) { setEvidenceRows([]); return [] }
+    // select('*') so a column-name difference cannot make the whole list fail to load.
+    const { data, error } = await sb.from('development_evidence').select('*').eq('project_id', projectId)
+    if (error) {
+      setEvidenceRows([])
+      setEvidenceError(`The saved evidence could not be loaded: ${describeDbError(error)}`)
+      return null
+    }
+    const rows = ((data as EvidenceRow[]) || []).slice().sort((a, b) =>
+      String(b.recorded_at || b.created_at || '').localeCompare(String(a.recorded_at || a.created_at || '')))
+    setEvidenceRows(rows)
+    return rows
   }, [])
 
-  useEffect(() => { loadEvidence(selectedProjectId) }, [selectedProjectId, loadEvidence])
+  useEffect(() => { setEvidenceError(null); setEvidenceNotice(null); setEditingEvidenceId(null); setNewEvidence(emptyEvidence); loadEvidence(selectedProjectId) }, [selectedProjectId, loadEvidence])
 
-  async function addEvidence() {
-    if (!selectedProjectId) { flash('Select a development first', false); return }
-    if (!newEvidence.claim.trim()) { flash('Describe the claim or fact being recorded', false); return }
+  async function saveEvidence() {
+    setEvidenceError(null); setEvidenceNotice(null)
+    if (!selectedProjectId) { setEvidenceError('Select a development first.'); return }
+    const claim = newEvidence.claim.trim()
+    if (!claim) { setEvidenceError('Describe the claim or fact being recorded.'); return }
 
-    const { error } = await sb.from('development_evidence').insert({
-      project_id: selectedProjectId,
+    const fields = {
       category: newEvidence.category,
-      claim: newEvidence.claim.trim(),
+      claim,
       source: newEvidence.source.trim() || null,
       status: newEvidence.status,
       next_action: newEvidence.next_action.trim() || null,
-    })
-
-    if (error) { flash(`Error: ${error.message}`, false); return }
-    flash('✓ Evidence recorded', true)
-    setNewEvidence({ category: 'other', claim: '', source: '', status: 'unknown', next_action: '' })
-    await loadEvidence(selectedProjectId)
+    }
+    setSavingEvidence(true)
+    try {
+      if (editingEvidenceId) {
+        // .select() returns the rows actually changed: an empty result means the database
+        // (row-level security) refused the update without raising an error.
+        const { data, error } = await sb.from('development_evidence').update(fields).eq('id', editingEvidenceId).select('id')
+        if (error) { setEvidenceError(`Not saved: ${describeDbError(error)}`); return }
+        if (!data || data.length === 0) { setEvidenceError('Not saved: the database did not update this row. You may not have permission to edit evidence.'); return }
+      } else {
+        const { error } = await sb.from('development_evidence').insert({ project_id: selectedProjectId, ...fields })
+        if (error) { setEvidenceError(`Not saved: ${describeDbError(error)}`); return }
+      }
+      // Confirm persistence by reading it back, not by trusting the insert call.
+      const rows = await loadEvidence(selectedProjectId)
+      if (rows === null) return
+      const found = rows.some(r => r.claim === claim && r.category === fields.category)
+      if (!found) {
+        setEvidenceError('The save reported success but the evidence could not be read back. Reading evidence for draft developments may be blocked for your account; check the development_evidence read policy.')
+        return
+      }
+      setEvidenceNotice(editingEvidenceId ? 'Evidence updated.' : 'Evidence recorded. You can add another.')
+      setEditingEvidenceId(null)
+      // Keep the category so several items of one kind can be added quickly.
+      setNewEvidence({ ...emptyEvidence, category: newEvidence.category })
+    } finally { setSavingEvidence(false) }
   }
+
+  function startEditEvidence(e: EvidenceRow) {
+    setEvidenceError(null); setEvidenceNotice(null)
+    setEditingEvidenceId(e.id)
+    setNewEvidence({ category: e.category, claim: e.claim, source: e.source || '', status: e.status, next_action: e.next_action || '' })
+  }
+  function cancelEditEvidence() { setEditingEvidenceId(null); setNewEvidence(emptyEvidence); setEvidenceError(null) }
 
   async function deleteEvidence(id: string) {
-    await sb.from('development_evidence').delete().eq('id', id)
-    setEvidenceRows(prev => prev.filter(e => e.id !== id))
-  }
-
-  // ── Construction updates — history, not a single overwritten field ──
-  // developer_projects.stage/completion_pct still exist for the "current
-  // state" summary shown elsewhere, but this is the actual timeline —
-  // admin can post on behalf of unclaimed developers (no login exists to
-  // post it themselves), which is the primary real-world case today.
-  const [updateRows, setUpdateRows] = useState<UpdateRow[]>([])
-  const [newUpdate, setNewUpdate] = useState({ title: '', body: '', stage_at_time: '', completion_pct_at_time: '' })
-
-  const loadUpdates = useCallback(async (projectId: string) => {
-    if (!projectId) { setUpdateRows([]); return }
-    const { data } = await sb.from('development_updates')
-      .select('id,title,body,stage_at_time,completion_pct_at_time,posted_by_role,verification_status,posted_at')
-      .eq('project_id', projectId)
-      .order('posted_at', { ascending: false })
-    setUpdateRows((data as UpdateRow[]) || [])
-  }, [])
-
-  useEffect(() => { loadUpdates(selectedProjectId) }, [selectedProjectId, loadUpdates])
-
-  async function addUpdate() {
-    if (!selectedProjectId) { flash('Select a development first', false); return }
-    if (!newUpdate.title.trim()) { flash('Give the update a short title', false); return }
-
-    const { data: { user } } = await sb.auth.getUser()
-    const { error } = await sb.from('development_updates').insert({
-      project_id: selectedProjectId,
-      title: newUpdate.title.trim(),
-      body: newUpdate.body.trim() || null,
-      stage_at_time: newUpdate.stage_at_time || null,
-      completion_pct_at_time: newUpdate.completion_pct_at_time ? parseInt(newUpdate.completion_pct_at_time) : null,
-      posted_by_role: 'admin',
-      posted_by_user_id: user?.id || null,
-      verification_status: 'manop_confirmed',
-    })
-
-    if (error) { flash(`Error: ${error.message}`, false); return }
-    flash('✓ Update posted', true)
-    setNewUpdate({ title: '', body: '', stage_at_time: '', completion_pct_at_time: '' })
-    await loadUpdates(selectedProjectId)
-  }
-
-  async function deleteUpdate(id: string) {
-    await sb.from('development_updates').delete().eq('id', id)
-    setUpdateRows(prev => prev.filter(u => u.id !== id))
+    if (!window.confirm('Remove this evidence entry?')) return
+    setEvidenceError(null); setEvidenceNotice(null)
+    const { data, error } = await sb.from('development_evidence').delete().eq('id', id).select('id')
+    if (error) { setEvidenceError(`Not removed: ${describeDbError(error)}`); return }
+    if (!data || data.length === 0) { setEvidenceError('Not removed: the database did not delete this row. You may not have permission to remove evidence.'); return }
+    if (editingEvidenceId === id) cancelEditEvidence()
+    await loadEvidence(selectedProjectId)
+    setEvidenceNotice('Evidence removed.')
   }
 
   // ── Theme ────────────────────────────────────────────────────
@@ -709,14 +764,17 @@ export default function AdminDevelopmentsPage() {
             ← Command Center
           </Link>
           <div>
-            <div style={{ fontWeight: 700, color: text, fontSize: 14 }}>Admin · Reviewed Developments</div>
-            <div style={{ fontSize: 11, color: text3 }}>Add developers &amp; projects — no developer login required</div>
+            <div style={{ fontWeight: 700, color: text, fontSize: 14 }}>Admin · Add / Manage Developments</div>
+            <div style={{ fontSize: 11, color: text3 }}>Create and manage developments. Every development is reviewed under Review Submissions before it can be published.</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Link href="/admin/developments/review" style={{ background: submissionsWaiting > 0 ? 'rgba(245,158,11,0.12)' : 'transparent', color: submissionsWaiting > 0 ? '#F59E0B' : text2, border: `1px solid ${submissionsWaiting > 0 ? 'rgba(245,158,11,0.3)' : border}`, borderRadius: 7, padding: '0.4rem 0.75rem', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>
+            Review Submissions{submissionsWaiting > 0 ? ` (${submissionsWaiting})` : ''}
+          </Link>
           {pending.length > 0 && (
             <button onClick={() => setShowPending(v => !v)} style={{ background: showPending ? accent : 'rgba(245,158,11,0.12)', color: showPending ? '#fff' : '#F59E0B', border: 'none', borderRadius: 7, padding: '0.4rem 0.75rem', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-              {pending.length} pending review
+              {pending.length} of your drafts
             </button>
           )}
           <div style={{ fontSize: 12, color: text3 }}>{user?.email}</div>
@@ -731,6 +789,21 @@ export default function AdminDevelopmentsPage() {
           </div>
         )}
 
+        {selectedProjectId && (
+          <nav aria-label="Sections" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 14, position: 'sticky', top: 0, zIndex: 5, background: bg }}>
+            {[['Standard','#sec-standard'],['Media','#sec-media'],['Units','#sec-units'],['Updates','#sec-updates'],['Documents','#sec-docs'],['Evidence','#sec-evidence'],['Review','#sec-review']].map(([l,h]) => (
+              <a key={h} href={h} style={{ flex: '0 0 auto', padding: '0.4rem 0.8rem', borderRadius: 999, border: `1px solid ${border}`, fontSize: 12, fontWeight: 600, color: text2, textDecoration: 'none' }}>{l}</a>
+            ))}
+          </nav>
+        )}
+
+        {selectedProjectId && (
+          <div id="sec-standard" style={{ marginBottom: 16, scrollMarginTop: 72 }}>
+            <DevelopmentCompleteness projectId={selectedProjectId} dark={dark} tier="all"
+              reloadToken={`${documents.length}-${unitTypes.length}-${evidenceRows.length}-${currentProject()?.images?.length ?? 0}-${currentProject()?.description ?? ''}`} />
+          </div>
+        )}
+
         {/* ── Pending Review — every developer, always findable ──
              This is the fix for drafts feeling like they vanish: Step 2's
              dropdown only ever showed projects for whichever developer
@@ -742,7 +815,7 @@ export default function AdminDevelopmentsPage() {
           <div style={{ ...sectionStyle, borderColor: 'rgba(245,158,11,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                Pending review · {pending.length}
+                Your drafts &amp; records · {pending.length}
               </div>
               <button onClick={() => setShowPending(false)} style={{ background: 'transparent', border: 'none', color: text3, cursor: 'pointer', fontSize: 12 }}>Hide</button>
             </div>
@@ -968,6 +1041,11 @@ export default function AdminDevelopmentsPage() {
               </div>
             </div>
 
+            <label style={labelStyle}>Description (shown on the public development page)</label>
+            <textarea style={{ ...inputStyle, minHeight: 80, marginBottom: 12 }} value={projForm.description}
+              placeholder="Describe the development as the evidence supports. Keep unverified claims in the evidence register below."
+              onChange={e => setProjForm({ ...projForm, description: e.target.value })} />
+
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' as const, margin: '4px 0 12px' }}>
               {([
                 ['virtual_viewing', 'Virtual viewing available'],
@@ -990,6 +1068,7 @@ export default function AdminDevelopmentsPage() {
           </div>
         )}
 
+        <div id="sec-media" style={{ scrollMarginTop: 72 }} />
         {/* ── Media — gallery, real Cloudinary uploads ────────── */}
         {selectedProjectId && (
           <div style={sectionStyle}>
@@ -1016,6 +1095,7 @@ export default function AdminDevelopmentsPage() {
           </div>
         )}
 
+        <div id="sec-units" style={{ scrollMarginTop: 72 }} />
         {/* ── Unit types — was missing entirely anywhere in the app ── */}
         {selectedProjectId && (
           <div style={sectionStyle}>
@@ -1070,63 +1150,29 @@ export default function AdminDevelopmentsPage() {
           </div>
         )}
 
-        {/* ── Construction updates — the actual timeline ─────── */}
-        {selectedProjectId && (
-          <div style={sectionStyle}>
-            <div style={{ fontSize: '0.65rem', fontWeight: 700, color: teal, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
-              Construction updates · {updateRows.length}
-            </div>
-
-            {updateRows.length === 0 ? (
-              <div style={{ fontSize: 13, color: text3, marginBottom: 12 }}>No updates posted yet.</div>
-            ) : (
-              <div style={{ marginBottom: 14 }}>
-                {updateRows.map(u => (
-                  <div key={u.id} style={{ padding: '0.6rem 0', borderBottom: `1px solid ${border}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 13.5 }}>{u.title}</div>
-                        {u.body && <div style={{ fontSize: 12.5, color: text2, marginTop: 2 }}>{u.body}</div>}
-                        <div style={{ fontSize: 11, color: text3, marginTop: 3 }}>
-                          {new Date(u.posted_at).toLocaleDateString()} · Posted by {u.posted_by_role}
-                          {u.stage_at_time ? ` · ${u.stage_at_time}` : ''}
-                          {u.completion_pct_at_time != null ? ` · ${u.completion_pct_at_time}% complete` : ''}
-                        </div>
-                      </div>
-                      <button onClick={() => deleteUpdate(u.id)} style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 15 }}>×</button>
-                    </div>
-                  </div>
-                ))}
+        <div id="sec-updates" style={{ scrollMarginTop: 72 }} />
+        {/* ── Development updates — canonical timeline (shared with developer/agency) ── */}
+        {selectedProjectId && (() => {
+          const sel = projects.find(p => p.id === selectedProjectId)
+          if (!sel) return null
+          return (
+            <div style={sectionStyle}>
+              <div style={{ fontSize: '0.65rem', fontWeight: 700, color: teal, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
+                Development updates
               </div>
-            )}
-
-            <label style={labelStyle}>Update title</label>
-            <input style={inputStyle} placeholder="e.g. Roofing complete" value={newUpdate.title} onChange={e => setNewUpdate({ ...newUpdate, title: e.target.value })} />
-
-            <label style={labelStyle}>Details (optional)</label>
-            <textarea style={{ ...inputStyle, minHeight: 50 }} value={newUpdate.body} onChange={e => setNewUpdate({ ...newUpdate, body: e.target.value })} />
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div>
-                <label style={labelStyle}>Stage at this update</label>
-                <select style={inputStyle} value={newUpdate.stage_at_time} onChange={e => setNewUpdate({ ...newUpdate, stage_at_time: e.target.value })}>
-                  <option value="">—</option>
-                  {['Planning', 'Foundation', 'Structure', 'Finishing', 'Completed'].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Completion % at this update</label>
-                <input style={inputStyle} type="number" min={0} max={100} value={newUpdate.completion_pct_at_time} onChange={e => setNewUpdate({ ...newUpdate, completion_pct_at_time: e.target.value })} />
-              </div>
+              <DevelopmentUpdates
+                key={sel.id}
+                projectId={sel.id} projectName={sel.name}
+                neighborhood={sel.neighborhood} city={sel.city} countryCode={sel.country_code}
+                role="admin" dark={dark}
+                units={unitTypes.map(u => ({ id: u.id, unit_type: u.unit_type, price_ngn: u.price_ngn, available_count: u.available_count ?? null }))}
+                onSaved={() => loadUnitTypes(sel.id)}
+              />
             </div>
+          )
+        })()}
 
-            <button style={btnPrimary} onClick={addUpdate}>+ Post update</button>
-            <div style={{ fontSize: 11, color: text3, marginTop: 8 }}>
-              Posted by admin, this is recorded as MANOP-confirmed — appropriate for unclaimed developers where there's no one else to post on their behalf. A developer or agency posting their own update is recorded as their own report, not MANOP's.
-            </div>
-          </div>
-        )}
-
+        <div id="sec-docs" style={{ scrollMarginTop: 72 }} />
         {/* ── Submitted documents — exactly as the agency/developer
              attached them, not a summary. Previously invisible here:
              admin had no way to see mandate letters, land titles,
@@ -1137,25 +1183,51 @@ export default function AdminDevelopmentsPage() {
             <div style={{ fontSize: '0.65rem', fontWeight: 700, color: teal, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
               Submitted documents · {documents.length}
             </div>
+            <DocumentUploader
+              documents={[]}
+              onChange={persistUploadedDocs}
+              typeOptions={['cac','land_title','planning_approval','building_approval','survey','allocation','other'].map(v => ({ value: v, label: v.replace(/_/g, ' ') }))}
+              defaultType="other"
+              dark={dark}
+              label="Upload documents"
+              hint="Brochure, drawings, approvals, title, survey — PDF, JPG or PNG. Stored in MANOP as soon as they upload."
+            />
+            <div style={{ height: 8 }} />
+            {docMsg && <div role="status" style={{ fontSize: 12.5, marginBottom: 8, color: docMsg.ok ? '#22C55E' : '#EF4444' }}>{docMsg.text}</div>}
             {documents.length === 0 ? (
-              <div style={{ fontSize: 13, color: text3 }}>No documents attached to this submission yet.</div>
+              <div style={{ fontSize: 13, color: text3 }}>No documents stored for this development yet.</div>
             ) : (
-              documents.map(d => (
-                <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0', borderBottom: `1px solid ${border}` }}>
-                  <div>
-                    <a href={d.document_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13.5, fontWeight: 600, color: text, textDecoration: 'none' }}>
-                      {d.document_name} ↗
-                    </a>
-                    <div style={{ fontSize: 11, color: text3, marginTop: 2, textTransform: 'capitalize' }}>
-                      {d.document_type.replace(/_/g, ' ')} · provided by {d.provided_by || 'unknown'} · {new Date(d.provided_at).toLocaleDateString()}
+              documents.map(d => {
+                const st = (d.status ?? 'provided') as DocStatus
+                const isPub = d.publicly_visible === true
+                const confidential = isConfidentialByNature(d)
+                return (
+                  <div key={d.id} style={{ padding: '0.8rem 0', borderBottom: `1px solid ${border}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <button onClick={() => openDoc(d.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: text, textAlign: 'left', fontFamily: 'inherit' }}>{d.document_name} ↗</button>
+                        <div style={{ fontSize: 11, color: text3, marginTop: 2, textTransform: 'capitalize' }}>{d.document_type.replace(/_/g, ' ')} · provided by {d.provided_by || 'unknown'} · {new Date(d.provided_at).toLocaleDateString()}</div>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: isPub ? '#22C55E' : text3, border: `1px solid ${isPub ? '#22C55E' : border}`, borderRadius: 4, padding: '2px 8px', alignSelf: 'flex-start' }}>{isPub ? 'Public' : 'Private'}</span>
                     </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
+                      <select aria-label="Review status" value={st} onChange={e => reviewDoc(d.id, { status: e.target.value }, 'Review status updated.')} style={{ ...inputStyle, width: 'auto', minHeight: 36, padding: '0.3rem 0.5rem', fontSize: 12.5 }}>
+                        {DOCUMENT_STATUSES.map(s => <option key={s} value={s}>{DOC_STATUS_LABEL[s]}</option>)}
+                      </select>
+                      {confidential
+                        ? <span style={{ fontSize: 12, color: text3 }}>Confidential commercial document: cannot be made public</span>
+                        : <button style={{ ...btnSecondary, minHeight: 36, padding: '0.3rem 0.8rem', fontSize: 12.5 }}
+                            onClick={() => { if (!isPub && !window.confirm('Make this document PUBLIC? Anyone visiting the development page will be able to open it. Being public does not mean MANOP has verified it.')) return; reviewDoc(d.id, { publicly_visible: !isPub }, isPub ? 'Document is now private.' : 'Document is now public.') }}>
+                            {isPub ? 'Make private' : 'Make public'}
+                          </button>}
+                    </div>
+                    {!isPub && hasPublicLink(d.document_url) && (
+                      <div style={{ fontSize: 11.5, color: '#F59E0B', marginTop: 6, lineHeight: 1.5 }}>Private in MANOP, but stored with a public link: anyone who has the link can still open the file. See the document-storage note in the deployment checklist.</div>
+                    )}
+                    {d.verification_note && <div style={{ fontSize: 12, color: text3, marginTop: 4 }}>Review note: {d.verification_note}</div>}
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: d.verified ? teal : text3, cursor: 'pointer', flexShrink: 0 }}>
-                    <input type="checkbox" checked={d.verified} onChange={e => toggleDocVerified(d.id, e.target.checked)} />
-                    {d.verified ? 'Independently confirmed' : 'Provided, not yet confirmed'}
-                  </label>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         )}
@@ -1177,6 +1249,7 @@ export default function AdminDevelopmentsPage() {
           </div>
         )}
 
+        <div id="sec-evidence" style={{ scrollMarginTop: 72 }} />
         {/* ── Development evidence register ───────────────────
              Per-claim ledger — distinguishes developer claims from what
              MANOP has actually confirmed. Feeds the public Dossier's
@@ -1189,7 +1262,7 @@ export default function AdminDevelopmentsPage() {
             </div>
 
             {evidenceRows.length === 0 ? (
-              <div style={{ fontSize: 13, color: text3, marginBottom: 12 }}>No individual claims recorded yet — the notes below stay as one summary until specific facts are logged here.</div>
+              <div style={{ fontSize: 13, color: text3, marginBottom: 12 }}>No evidence is recorded for this development yet. Add each claim, fact or source reference below; they are saved individually.</div>
             ) : (
               <div style={{ marginBottom: 14 }}>
                 {evidenceRows.map(e => (
@@ -1213,92 +1286,101 @@ export default function AdminDevelopmentsPage() {
                         {e.source && <div style={{ fontSize: 11, color: text3, marginTop: 2 }}>Source: {e.source}</div>}
                         {e.next_action && <div style={{ fontSize: 11, color: '#F59E0B', marginTop: 2 }}>Next: {e.next_action}</div>}
                       </div>
-                      <button onClick={() => deleteEvidence(e.id)} style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 15, flexShrink: 0 }}>×</button>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button type="button" onClick={() => startEditEvidence(e)} aria-label={`Edit evidence: ${e.claim.slice(0, 40)}`} style={{ background: 'transparent', border: `1px solid ${border}`, borderRadius: 6, color: text2, cursor: 'pointer', fontSize: 11, padding: '3px 8px', fontFamily: 'inherit' }}>Edit</button>
+                        <button type="button" onClick={() => deleteEvidence(e.id)} aria-label={`Remove evidence: ${e.claim.slice(0, 40)}`} style={{ background: 'transparent', border: `1px solid ${border}`, borderRadius: 6, color: '#EF4444', cursor: 'pointer', fontSize: 11, padding: '3px 8px', fontFamily: 'inherit' }}>Remove</button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
 
-            <label style={labelStyle}>Category</label>
-            <select style={inputStyle} value={newEvidence.category} onChange={e => setNewEvidence({ ...newEvidence, category: e.target.value })}>
+            <label htmlFor="ev-category" style={labelStyle}>Category</label>
+            <select id="ev-category" style={inputStyle} value={newEvidence.category} onChange={e => setNewEvidence({ ...newEvidence, category: e.target.value })}>
               {EVIDENCE_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
             </select>
 
-            <label style={labelStyle}>Claim / fact</label>
-            <textarea style={{ ...inputStyle, minHeight: 50 }} placeholder="e.g. Developer states 24-hour power supply." value={newEvidence.claim} onChange={e => setNewEvidence({ ...newEvidence, claim: e.target.value })} />
+            <label htmlFor="ev-claim" style={labelStyle}>Claim / fact</label>
+            <textarea id="ev-claim" style={{ ...inputStyle, minHeight: 50 }} placeholder="e.g. Developer states 24-hour power supply." value={newEvidence.claim} onChange={e => setNewEvidence({ ...newEvidence, claim: e.target.value })} />
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
-                <label style={labelStyle}>Source</label>
-                <input style={inputStyle} placeholder="e.g. Developer brochure" value={newEvidence.source} onChange={e => setNewEvidence({ ...newEvidence, source: e.target.value })} />
+                <label htmlFor="ev-source" style={labelStyle}>Source</label>
+                <input id="ev-source" style={inputStyle} placeholder="e.g. Developer brochure" value={newEvidence.source} onChange={e => setNewEvidence({ ...newEvidence, source: e.target.value })} />
               </div>
               <div>
-                <label style={labelStyle}>Status</label>
-                <select style={inputStyle} value={newEvidence.status} onChange={e => setNewEvidence({ ...newEvidence, status: e.target.value })}>
+                <label htmlFor="ev-status" style={labelStyle}>Status</label>
+                <select id="ev-status" style={inputStyle} value={newEvidence.status} onChange={e => setNewEvidence({ ...newEvidence, status: e.target.value })}>
                   {EVIDENCE_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
                 </select>
               </div>
             </div>
 
-            <label style={labelStyle}>What would move this forward (optional)</label>
-            <input style={inputStyle} placeholder="e.g. Obtain planning approval documentation" value={newEvidence.next_action} onChange={e => setNewEvidence({ ...newEvidence, next_action: e.target.value })} />
+            <label htmlFor="ev-next" style={labelStyle}>What would move this forward (optional)</label>
+            <input id="ev-next" style={inputStyle} placeholder="e.g. Obtain planning approval documentation" value={newEvidence.next_action} onChange={e => setNewEvidence({ ...newEvidence, next_action: e.target.value })} />
 
-            <button style={btnPrimary} onClick={addEvidence}>+ Record evidence</button>
+            <div style={{ fontSize: 11.5, color: text3, lineHeight: 1.55, marginTop: 8 }}>
+              Recording a source does not verify it. The status describes how well this claim is supported, and "independently verified" should only be chosen when MANOP has actually done that.
+            </div>
+
+            {evidenceError && (
+              <div role="alert" style={{ marginTop: 10, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '0.6rem 0.8rem', fontSize: 13, color: '#EF4444', wordBreak: 'break-word' }}>
+                {evidenceError}
+              </div>
+            )}
+            {evidenceNotice && !evidenceError && (
+              <div role="status" style={{ marginTop: 10, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '0.6rem 0.8rem', fontSize: 13, color: '#22C55E' }}>
+                {evidenceNotice}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+              <button type="button" style={{ ...btnPrimary, opacity: savingEvidence ? 0.6 : 1 }} disabled={savingEvidence} onClick={saveEvidence}>
+                {savingEvidence ? 'Saving…' : editingEvidenceId ? 'Save changes' : '+ Record evidence'}
+              </button>
+              {editingEvidenceId && (
+                <button type="button" onClick={cancelEditEvidence} style={{ ...btnPrimary, background: 'transparent', color: text2, border: `1px solid ${border}` }}>Cancel</button>
+              )}
+            </div>
           </div>
         )}
 
-        {/* ── Step 3: Review + publish ──────────────────────── */}
+        {/* ── Status: suspend, reinstate or delete (server enforces the rules) ── */}
+        {selectedProjectId && (
+          <div id="sec-status" style={sectionStyle}>
+            <div style={{ fontSize: '0.65rem', fontWeight: 700, color: teal, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
+              Suspend or delete
+            </div>
+            <DevelopmentStatusControls projectId={selectedProjectId} onChanged={async () => { await loadProjects(selectedDeveloperId); await loadPending() }} />
+          </div>
+        )}
+
+        {/* ── Step 3: Review — happens in Review Submissions for every development ── */}
         {selectedProjectId && (() => {
           const current = currentProject()
-          const isReviewed = !!current?.reviewed_at
+          if (!current) return null
+          const published = current.publish_status === 'published'
+          const inQueue = !published && awaitingReview(current)
           return (
-            <div style={sectionStyle}>
+            <div id="sec-review" style={sectionStyle}>
               <div style={{ fontSize: '0.65rem', fontWeight: 700, color: teal, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
-                Step 3 · MANOP review — required before publishing
+                Step 3 · Review
               </div>
-
-              <div style={{
-                display: 'inline-block', fontSize: 11, fontWeight: 700, padding: '0.3rem 0.65rem',
-                borderRadius: 6, marginBottom: 12,
-                color:      isReviewed ? '#0D9488' : '#F59E0B',
-                background: isReviewed ? 'rgba(13,148,136,0.12)' : 'rgba(245,158,11,0.12)',
-              }}>
-                {isReviewed
-                  ? `✓ Reviewed · ${new Date(current!.reviewed_at as string).toLocaleDateString()}`
-                  : 'Not yet reviewed'}
+              <div style={{ fontSize: 13, color: text2, lineHeight: 1.6, marginBottom: 12 }}>
+                {published
+                  ? 'This development is published. Further changes can be posted as development updates above.'
+                  : inQueue
+                    ? 'This development is in the review queue. Review, request information, mark as reviewed and publish from Review Submissions.'
+                    : 'Finish adding information, documents and evidence, then send it to the review queue. Every development is reviewed there before it can be published.'}
               </div>
-
-              <label style={labelStyle}>What we checked</label>
-              <textarea style={{ ...inputStyle, minHeight: 60 }} value={reviewForm.manop_checked_note} onChange={e => setReviewForm({ ...reviewForm, manop_checked_note: e.target.value })} />
-
-              <label style={labelStyle}>Identified considerations (or state that none were found)</label>
-              <textarea style={{ ...inputStyle, minHeight: 60 }} value={reviewForm.manop_flag_note} onChange={e => setReviewForm({ ...reviewForm, manop_flag_note: e.target.value })} />
-
-              <div style={{ fontSize: 11, color: text3, margin: '2px 0 12px' }}>
-                MANOP does not issue recommendations. Marking a development as reviewed means MANOP
-                has checked the information provided and recorded what it found — not that MANOP
-                endorses a purchase decision.
-              </div>
-
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const }}>
-                <button style={btnSecondary} onClick={saveNotes}>Save notes</button>
-                <button style={btnSecondary} onClick={saveAsPendingReview}>Save as pending review</button>
-                <button style={btnPrimary} onClick={markAsReviewed}>Mark as reviewed</button>
-                <button
-                  style={{ ...btnPrimary, opacity: isReviewed ? 1 : 0.4, cursor: isReviewed ? 'pointer' : 'not-allowed' }}
-                  onClick={publishDevelopment}
-                  disabled={!isReviewed}
-                >
-                  Publish
-                </button>
+                {!published && !inQueue && (
+                  <button style={btnPrimary} onClick={sendToReview}>Send to review queue</button>
+                )}
+                <Link href="/admin/developments/review" style={{ ...btnSecondary, display: 'inline-block', textDecoration: 'none' }}>
+                  Open Review Submissions →
+                </Link>
               </div>
-
-              {!isReviewed && (
-                <div style={{ fontSize: 11, color: '#F59E0B', marginTop: 8 }}>
-                  Publishing is blocked until this development is marked as reviewed.
-                </div>
-              )}
             </div>
           )
         })()}

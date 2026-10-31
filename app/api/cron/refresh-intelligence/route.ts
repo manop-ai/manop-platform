@@ -15,10 +15,13 @@ export async function POST(req: NextRequest) {
 }
 
 async function refresh(req: NextRequest) {
-  const secret = req.headers.get('x-cron-secret') || req.nextUrl.searchParams.get('secret')
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  // SECURITY FIX: this used to be open whenever CRON_SECRET was unset, and read the secret from a query string (which ends up in logs).
+  // It now fails closed. Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` automatically once CRON_SECRET is set in the project's
+  // environment variables, so the scheduled run works with no extra setup. An admin can also run it by hand with the same header.
+  const expected = process.env.CRON_SECRET
+  if (!expected) return NextResponse.json({ error: 'CRON_SECRET is not configured on the server.' }, { status: 503 })
+  const bearer = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
+  if (bearer !== expected) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const startedAt = Date.now()
   const errors: string[] = []

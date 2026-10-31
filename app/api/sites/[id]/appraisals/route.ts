@@ -70,6 +70,46 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     })
   }
 
+  // PHASE 5 (Development Finance): site_appraisals stays the system of
+  // record for Site Intelligence's own appraisal history and sensitivity
+  // table — this does not replace or duplicate that. It additionally
+  // writes a finance_analyses row (analysis_type: 'development_finance')
+  // so a Construction Appraisal run shows up in My Finance and the admin
+  // Finance Intelligence tab, exactly like Buyer Affordability and
+  // Investment Intelligence already do — both of those already reserved
+  // a 'development_finance' icon/label slot that nothing ever filled.
+  // Best-effort: a failure here never fails the appraisal itself, same
+  // posture as every other finance_analyses write in this codebase.
+  //
+  // No site_id column is assumed on finance_analyses (unconfirmed —
+  // no migration file for this table is tracked in the repo); site_id
+  // and scenario_id travel inside the jsonb `inputs` instead. Confirm
+  // with: select column_name from information_schema.columns where
+  // table_name = 'finance_analyses';
+  try {
+    await sb.from('finance_analyses').insert({
+      analysis_type: 'development_finance',
+      user_id: user?.id ?? null,
+      inputs: {
+        site_id: params.id,
+        scenario_id: body.scenario_id || null,
+        scenario_name: body.scenario_name || 'Base Case',
+        landowner_asking_price_ngn: body.landowner_asking_price_ngn,
+        build_cost_per_sqm_ngn: body.build_cost_per_sqm_ngn,
+        unit_mix: body.unit_mix,
+      },
+      outputs: {
+        gross_development_value_ngn: outputs.gross_development_value_ngn,
+        residual_land_value_ngn: outputs.residual_land_value_ngn,
+        residual_margin_pct: outputs.residual_margin_pct,
+        viability_label: outputs.viability_label,
+      },
+      input_provenance: 'user_stated',
+    })
+  } catch {
+    // best-effort — see comment above
+  }
+
   return NextResponse.json({ appraisal }, { status: 201 })
 }
 

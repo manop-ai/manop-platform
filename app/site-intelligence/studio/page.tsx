@@ -1,282 +1,201 @@
-'use client'
 // app/site-intelligence/studio/page.tsx
 //
-// Public introduction to MANOP Site Studio. A STATIC route at this
-// exact path — Next.js resolves it before the dynamic
-// app/site-intelligence/[id]/page.tsx for /site-intelligence/studio,
-// which is what fixed the earlier "Site not found" (that URL used to
-// fall through to the site-lookup route with "studio" read as an id).
+// Public introduction to MANOP Site Studio. A STATIC route at this exact path (Next.js resolves it before app/site-intelligence/[id]/page.tsx,
+// which is what fixed the earlier "Site not found" when "studio" was read as a site id).
 //
-// Kept under the normal public NavBar/Footer (DashboardShell only
-// suppresses those for the actual workspace routes) — this is a
-// marketing/introduction page, not the workspace itself.
+// Server component: the theme follows the site-wide light/dark choice (html[data-theme]) with no flash, and the page carries real metadata for search.
+// Every capability statement below was checked against the implementation (app/site-intelligence/[id]/studio/page.tsx, lib/scenario-templates.ts,
+// lib/development-presets.ts). What is NOT available yet is listed on the page, in plain words.
 //
-// Client component so it actually FOLLOWS the global light/dark
-// toggle live (getInitialDark + listenTheme — the same pattern the
-// Studio workspace itself uses), rather than only reading the
-// preference once per server render.
-//
-// The hero panel is a real, accurate mockup of Site Studio's actual
-// UI and visual language (the same toolbar layout, the same purple
-// facade-textured massing, the same green open-space objects) — not
-// a stock architectural render implying capability that doesn't
-// exist. Once real product screenshots are worth capturing, this is
-// the panel to replace with one.
-
+// The interface picture is an illustrative drawing built from plain SVG, labelled as such. It is not a screenshot and not a real site.
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
-import { getInitialDark, listenTheme, getDesignColors, designTokens } from '../../../lib/theme'
-import ManopLogo from '../../../components/ManopLogo'
-import TypologyIcon from '../../../components/TypologyIcon'
+import type { Metadata } from 'next'
 import { ArrowRight, Search, Sliders, Boxes, LineChart } from 'lucide-react'
+import '../../../components/home/home.css'
+import '../../../components/public/pub.css'
+import TypologyIcon from '../../../components/TypologyIcon'
+import { SITE_URL } from '../../../lib/market-intelligence'
+
+export const metadata: Metadata = {
+  title: 'Site Studio | MANOP',
+  description: 'Explore what a site could become. Site Studio is MANOP’s spatial workspace for viewing a site and its surroundings, testing indicative development scenarios in 2D and 3D, and carrying them into Construction Appraisal.',
+  alternates: { canonical: `${SITE_URL}/site-intelligence/studio` },
+  openGraph: { title: 'Site Studio | MANOP', description: 'A spatial workspace for exploring what a site could become, with every reading marked as fact, assumption, derived value or unknown.', url: `${SITE_URL}/site-intelligence/studio`, type: 'website' },
+}
+
+const WITH_WITHOUT = [
+  { t: 'Site intake', w: 'Open a site and see its context straight away: location, area, planning evidence and what is still unconfirmed. No blank canvas.', o: 'Days waiting on a feasibility study just to know whether a parcel is worth pursuing.' },
+  { t: 'Deal scenarios', w: 'Start from a development preset, then test alternatives side by side (storeys, coverage, unit mix) and compare them directly.', o: 'Every new configuration means another round with an architect before it can be compared with the last.' },
+  { t: 'Deal economics', w: 'A scenario’s unit counts and build area carry straight into Construction Appraisal, with no re-typing into a separate spreadsheet.', o: 'The site plan lives in one place and the numbers in another. Each geometry change means rebuilding the model by hand.' },
+  { t: 'Sharing', w: 'Share a read-only link to a scenario report. No MANOP account is needed on the other end.', o: 'A question comes up mid-meeting that the plan on the wall cannot answer, and momentum stalls.' },
+]
+
+const AVAILABLE = [
+  'Map and satellite views of the site, with its boundary',
+  'Controlled 2D and 3D views',
+  'Buildings and open space as editable scenario objects: draw, move, resize and rotate',
+  'Starter layouts generated from a development preset, as scenario assumptions',
+  'Scenario readings such as floor area, units and parking, each marked as fact, assumption, derived or unknown',
+  'A read-only share link and report for a scenario',
+  'Carrying a scenario’s quantities into Construction Appraisal',
+]
+const NOT_YET = [
+  'Zoning, roads and planning map layers',
+  'Split view',
+  'Access as a placed scenario object',
+  'Parking as a placed, editable object. Today it is an indicative area preview',
+  'Detailed quantity take-offs and cost plans in Construction Appraisal',
+]
+
+function Mock() {
+  return (
+    <div className="pg-mock" aria-hidden="true">
+      <div className="bar"><b>MANOP Site Studio</b><span>Site workspace</span><span className="sw"><i>2D</i><i>3D</i></span></div>
+      <div className="body">
+        <div className="side l">
+          {['Site area', 'Coverage', 'Storeys', 'Open space'].map(l => <div key={l}>{l}<i /></div>)}
+        </div>
+        <svg className="map" viewBox="0 0 500 340" preserveAspectRatio="xMidYMid slice">
+          <defs><pattern id="g" width="26" height="26" patternUnits="userSpaceOnUse"><path d="M26 0H0V26" fill="none" stroke="currentColor" strokeOpacity=".08" /></pattern></defs>
+          <rect width="500" height="340" fill="url(#g)" style={{ color: 'var(--hm-text)' }} />
+          <polygon points="90,60 420,40 460,290 60,300" fill="rgba(20,184,166,.07)" stroke="#14B8A6" strokeWidth="2" />
+          <polygon points="120,90 395,72 428,262 92,270" fill="none" stroke="#A78BFA" strokeWidth="1.2" strokeDasharray="6 5" />
+          <rect x="140" y="120" width="96" height="132" rx="3" fill="#5B2EFF" />
+          <rect x="150" y="130" width="76" height="112" rx="2" fill="none" stroke="#fff" strokeOpacity=".25" />
+          <rect x="258" y="150" width="76" height="102" rx="3" fill="#7C5FFF" />
+          <rect x="344" y="188" width="62" height="62" rx="3" fill="#2DD4BF" fillOpacity=".35" stroke="#2DD4BF" strokeOpacity=".7" />
+        </svg>
+        <div className="side r">
+          <div style={{ fontWeight: 700, color: 'var(--hm-muted)', marginBottom: 10 }}>SCENARIO READINGS</div>
+          {[['Floor area', 'sample'], ['Units', 'sample'], ['Parking', 'sample']].map(([l, v]) => <div key={l}>{l}<b>{v}</b></div>)}
+        </div>
+      </div>
+      <span className="pg-tag">Illustrative interface, not a real site</span>
+    </div>
+  )
+}
 
 export default function SiteStudioLandingPage() {
-  const [dark, setDark] = useState(getInitialDark)
-  useEffect(() => { return listenTheme(setDark) }, [])
-  const c = getDesignColors(dark)
-
   return (
-    <div style={{ background: c.background, color: c.textPrimary, fontFamily: designTokens.font.family }}>
-
-      {/* ── HERO ──────────────────────────────────────────────── */}
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '72px 24px 48px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <ManopLogo dark={dark} iconOnly height={26} />
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: c.intelligencePurple }}>SITE STUDIO</span>
-        </div>
-
-        <h1 style={{
-          fontSize: 'clamp(40px, 6.5vw, 76px)', fontWeight: 800, lineHeight: 0.98, letterSpacing: '-0.02em',
-          margin: '0 0 22px', maxWidth: 920,
-        }}>
-          Explore what a site<br />could become.
-        </h1>
-        <p style={{ fontSize: 17, color: c.textMuted, lineHeight: 1.6, marginBottom: 8, maxWidth: 520 }}>
-          MANOP Site Studio turns site evidence, planning context, and development assumptions into a real
-          spatial workspace — scenarios you can see, move, and reshape in 2D and 3D, backed by a deterministic
-          engine and every value marked as fact, assumption, or unknown.
-        </p>
-        <p style={{ fontSize: 13, color: c.textFaint, marginBottom: 32, maxWidth: 520 }}>
-          Built first for developers working across Nigeria and the wider African market — planners, architects,
-          and other professional workflows follow once this foundation is proven.
-        </p>
-        <Link
-          href="/site-intelligence/sandbox"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700,
-            padding: '15px 26px', borderRadius: designTokens.radius.sm, background: c.intelligencePurple,
-            color: '#fff', textDecoration: 'none',
-          }}
-        >
-          Explore Site Studio <ArrowRight size={17} />
-        </Link>
-
-        {/* Product mockup panel — Studio's real toolbar layout and
-            real visual language, not a stock render. */}
-        <div style={{ marginTop: 56 }}>
-          <StudioMockupPanel c={c} dark={dark} />
-        </div>
-      </div>
-
-      {/* ── BUILT FOR DEVELOPERS — With / Without MANOP ────────── */}
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '56px 24px' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: c.intelligencePurple, marginBottom: 10 }}>BUILT FOR DEVELOPERS</div>
-        <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 38px)', fontWeight: 800, marginBottom: 36, maxWidth: 700, lineHeight: 1.1 }}>
-          From a site to a scenario you can act on — without waiting on the next call.
-        </h2>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {[
-            {
-              title: 'Site Intake',
-              withText: "Open a site and see its context immediately — location, area, planning evidence, and what's still unconfirmed. No blank canvas.",
-              withoutText: 'Days waiting on a feasibility study just to know whether a parcel is worth pursuing further.',
-            },
-            {
-              title: 'Deal Scenarios',
-              withText: 'Generate a starter layout from a development preset, then test alternatives side by side — storeys, coverage, unit mix — and compare them directly.',
-              withoutText: 'Each new configuration means another round with an architect before you can compare it to the last one.',
-            },
-            {
-              title: 'Deal Economics',
-              withText: "A scenario's unit counts and build area carry straight into Construction Appraisal — no re-typing numbers into a separate spreadsheet.",
-              withoutText: 'The site plan lives in one place, the numbers in another. Every geometry change means rebuilding the model by hand.',
-            },
-            {
-              title: 'Stakeholder Presentation',
-              withText: 'Share a live, read-only link to a scenario — no MANOP account required on the other end — for a partner, investor, or professional to review.',
-              withoutText: "A question comes up mid-meeting that the site plan on the wall can't answer, and momentum stalls until the next one.",
-            },
-          ].map((row, i) => (
-            <div key={row.title} style={{
-              display: 'grid', gridTemplateColumns: '200px 1fr 1fr', gap: 24, padding: '26px 0',
-              borderTop: i === 0 ? `1px solid ${c.border}` : 'none', borderBottom: `1px solid ${c.border}`,
-            }}>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>{row.title}</div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: c.verificationTeal, marginBottom: 6 }}>WITH MANOP</div>
-                <div style={{ fontSize: 13.5, color: c.textMuted, lineHeight: 1.55 }}>{row.withText}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: c.textFaint, marginBottom: 6 }}>WITHOUT IT</div>
-                <div style={{ fontSize: 13.5, color: c.textFaint, lineHeight: 1.55 }}>{row.withoutText}</div>
-              </div>
+    <div className="hm">
+      {/* HERO */}
+      <section className="pg-hero">
+        <div className="hm-wrap pg-two">
+          <div>
+            <span className="hm-eyebrow">Site Studio</span>
+            <h1 className="pg-h1">Explore what a site could become.</h1>
+            <p className="pg-lead">Site Studio turns site evidence, planning context and development assumptions into a spatial workspace: scenarios you can see, move and reshape in 2D and 3D, with every reading marked as fact, assumption, derived value or unknown.</p>
+            <p className="pg-small">Built first for developers working across Nigeria and the wider African market. Planners, architects and other professional workflows come once this foundation is proven.</p>
+            <div className="pg-cta">
+              <Link href="/site-intelligence/sandbox" className="hm-btn p">Open Site Studio <ArrowRight size={16} /></Link>
+              <Link href="/site-intelligence" className="hm-btn g">Start from Site Intelligence</Link>
             </div>
-          ))}
+            <p className="pg-cta-note">Opens MANOP’s controlled test environment while Site Studio is in active development.</p>
+          </div>
+          <Mock />
         </div>
-      </div>
+      </section>
 
-      {/* ── TYPOLOGY STRIP ───────────────────────────────────── */}
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '56px 24px' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: c.intelligencePurple, marginBottom: 10 }}>BUILT FOR YOUR DEVELOPMENTS</div>
-        <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Starting with Multifamily Residential</h2>
-        <p style={{ fontSize: 13.5, color: c.textMuted, marginBottom: 32, maxWidth: 560 }}>
-          Multifamily is Site Studio's first fully-supported typology today — its own starter massing, its own
-          unit-mix logic, generated as real, editable buildings. The others below are on the roadmap, in the
-          order development activity in Nigeria calls for them.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
-          {([
-            { kind: 'multifamily_residential', label: 'Multi-Family', status: 'Live in Site Studio' },
-            { kind: 'mixed_use', label: 'Mixed Use', status: 'Live in Site Studio' },
-            { kind: 'townhouse', label: 'Townhouse', status: 'Live in Site Studio' },
-            { kind: 'single_family_residential', label: 'Single Family', status: 'Live in Site Studio' },
-            { kind: 'commercial', label: 'Commercial', status: 'Live in Site Studio' },
-          ] as const).map(t => (
-            <div key={t.kind} style={{ border: `1px solid ${c.border}`, borderRadius: designTokens.radius.sm, padding: '18px 14px', textAlign: 'center', background: c.surfaceCard }}>
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-                <TypologyIcon kind={t.kind} size={64} />
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{t.label}</div>
-              <div style={{ fontSize: 10.5, color: c.verificationTeal, marginTop: 4 }}>{t.status}</div>
-            </div>
-          ))}
-          {['Hospitality', 'Industrial', 'Retail'].map(label => (
-            <div key={label} style={{ border: `1px dashed ${c.border}`, borderRadius: designTokens.radius.sm, padding: '18px 14px', textAlign: 'center', opacity: 0.55 }}>
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-                <TypologyIcon kind="commercial" size={64} />
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{label}</div>
-              <div style={{ fontSize: 10.5, color: c.textFaint, marginTop: 4 }}>Planned</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── WHAT IT DOES ─────────────────────────────────────── */}
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '56px 24px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 22 }}>
-          <FeatureCard c={c} icon={<Search size={19} />} title="Explore" body="Start with a site and its available evidence — location, planning context, constraints — and see what's known before assuming anything." />
-          <FeatureCard c={c} icon={<Sliders size={19} />} title="Configure" body="Adjust development assumptions — storeys, coverage, unit mix, parking — starting from a category-specific starter layout or your own." />
-          <FeatureCard c={c} icon={<Boxes size={19} />} title="Visualize" body="See the resulting scenario directly on the site, in 2D and 3D massing — draw, move, resize, and rotate buildings by hand." />
-          <FeatureCard c={c} icon={<LineChart size={19} />} title="Evaluate" body="Carry a scenario's quantities straight into Construction Appraisal — part of Finance Intelligence — to understand indicative development economics." />
-        </div>
-      </div>
-
-      {/* ── FROM SITE TO SCENARIO ───────────────────────────────── */}
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '40px 24px 90px' }}>
-        <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 28, textAlign: 'center' }}>From site to scenario</h2>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
-          {['Site Intelligence', 'Site Context', 'Development Scenario', '2D / 3D Massing', 'Scenario Readings', 'Construction Appraisal'].map((step, i, arr) => (
-            <div key={step} style={{ display: 'flex', alignItems: 'center' }}>
-              <div style={{
-                padding: '11px 18px', border: `1px solid ${c.border}`, borderRadius: designTokens.radius.sm,
-                background: c.surfaceCard, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
-              }}>{step}</div>
-              {i < arr.length - 1 && <ArrowRight size={16} color={c.textFaint} style={{ margin: '0 10px', flexShrink: 0 }} />}
-            </div>
-          ))}
-        </div>
-        <p style={{ textAlign: 'center', fontSize: 13, color: c.textFaint, marginTop: 22, maxWidth: 580, marginLeft: 'auto', marginRight: 'auto' }}>
-          Every scenario reading is marked as a fact, an assumption, a derived value, or unknown — Site Studio
-          never presents an assumption as if it were planning approval.
-        </p>
-      </div>
-
-      {/* ── CTA ──────────────────────────────────────────────── */}
-      <div style={{ borderTop: `1px solid ${c.border}`, padding: '56px 24px', textAlign: 'center' }}>
-        <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 18 }}>Ready to explore a site?</div>
-        <Link
-          href="/site-intelligence/sandbox"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700,
-            padding: '15px 26px', borderRadius: designTokens.radius.sm, background: c.intelligencePurple,
-            color: '#fff', textDecoration: 'none',
-          }}
-        >
-          Explore Site Studio <ArrowRight size={17} />
-        </Link>
-        <div style={{ fontSize: 12, color: c.textFaint, marginTop: 12 }}>
-          Opens MANOP's controlled test environment while Site Studio is in active development.
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function FeatureCard({ c, icon, title, body }: { c: ReturnType<typeof getDesignColors>; icon: React.ReactNode; title: string; body: string }) {
-  return (
-    <div style={{ border: `1px solid ${c.border}`, borderRadius: designTokens.radius.sm, padding: 22, background: c.surfaceCard }}>
-      <div style={{ width: 36, height: 36, borderRadius: 9, background: 'rgba(109,40,217,0.12)', color: c.intelligencePurple, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-        {icon}
-      </div>
-      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 7 }}>{title}</div>
-      <div style={{ fontSize: 13.5, color: c.textMuted, lineHeight: 1.6 }}>{body}</div>
-    </div>
-  )
-}
-
-/**
- * A real mockup of Studio's own UI — same toolbar row shape, same
- * left/centre/right layout, same purple facade-textured massing and
- * green open space the actual workspace renders. Built with plain
- * divs/SVG, not a screenshot — accurate to what the product does,
- * not aspirational.
- */
-function StudioMockupPanel({ c, dark }: { c: ReturnType<typeof getDesignColors>; dark: boolean }) {
-  return (
-    <div style={{ border: `1px solid ${c.border}`, borderRadius: 10, overflow: 'hidden', boxShadow: dark ? '0 30px 80px rgba(0,0,0,0.45)' : '0 30px 80px rgba(15,23,42,0.12)' }}>
-      {/* toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: `1px solid ${c.border}`, background: c.surfaceCard }}>
-        <ManopLogo dark={dark} iconOnly height={16} />
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: c.textMuted }}>Site Studio</span>
-        <div style={{ width: 1, height: 14, background: c.border }} />
-        <span style={{ fontSize: 11.5, fontWeight: 600 }}>SITE-000231</span>
-        <div style={{ flex: 1 }} />
-        <div style={{ display: 'flex', border: `1px solid ${c.border}`, borderRadius: 4, overflow: 'hidden' }}>
-          <span style={{ padding: '3px 9px', fontSize: 10.5, fontWeight: 700, background: c.intelligencePurple, color: '#fff' }}>2D</span>
-          <span style={{ padding: '3px 9px', fontSize: 10.5, fontWeight: 700, color: c.textMuted }}>3D</span>
-        </div>
-      </div>
-      {/* body */}
-      <div style={{ display: 'flex', height: 340 }}>
-        <div style={{ width: 130, borderRight: `1px solid ${c.border}`, background: c.surfaceCard, padding: 12 }}>
-          {['Site Area', 'Coverage', 'Storeys', 'Open Space'].map(l => (
-            <div key={l} style={{ fontSize: 9.5, color: c.textFaint, marginBottom: 12 }}>{l}<div style={{ height: 4, marginTop: 4, borderRadius: 2, background: c.border, width: '80%' }} /></div>
-          ))}
-        </div>
-        <div style={{ flex: 1, position: 'relative', background: dark ? '#0B1220' : '#EEF2F7' }}>
-          <svg viewBox="0 0 500 340" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
-            <polygon points="90,60 420,40 460,290 60,300" fill="none" stroke="#0D9488" strokeWidth="2" />
+      {/* WHAT IT DOES */}
+      <section className="pg-sec pg-alt">
+        <div className="hm-wrap">
+          <span className="hm-eyebrow">What it does</span>
+          <h2 className="pg-h2">From evidence to a scenario you can test.</h2>
+          <div className="pg-cards" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))' }}>
             {[
-              { x: 140, y: 120, w: 90, h: 130, fill: '#4C1D95' },
-              { x: 260, y: 150, w: 70, h: 100, fill: '#4C1D95' },
-              { x: 340, y: 190, w: 60, h: 60, fill: '#22C55E', opacity: 0.35 },
-            ].map((r, i) => (
-              <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} fill={r.fill} opacity={r.opacity ?? 1} rx={3} />
+              { i: Search, t: 'Explore', b: 'Start with a site and its available evidence (location, planning context, constraints) and see what is known before assuming anything.' },
+              { i: Sliders, t: 'Configure', b: 'Adjust development assumptions such as storeys, coverage, unit mix and parking, starting from a category-specific starter layout or your own.' },
+              { i: Boxes, t: 'Visualise', b: 'See the scenario directly on the site, in 2D and 3D massing. Draw, move, resize and rotate buildings by hand.' },
+              { i: LineChart, t: 'Evaluate', b: 'Carry a scenario’s quantities into Construction Appraisal, part of Finance Intelligence, to understand indicative development economics.' },
+            ].map(x => (
+              <div className="pg-card" key={x.t}>
+                <span className="pg-ico"><x.i size={19} /></span>
+                <h3>{x.t}</h3>
+                <p>{x.b}</p>
+              </div>
             ))}
-          </svg>
+          </div>
+          <div className="pg-flow" aria-label="From site to scenario">
+            {['Site Intelligence', 'Site context', 'Development scenario', '2D and 3D massing', 'Scenario readings', 'Construction Appraisal'].map((s, i, a) => (
+              <span key={s} style={{ display: 'contents' }}>
+                <span className={`s${i === a.length - 1 ? ' hi' : ''}`}>{s}</span>
+                {i < a.length - 1 && <ArrowRight size={15} />}
+              </span>
+            ))}
+          </div>
+          <p className="pg-note">Every reading is marked as a fact, an assumption, a derived value or unknown. Site Studio never presents an assumption as if it were planning approval.</p>
         </div>
-        <div style={{ width: 150, borderLeft: `1px solid ${c.border}`, background: c.surfaceCard, padding: 12 }}>
-          <div style={{ fontSize: 9.5, color: c.textMuted, fontWeight: 700, marginBottom: 10 }}>SCENARIO READINGS</div>
-          {[['GFA', '3,862 sqm'], ['Units', '32'], ['Parking', '40']].map(([l, v]) => (
-            <div key={l} style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 9, color: c.textFaint }}>{l}</div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{v}</div>
-            </div>
-          ))}
+      </section>
+
+      {/* BUILT FOR DEVELOPERS */}
+      <section className="pg-sec">
+        <div className="hm-wrap">
+          <span className="hm-eyebrow">Built for developers</span>
+          <h2 className="pg-h2">From a site to a scenario you can act on.</h2>
+          <div className="pg-rows">
+            {WITH_WITHOUT.map(r => (
+              <div className="pg-row" key={r.t}>
+                <b>{r.t}</b>
+                <div className="w"><small>WITH MANOP</small><p>{r.w}</p></div>
+                <div className="o"><small>WITHOUT IT</small><p>{r.o}</p></div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
+
+      {/* TYPOLOGIES */}
+      <section className="pg-sec pg-alt">
+        <div className="hm-wrap">
+          <span className="hm-eyebrow">Development types</span>
+          <h2 className="pg-h2">Starting with multifamily residential.</h2>
+          <p className="hm-lead">Multifamily has the most developed starter layout today: its own massing and unit-mix logic, generated as real, editable buildings. Four other categories have simpler starter presets. The rest are planned, in the order development activity in Nigeria calls for them.</p>
+          <div className="pg-typ">
+            {([
+              { kind: 'multifamily_residential', label: 'Multifamily', s: 'Developed starter layout' },
+              { kind: 'mixed_use', label: 'Mixed use', s: 'Simple starter preset' },
+              { kind: 'townhouse', label: 'Townhouse', s: 'Simple starter preset' },
+              { kind: 'single_family_residential', label: 'Single family', s: 'Simple starter preset' },
+              { kind: 'commercial', label: 'Commercial', s: 'Simple starter preset' },
+            ] as const).map(t => (
+              <div key={t.kind}>
+                <TypologyIcon kind={t.kind} size={64} />
+                <b>{t.label}</b><em>{t.s}</em>
+              </div>
+            ))}
+            {['Hospitality', 'Industrial', 'Retail'].map(l => (
+              <div className="p" key={l}>
+                <TypologyIcon kind="commercial" size={64} />
+                <b>{l}</b><em>Planned</em>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* AVAILABLE / NOT YET */}
+      <section className="pg-sec">
+        <div className="hm-wrap">
+          <span className="hm-eyebrow">Where it stands</span>
+          <h2 className="pg-h2">What works today, and what does not yet.</h2>
+          <div className="pg-split">
+            <div className="pg-box yes"><h3>Available today</h3><ul>{AVAILABLE.map(a => <li key={a}>{a}</li>)}</ul></div>
+            <div className="pg-box no"><h3>Not available yet</h3><ul>{NOT_YET.map(a => <li key={a}>{a}</li>)}</ul></div>
+          </div>
+        </div>
+      </section>
+
+      {/* CLOSE */}
+      <section className="pg-alt">
+        <div className="hm-wrap pg-close">
+          <h2>Ready to explore a site?</h2>
+          <div className="pg-cta" style={{ justifyContent: 'center' }}>
+            <Link href="/site-intelligence/sandbox" className="hm-btn p">Open Site Studio <ArrowRight size={16} /></Link>
+            <Link href="/finance" className="hm-btn g">See Finance Intelligence</Link>
+          </div>
+          <p className="pg-fine" style={{ margin: '24px auto 0' }}>Scenarios are indicative explorations built on your assumptions. They are not designs, engineering, planning approval or investment advice.</p>
+        </div>
+      </section>
     </div>
   )
 }

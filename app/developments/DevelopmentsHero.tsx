@@ -28,8 +28,8 @@ export default function DevelopmentsHero({ dark }: { dark: boolean }) {
     <HeroSearchBlock
       dark={dark}
       heroImage={HERO_IMAGE}
-      heading="Real developments, independently reviewed."
-      subheading="What was checked, what was found, and what still needs verification — never a recommendation. Search any area to see what MANOP has reviewed there."
+      heading="Selected developments, reviewed claim by claim."
+      subheading="What was examined, what the evidence supports and what still needs verification. Information for your own decision, never a recommendation. Search any area to see what MANOP has reviewed there."
       placeholder="Search an area — e.g. Lekki Phase 1, Ikoyi, East Legon…"
       onSearch={handleSearch}
       primaryAction={{ label: 'For Developers', icon: <Building2 size={15} />, onClick: () => router.push('/developer/onboard') }}

@@ -11,6 +11,7 @@ import { getInitialDark, listenTheme } from '../../lib/theme'
 import { ManopLogoSVG } from '../../components/ManopLogo'
 import { Download } from 'lucide-react'
 import { sb } from '../../lib/supabase/client'
+import { saveFinanceAnalysis } from '../../lib/save-finance-analysis'
 
 // PHASE 3 (Investment Intelligence persistence): this page's own analyze()
 // math is left exactly as-is — it's tested, and lib/finance-intelligence.ts's
@@ -572,6 +573,7 @@ export default function CalculatorPage() {
   const [showGate,  setShowGate]  = useState(false)
   const [financeReference, setFinanceReference] = useState<string | null>(null)
   const [savingAnalysis,   setSavingAnalysis]   = useState(false)
+  const [saveError,        setSaveError]        = useState('')
 
   const priceNGN     = parseMillion(priceM)
   const monthlyNGN   = parseMillion(rentM)
@@ -648,7 +650,8 @@ export default function CalculatorPage() {
   // on-screen result, matching FinancingModal's own saveAssessmentAndContinue.
   async function saveAnalysis(result: Analysis) {
     setSavingAnalysis(true)
-    const { data, error: dbError } = await sb.from('finance_analyses').insert({
+    // Saved through the server route (ownership comes from the verified token). A failure is shown, not swallowed.
+    const r = await saveFinanceAnalysis({
       analysis_type: 'investment_intelligence',
       inputs: {
         purchase_price_ngn: result.priceNGN,
@@ -676,13 +679,10 @@ export default function CalculatorPage() {
         dscr: result.primary.dscr,
         structures: result.selected,
       },
-      input_provenance: 'user_stated',
-    }).select('id, reference').single()
-
+    })
     setSavingAnalysis(false)
-    if (!dbError && data) setFinanceReference(data.reference)
-    // Silent on failure, same posture as Buyer Affordability — the
-    // on-screen analysis is already complete and useful without this.
+    if (r.saved) { setFinanceReference(r.reference); setSaveError('') }
+    else setSaveError(r.error || 'This analysis could not be saved.')
   }
 
   function handleDownload() {
@@ -822,7 +822,7 @@ export default function CalculatorPage() {
                   : `Negative cash flow of ${fmtNGN(analysis.primary.monthlyCashFlow)}/month. Rent of ${fmtNGN(analysis.monthlyRentNGN)}/month is insufficient for ${fmtNGN(analysis.priceNGN)}. Renegotiate.`}
               </div>
               <div style={{ fontSize: 11, color: text3, marginTop: 10 }}>
-                {savingAnalysis ? 'Saving analysis…' : financeReference ? `Saved as ${financeReference} — this analysis is recorded, not a MANOP or lender decision.` : 'This is your own working analysis, not a MANOP or lender decision.'}
+                {savingAnalysis ? 'Saving analysis…' : financeReference ? `Saved as ${financeReference} — this analysis is recorded, not a MANOP or lender decision.` : saveError ? `Not saved: ${saveError} Your result above is still valid.` : 'This is your own working analysis, not a MANOP or lender decision.'}
               </div>
             </div>
 
@@ -915,7 +915,7 @@ export default function CalculatorPage() {
             <div style={{ ...CARD, display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
               <div style={{ fontWeight: 700, color: text, fontSize: 14 }}>Find properties matching these numbers</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
-                <Link href="/search" style={{ flex: 1, background: '#5B2EFF', color: '#fff', padding: '0.6rem 1rem', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600, textAlign: 'center' as const, minWidth: 120 }}>Browse properties →</Link>
+                <Link href="/developments" style={{ flex: 1, background: '#5B2EFF', color: '#fff', padding: '0.6rem 1rem', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600, textAlign: 'center' as const, minWidth: 120 }}>Browse properties →</Link>
                 <Link href="/markets?area=Lekki%20Phase%201" style={{ flex: 1, background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: text, padding: '0.6rem 1rem', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600, textAlign: 'center' as const, minWidth: 120, border: `1px solid ${border}` }}>Lekki Ph 1 market →</Link>
               </div>
             </div>

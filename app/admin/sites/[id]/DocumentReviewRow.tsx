@@ -9,6 +9,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { authedFetch } from '../../../../lib/authed-fetch'
 import { DocStatusBadge } from '../../../../components/site-intelligence-ui'
 import { DocumentStatus, SharedDocument, getDocumentStatusStyle } from '../../../../lib/site-intelligence'
 import { getInitialDark, getDesignColors, designTokens, listenTheme } from '../../../../lib/theme'
@@ -36,7 +37,7 @@ export default function DocumentReviewRow({ doc }: { doc: SharedDocument }) {
   async function updateStatus(newStatus: DocumentStatus) {
     setSaving(true)
     try {
-      const res = await fetch(`/api/admin/documents/${doc.id}/status`, {
+      const res = await authedFetch(`/api/admin/documents/${doc.id}/status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus, verification_note: note || undefined }),
@@ -55,7 +56,7 @@ export default function DocumentReviewRow({ doc }: { doc: SharedDocument }) {
     const next = !visible
     setVisibilitySaving(true)
     try {
-      const res = await fetch(`/api/admin/documents/${doc.id}/status`, {
+      const res = await authedFetch(`/api/admin/documents/${doc.id}/status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ publicly_visible: next }),
@@ -75,10 +76,10 @@ export default function DocumentReviewRow({ doc }: { doc: SharedDocument }) {
     setExtracting(true)
     setExtractError('')
     try {
-      const res = await fetch('/api/documents/extract', {
+      const res = await authedFetch('/api/documents/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document_id: doc.id, document_url: doc.document_url }),
+        body: JSON.stringify({ document_id: doc.id }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Extraction failed')
@@ -93,7 +94,7 @@ export default function DocumentReviewRow({ doc }: { doc: SharedDocument }) {
 
   async function confirmExtraction(confirmed: boolean) {
     try {
-      await fetch(`/api/admin/documents/${doc.id}/confirm-extraction`, {
+      await authedFetch(`/api/admin/documents/${doc.id}/confirm-extraction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmed }),

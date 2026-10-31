@@ -22,9 +22,12 @@ import CategoryTabs, { DevCategory } from './CategoryTabs'
 import SitesOverviewMap from '../../components/SitesOverviewMap'
 import SaveDevelopmentButton from '../../components/SaveDevelopmentButton'
 import GatedDeveloperName from '../../components/GatedDeveloperName'
-import { Card, Fact, Muted } from '../../components/site-intelligence-ui'
-import { ManopReviewTag } from '../../components/ManopMark'
+import { Card, Muted } from '../../components/site-intelligence-ui'
 import { getDesignColors, designTokens } from '../../lib/theme'
+import { getServerDark } from '../../lib/theme-server'
+import { ngnShort } from '../../lib/dossier-format'
+import '../../components/dossier/dossier.css'
+import './listing.css'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -34,8 +37,6 @@ const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
 )
 
-const dark = true
-const c = getDesignColors(dark)
 
 interface DevProject {
   id: string
@@ -64,15 +65,27 @@ interface SearchParams {
 // query that uses it, rather than duplicating it elsewhere.
 const OFF_PLAN_STAGES = ['Planning', 'Foundation', 'Structure', 'Finishing']
 
+// Strip the characters that have meaning inside a PostgREST .or() filter, so a typed search can never add filters of its own.
+const cleanArea = (v: string) => v.replace(/[,()%*\\:"]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)
+
+// Optimised Cloudinary delivery for the card images (other hosts are used as-is).
+const cld = (u: string, w: number) => {
+  const m = u.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/)
+  return m ? `${m[1]}f_auto,q_auto,w_${w},c_fill,ar_4:3/${m[2]}` : u
+}
+
 export default async function DevelopmentsDiscoveryPage({ searchParams }: { searchParams: SearchParams }) {
+  const dark = await getServerDark()
+  const c = getDesignColors(dark)
   let query = sb
     .from('developer_projects')
     .select('id,name,neighborhood,city,stage,total_units,handover_date,reviewed_at,images,lat,lng,developer_id')
     .eq('publish_status', 'published')
     .order('reviewed_at', { ascending: false })
 
-  if (searchParams.area) {
-    query = query.or(`neighborhood.ilike.%${searchParams.area}%,city.ilike.%${searchParams.area}%`)
+  const area = searchParams.area ? cleanArea(searchParams.area) : ''
+  if (area) {
+    query = query.or(`neighborhood.ilike.%${area}%,city.ilike.%${area}%`)
   }
 
   const category: DevCategory = searchParams.category === 'new_build' || searchParams.category === 'off_plan'
@@ -84,22 +97,39 @@ export default async function DevelopmentsDiscoveryPage({ searchParams }: { sear
   const projects = (data || []) as unknown as DevProject[]
   const view = searchParams.view === 'map' ? 'map' : 'list'
 
+  // Two small batched reads so each card can show what a buyer actually wants at a glance: the lowest published unit price and how much of
+  // the evidence register is backed. Both tables are public-read for published developments (same RLS gate as the dossier page).
+  const ids = projects.map(p => p.id)
+  const [{ data: unitRows }, { data: evRows }] = ids.length
+    ? await Promise.all([
+        sb.from('developer_unit_types').select('project_id,price_ngn').in('project_id', ids),
+        sb.from('development_evidence').select('project_id,status').in('project_id', ids),
+      ])
+    : [{ data: [] as any[] }, { data: [] as any[] }]
+  const BACKED = ['independently_verified', 'documented', 'manop_observed', 'manop_derived']
+  const facts: Record<string, CardFacts> = {}
+  for (const p of projects) {
+    const prices = (unitRows ?? []).filter((u: any) => u.project_id === p.id).map((u: any) => Number(u.price_ngn)).filter(n => n > 0)
+    const ev = (evRows ?? []).filter((e: any) => e.project_id === p.id)
+    const backed = ev.filter((e: any) => BACKED.includes(e.status)).length
+    const stated = ev.filter((e: any) => e.status === 'developer_stated').length
+    facts[p.id] = { from: prices.length ? ngnShort(Math.min(...prices)) : null, total: ev.length, backed, stated, open: ev.length - backed - stated }
+  }
+
   return (
-    <div style={{
-      background: c.background, color: c.textPrimary, minHeight: '100vh',
-      fontFamily: designTokens.font.family, padding: '32px',
-    }}>
+    <div className="dx dxl" style={{ fontFamily: designTokens.font.family }}>
+      <div className="dxl-wrap">
       <DevelopmentsHero dark={dark} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, marginTop: 32 }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
           {projects.length} reviewed development{projects.length === 1 ? '' : 's'}
           {category === 'new_build' ? ' · New Build' : category === 'off_plan' ? ' · Off Plan' : ''}
-          {searchParams.area ? ` in ${searchParams.area}` : ''}
+          {area ? ` in ${area}` : ''}
         </h1>
       </div>
 
-      <CategoryTabs current={category} area={searchParams.area} view={view} dark={dark} />
+      <CategoryTabs current={category} area={area || undefined} view={view} dark={dark} />
 
       {/* ── Filter + view toggle — plain GET form, works without JS ── */}
       <form
@@ -108,7 +138,7 @@ export default async function DevelopmentsDiscoveryPage({ searchParams }: { sear
       >
         <input
           name="area"
-          defaultValue={searchParams.area}
+          defaultValue={area}
           placeholder="Search by neighborhood or city…"
           style={{
             padding: '9px 12px', borderRadius: designTokens.radius.sm, border: `1px solid ${c.border}`,
@@ -147,17 +177,18 @@ export default async function DevelopmentsDiscoveryPage({ searchParams }: { sear
       )}
 
       {view === 'list' && projects.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-          {projects.map(p => <DevelopmentCard key={p.id} project={p} />)}
+        <div className="dxl-grid">
+          {projects.map(p => <DevelopmentCard key={p.id} project={p} facts={facts[p.id]} dark={dark} />)}
         </div>
       )}
 
-      {view === 'map' && <MapView projects={projects} />}
+      {view === 'map' && <MapView projects={projects} c={c} />}
+      </div>
     </div>
   )
 }
 
-function MapView({ projects }: { projects: DevProject[] }) {
+function MapView({ projects, c }: { projects: DevProject[]; c: ReturnType<typeof getDesignColors> }) {
   const markers = projects
     .filter(p => p.lat != null && p.lng != null)
     .map(p => ({ id: p.id, lat: p.lat as number, lng: p.lng as number, label: p.name }))
@@ -168,53 +199,45 @@ function MapView({ projects }: { projects: DevProject[] }) {
   return <SitesOverviewMap markers={markers} height={480} linkPrefix="/development" />
 }
 
-function stageCategory(stage: string | null): { label: string; color: string; bg: string } | null {
-  if (!stage) return null
-  return stage === 'Completed'
-    ? { label: 'New Build', color: '#0D9488', bg: 'rgba(13,148,136,0.1)' }
-    : { label: 'Off Plan',  color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' }
-}
+interface CardFacts { from: string | null; total: number; backed: number; stated: number; open: number }
 
-function DevelopmentCard({ project: p }: { project: DevProject }) {
-  const cat = stageCategory(p.stage)
+function DevelopmentCard({ project: p, facts: f, dark }: { project: DevProject; facts: CardFacts; dark: boolean }) {
+  const isNew = p.stage === 'Completed'
+  const where = [p.neighborhood, p.city].filter(Boolean).join(', ')
   return (
-    <Link href={`/development/${p.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-      <Card c={c}>
-        {/* Save button lives strictly inside the image zone, never over
-            the badge/text rows below it — that overlap was the bug in
-            the last screenshot. Click-cancellation (so it doesn't also
-            trigger the card's own Link) lives inside SaveDevelopmentButton
-            itself, since this file is a Server Component and can't
-            attach event handlers directly. */}
-        <div style={{
-          position: 'relative', height: 140, borderRadius: designTokens.radius.sm, marginBottom: 10,
-          background: p.images?.[0] ? `url(${p.images[0]}) center/cover` : c.surfaceCardHigh,
-          overflow: 'hidden',
-        }}>
-          <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}>
-            <SaveDevelopmentButton projectId={p.id} />
-          </div>
+    <Link href={`/development/${p.id}`} className="dxl-card">
+      <div className="im">
+        {p.images?.[0]
+          // eslint-disable-next-line @next/next/no-img-element
+          ? <img src={cld(p.images[0], 700)} alt={p.name} loading="lazy" />
+          : <div className="noimg">Photos not provided yet</div>}
+        {p.stage && <span className={`tag ${isNew ? 'new' : 'off'}`}>{isNew ? 'New build' : 'Off plan'}</span>}
+        {/* Save sits inside the image zone; its click is cancelled inside SaveDevelopmentButton so it does not also open the card. */}
+        <div className="save"><SaveDevelopmentButton projectId={p.id} /></div>
+      </div>
+      <div className="bd">
+        <div className="rv">{p.reviewed_at ? `MANOP reviewed · ${new Date(p.reviewed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'MANOP review'}</div>
+        <h2>{p.name}</h2>
+        <div className="l">{where}</div>
+        <div className="dv"><span>Developer</span> <GatedDeveloperName developerId={p.developer_id} dark={dark} /></div>
+        <div className="ft">
+          <div><small>Units from</small><b>{f.from ?? '—'}</b></div>
+          <div><small>Stage</small><b className="s">{p.stage || '—'}</b></div>
+          {p.total_units != null && <div><small>Units</small><b className="s">{p.total_units}</b></div>}
         </div>
-
-        <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' as const }}>
-          {cat && (
-            <span style={{ fontSize: 11, fontWeight: 700, color: cat.color, background: cat.bg, borderRadius: designTokens.radius.badge, padding: '3px 8px' }}>
-              {cat.label}
-            </span>
-          )}
-          {p.reviewed_at && <ManopReviewTag date={new Date(p.reviewed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} />}
+        <div className="ev">
+          {f.total > 0 ? (
+            <>
+              <div className="bar" role="img" aria-label={`${f.backed} of ${f.total} claims backed`}>
+                {f.backed > 0 && <i style={{ flex: f.backed, background: 'var(--dx-teal)' }} />}
+                {f.stated > 0 && <i style={{ flex: f.stated, background: 'var(--dx-amber)' }} />}
+                {f.open > 0 && <i style={{ flex: f.open, background: 'var(--dx-faint)' }} />}
+              </div>
+              <span>{f.backed} of {f.total} claims backed</span>
+            </>
+          ) : <span>Evidence register in progress</span>}
         </div>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
-        <div style={{ fontSize: 12.5, color: c.textMuted, marginBottom: 10 }}>
-          {p.neighborhood ? `${p.neighborhood}, ` : ''}{p.city}
-        </div>
-        <div style={{ fontSize: 13, marginBottom: 6 }}>
-          <span style={{ color: c.textMuted }}>Developer: </span>
-          <GatedDeveloperName developerId={p.developer_id} dark={dark} />
-        </div>
-        <Fact c={c} label="Stage" value={p.stage || '—'} />
-        {p.total_units != null && <Fact c={c} label="Total units" value={String(p.total_units)} />}
-      </Card>
+      </div>
     </Link>
   )
 }

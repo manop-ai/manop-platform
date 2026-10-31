@@ -527,7 +527,8 @@ footer {
 }
 
 /* ── Prevent horizontal scroll everywhere ── */
-html, body { overflow-x: hidden; }
+/* `clip`, not `hidden`: hidden turns <body> into a scroll container, which silently breaks every position:sticky element (the NavBar never stuck). */
+html, body { overflow-x: clip; }
 * { max-width: 100%; box-sizing: border-box; }
 img { max-width: 100%; height: auto; }
 

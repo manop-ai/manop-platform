@@ -1,0 +1,99 @@
+/* components/home/story.css — "From the ground up" scroll story. Always a navy band (the architectural scene reads best on navy, in both site themes).
+   Colours: existing MANOP tokens only (purple, teal, white, navy and their light/mid variants), plus the existing status amber. */
+.hm3{--s-bg:#0F172A;--s-panel:rgba(22,32,50,.86);--s-line:rgba(255,255,255,.12);--s-text:#E0E2F0;--s-muted:#94A3B8;--s-teal:#2DD4BF;--s-violet:#A78BFA;--s-amber:#F59E0B;
+  background:radial-gradient(1200px 600px at 70% 0%,rgba(91,46,255,.16),transparent 60%),var(--s-bg);color:var(--s-text);padding:88px 0 64px;border-top:1px solid var(--s-line);border-bottom:1px solid var(--s-line)}
+.hm3-head{max-width:1180px;margin:0 auto 28px;padding:0 20px}
+@media(min-width:900px){.hm3-head{padding:0 32px}}
+.hm3 .st{font-style:normal;font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:99px;border:1px solid transparent;white-space:nowrap}
+.hm3 .st.live{color:#2DD4BF;background:rgba(45,212,191,.12);border-color:rgba(45,212,191,.3)}
+.hm3 .st.partial{color:#A78BFA;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.3)}
+.hm3 .st.dev{color:#F59E0B;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
+.hm3 .st.vision{color:#CBD5E1;background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.3)}
+
+/* pinned track */
+.hm3-track{height:calc(var(--n) * 82svh);position:relative}
+@media(min-width:900px){.hm3-track{height:calc(var(--n) * 92svh)}}
+.hm3-stage{position:sticky;top:84px;height:calc(100svh - 84px);min-height:520px;display:flex;flex-direction:column;overflow:hidden}
+.hm3-canvas{position:relative;flex:1 1 auto;min-height:0;opacity:0;transition:opacity .9s}
+.hm3-canvas.ready{opacity:1}
+.hm3-canvas canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hm3-cap{position:absolute;left:16px;right:16px;bottom:6px;font-size:10.5px;line-height:1.4;color:var(--s-muted);opacity:.85;pointer-events:none}
+.hm3-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.hm3-svg line{stroke:var(--s-teal);stroke-width:1.2;stroke-dasharray:4 4;opacity:0;transition:opacity .3s}
+.hm3-svg circle{fill:var(--s-teal);opacity:0;filter:drop-shadow(0 0 6px rgba(45,212,191,.9));transition:opacity .3s}
+.hm3-label{position:absolute;left:0;top:0;pointer-events:none;font-size:11.5px;font-weight:600;color:#fff;background:rgba(15,23,42,.82);border:1px solid var(--s-line);padding:4px 10px;border-radius:99px;white-space:nowrap;opacity:0;transition:opacity .4s;display:none}
+.hm3-label.on{opacity:1}
+@media(min-width:700px){.hm3-label{display:block}}
+
+.hm3-rail{list-style:none;margin:0;padding:10px 16px 6px;display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.hm3-rail button{background:none;border:0;padding:8px 4px;cursor:pointer;display:block}
+.hm3-rail button i{display:block;width:26px;height:4px;border-radius:4px;background:rgba(255,255,255,.18);transition:background .3s,width .3s}
+.hm3-rail button.done i{background:rgba(45,212,191,.55)}
+.hm3-rail button.on i{background:var(--s-teal);width:44px}
+.hm3-rail button:focus-visible{outline:2px solid var(--s-teal);outline-offset:2px;border-radius:4px}
+.hm3-railname{font-size:12px;color:var(--s-muted);margin-left:8px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.hm3-panels{display:grid;flex:0 0 auto;margin:0 14px 14px}
+.hm3-panel{grid-area:1/1;background:var(--s-panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--s-line);border-radius:18px;padding:16px 18px;
+  opacity:0;visibility:hidden;transform:translateY(10px);transition:opacity .45s,transform .45s,visibility .45s}
+.hm3-panel.on{opacity:1;visibility:visible;transform:none}
+.hm3-k{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:11px;color:var(--s-muted);letter-spacing:.06em;text-transform:uppercase;font-weight:700;margin-bottom:8px}
+.hm3-k b{color:var(--s-teal);letter-spacing:.04em}
+.hm3-k .st{text-transform:none;letter-spacing:.02em}
+.hm3-panel h3{font-size:20px;font-weight:800;letter-spacing:-.02em;margin:0 0 6px;color:#fff;line-height:1.2}
+.hm3-panel p{font-size:13.5px;line-height:1.55;color:#CBD5E1;margin:0 0 10px}
+.hm3-panel p.note{font-size:12px;color:var(--s-muted);border-left:2px solid rgba(167,139,250,.5);padding-left:10px}
+.hm3-panel ul{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.hm3-panel ul li{font-size:11.5px;font-weight:600;color:#E0E2F0;background:rgba(255,255,255,.07);border-radius:99px;padding:4px 10px}
+.hm3-link{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--s-teal)}
+.hm3-link:hover{text-decoration:underline}
+
+@media(max-width:899px){
+  .hm3-panel{max-height:44svh;overflow:auto;padding:14px 16px}
+  .hm3-panel h3{font-size:17px}
+  .hm3-panel p{font-size:12.5px;margin-bottom:8px}
+  .hm3-panel p.note{display:none}
+  .hm3-cap{display:none}
+}
+@media(min-width:900px){
+  .hm3-stage{display:block}
+  .hm3-canvas{position:absolute;inset:0}
+  .hm3-panels{position:absolute;right:max(32px,calc((100% - 1320px)/2 + 32px));top:50%;width:400px;margin:0;transform:translateY(-50%)}
+  .hm3-panel{padding:22px}
+  .hm3-panel h3{font-size:23px}
+  .hm3-panel p{font-size:14px}
+  .hm3-rail{position:absolute;left:24px;bottom:50px;padding:0}
+  .hm3-cap{left:24px;right:auto;bottom:10px;max-width:560px}
+}
+
+/* outro */
+.hm3-out{max-width:1180px;margin:0 auto;padding:40px 20px 0}
+@media(min-width:900px){.hm3-out{padding:56px 32px 0}}
+.hm3-close{font-size:clamp(1.2rem,2.6vw,1.8rem);line-height:1.35;font-weight:800;letter-spacing:-.02em;color:#fff;max-width:36ch;margin:0 0 28px}
+.hm3-aud{display:grid;gap:14px;grid-template-columns:1fr}
+@media(min-width:700px){.hm3-aud{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:1000px){.hm3-aud{grid-template-columns:repeat(4,1fr)}}
+.hm3-aud div{background:rgba(255,255,255,.04);border:1px solid var(--s-line);border-radius:14px;padding:16px}
+.hm3-aud b{display:block;color:var(--s-teal);font-size:13px;margin-bottom:4px}
+.hm3-aud span{font-size:13px;line-height:1.5;color:#CBD5E1}
+.hm3-fine{font-size:12px;line-height:1.6;color:var(--s-muted);max-width:80ch;margin:22px 0 0}
+
+/* text version: screen readers and search engines always; everyone when 3D is unavailable */
+.hm3-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.hm3-list{max-width:1180px;margin:0 auto;padding:0 20px}
+.hm3-3d .hm3-list,.hm3-3d .hm3-sr+ol{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.hm3-list ol{list-style:none;margin:28px 0 0;padding:0;display:grid;gap:14px;grid-template-columns:1fr}
+@media(min-width:800px){.hm3-list ol{grid-template-columns:repeat(2,1fr)}}
+.hm3-list li{background:rgba(255,255,255,.04);border:1px solid var(--s-line);border-radius:14px;padding:16px}
+.hm3-list li b{color:#fff;margin-right:8px}
+.hm3-list li p{font-size:13.5px;line-height:1.55;color:#CBD5E1;margin:8px 0}
+.hm3-list li a{font-size:13px;font-weight:700;color:var(--s-teal)}
+.hm3-pending .hm3-track,.hm3-list-mode .hm3-track{display:none}
+.hm3-3d .hm3-list{padding:0}
+
+/* reduced motion: the finished scene as a still picture, stages listed beneath */
+.hm3-still .hm3-track{height:auto}
+.hm3-still .hm3-stage{position:relative;top:0;height:auto;min-height:0;display:block}
+.hm3-still .hm3-canvas{position:relative;inset:auto;aspect-ratio:16/10;max-width:1180px;margin:0 auto}
+.hm3-still .hm3-rail,.hm3-still .hm3-panels,.hm3-still .hm3-svg,.hm3-still .hm3-label{display:none}
+@media(prefers-reduced-motion:reduce){.hm3-panel,.hm3-canvas{transition:none}}

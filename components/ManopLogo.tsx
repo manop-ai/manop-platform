@@ -7,6 +7,8 @@ interface LogoProps {
   height?: number
   dark?: boolean
   iconOnly?: boolean
+  /** Use the tightly-cropped wordmark (no blank canvas), so `height` is the real visible height. Used by the header and footer. */
+  tight?: boolean
   className?: string
   style?: React.CSSProperties
   priority?: boolean
@@ -16,6 +18,7 @@ export default function ManopLogo({
   height,
   dark = true,
   iconOnly = false,
+  tight = false,
   className,
   style,
   priority = false,
@@ -24,7 +27,9 @@ export default function ManopLogo({
   const defaultHeight = iconOnly ? 56 : 80
   const finalHeight = height ?? defaultHeight
 
-  const src = iconOnly
+  const src = tight && !iconOnly
+    ? (dark ? '/logos/manop-wordmark-dark.svg' : '/logos/manop-wordmark-light.svg')
+    : iconOnly
     ? dark
       ? '/logos/manop-icon-mono.svg'
       : '/logos/manop-icon-color.svg'
@@ -32,7 +37,7 @@ export default function ManopLogo({
       ? '/logos/manop-full-dark.svg'
       : '/logos/manop-full-light.svg'
 
-  const aspectRatio = iconOnly ? 1 : 5.4
+  const aspectRatio = iconOnly ? 1 : tight ? 3.49 : 5.4
 
   return (
     <Image

@@ -1,6 +1,6 @@
 // app/site-intelligence/[id]/page.tsx
 
-import { sbServerRead as sb } from '../../../lib/supabase/server-read'
+import { sb } from '../../../lib/supabase/client'
 import { Clock, FileWarning, ListChecks, AlertTriangle } from 'lucide-react'
 import SiteBoundaryMap from '../../../components/SiteBoundaryMap'
 import { BackToDiscovery } from '../../../components/SiteIntelligenceNav'
@@ -67,6 +67,7 @@ export default async function SiteIntelligencePage({ params }: { params: { id: s
 
   const availability: { label: string; status: 'available' | 'partial' | 'unknown' }[] = [
     { label: 'Geometry', status: s.lat == null || s.lng == null ? 'unknown' : (s.boundary_area_sqm ? 'available' : 'partial') },
+    { label: 'Survey plan', status: hasCategory('survey_plan') ? 'available' : 'unknown' },
     { label: 'Planning', status: hasCategory('planning') ? 'available' : 'unknown' },
     { label: 'Infrastructure', status: hasCategory('infrastructure') ? 'available' : 'unknown' },
     { label: 'Environmental', status: hasCategory('environmental') ? 'available' : 'unknown' },
@@ -172,6 +173,11 @@ export default async function SiteIntelligencePage({ params }: { params: { id: s
             </div>
           </Section>
 
+          {intel.some(l => l.layer_category === 'survey_plan') && (
+            <Section c={c} title="Spatial / Survey Plan">
+              <LayerList layers={intel.filter(l => l.layer_category === 'survey_plan')} c={c} dark={dark} />
+            </Section>
+          )}
           <Section c={c} title="Planning Context">
             <LayerList layers={intel.filter(l => l.layer_category === 'planning')} c={c} dark={dark} />
           </Section>

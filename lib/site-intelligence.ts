@@ -37,7 +37,7 @@ export type DocumentStatus =
   | 'provided' | 'under_review' | 'reviewed'
   | 'unable_to_verify' | 'requires_further_verification'
 export type LayerCategory =
-  | 'planning' | 'environmental' | 'infrastructure'
+  | 'survey_plan' | 'planning' | 'environmental' | 'infrastructure'
   | 'development_activity' | 'market_context'
 export type SourceType =
   | 'official_government' | 'professional_survey'
@@ -198,6 +198,7 @@ export const OPPORTUNITY_TYPE_LABEL: Record<OpportunityType, string> = {
 }
 
 export const LAYER_CATEGORY_LABEL: Record<LayerCategory, string> = {
+  survey_plan:            'Spatial / Survey Plan',
   planning:               'Planning Context',
   environmental:          'Environmental',
   infrastructure:         'Infrastructure Access',
@@ -282,118 +283,47 @@ export function resolveLayerGeometry(layer: SiteIntelligenceLayer): GeoJSON.Geom
   return null
 }
 
-// ── Zoning envelope — the data contract for a real, TestFit-style ──
-// setback/sky-exposure visualization. See
-// docs/SITE_INTELLIGENCE_ZONING_ENVELOPE_CONTRACT.md for the full
-// upstream spec this is the code-side half of. Nothing here
-// fabricates a rule: resolveZoningEnvelope returns null unless the
-// data is actually present and passes strict validation, same
-// discipline as resolveLayerGeometry above it.
-
 /**
- * A single point on a setback curve for one site edge: at `heightM`
- * above grade, the buildable envelope steps inward by `insetM` from
- * that edge. Mirrors the height/inset editing model real massing
- * tools use (height on one axis, inset on the other) — a point
- * LIST, not a single number, because real setback rules are
- * routinely stepped ("0m to the property line up to 15m, then a 3m
- * step-back from 15m–30m, then a further 3m step-back above that").
+ * ZoningEnvelope — a REAL, recorded planning envelope for a site: per-edge setback rules (inset in metres at given heights, authored against
+ * the site boundary's edge order) and an optional flat height cap. The 3D Studio draws it; nothing else reads it.
+ *
+ * resolveZoningEnvelope() returns an envelope ONLY when a 'planning' layer of type 'zoning_envelope' carries a fully valid
+ * value_data.zoning_envelope. Anything missing or malformed resolves to null; it never estimates one. No ingestion path writes this
+ * data today, so every site resolves to null, and the Studio shows "no zoning rule recorded yet". (These exports were referenced by
+ * app/site-intelligence/[id]/studio, components/ScenarioMap, components/ThreeMassingLayer and lib/zoning-envelope-geometry.ts but were
+ * missing from this file, which is what caused the long-standing TypeScript errors. The types below are the shape that geometry code
+ * already consumes: edgeRules[].edgeIndex, edgeRules[].points[].{heightM,insetM}, maxHeightM.)
  */
-export interface ZoningSetbackPoint {
-  heightM: number
-  insetM: number
-}
-
-/**
- * The setback curve for ONE edge of the site boundary. `edgeIndex`
- * identifies the edge by its position in the site's boundary ring
- * (edge i runs from ring point i to ring point i+1) — this rule is
- * only meaningful alongside the SAME boundary ring it was authored
- * against. `points` must be sorted by `heightM` ascending.
- */
-export interface ZoningEdgeRule {
+export interface ZoningEnvelopeEdgeRule {
   edgeIndex: number
-  points: ZoningSetbackPoint[]
+  points: { heightM: number; insetM: number }[]
 }
-
-/**
- * The full buildable-envelope rule for a site, as Site Intelligence
- * would need to capture it. Lives in a Site Intelligence layer's
- * value_data under the key 'zoning_envelope' (see
- * resolveZoningEnvelope below). Every field here is meant to be a
- * REAL planning constraint with real provenance — if Site Studio
- * ever needs to show a "what if" envelope a developer is testing
- * rather than one Site Intelligence has established, that is a
- * separate, clearly-labelled concept and must never be stored or
- * rendered through this same path, or a user-drawn hypothesis would
- * be indistinguishable from an actual planning rule.
- */
 export interface ZoningEnvelope {
+  edgeRules: ZoningEnvelopeEdgeRule[]
   maxHeightM: number | null
-  maxStoreys: number | null
-  farMax: number | null
-  edgeRules: ZoningEdgeRule[]
-  source: string
-  sourceDate: string | null
-  confidence: Confidence
 }
 
-function isFiniteNumber(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v)
+const isFiniteNonNeg = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0
+
+export function isValidZoningEnvelope(v: unknown): v is ZoningEnvelope {
+  if (!v || typeof v !== 'object') return false
+  const e = v as { edgeRules?: unknown; maxHeightM?: unknown }
+  if (!Array.isArray(e.edgeRules)) return false
+  if (e.maxHeightM != null && !(isFiniteNonNeg(e.maxHeightM) && e.maxHeightM > 0)) return false
+  if (e.edgeRules.length === 0 && e.maxHeightM == null) return false // nothing to draw
+  return e.edgeRules.every((r: any) =>
+    r && Number.isInteger(r.edgeIndex) && r.edgeIndex >= 0 &&
+    Array.isArray(r.points) && r.points.length >= 2 &&
+    r.points.every((p: any) => p && isFiniteNonNeg(p.heightM) && isFiniteNonNeg(p.insetM)))
 }
 
-/** Strict structural + semantic validation. Anything that doesn't
- * fully pass is treated as "no envelope" — never partially rendered,
- * never repaired, never guessed at. */
-export function isValidZoningEnvelope(data: unknown): data is ZoningEnvelope {
-  if (!data || typeof data !== 'object') return false
-  const d = data as Record<string, unknown>
-  if (d.maxHeightM != null && !isFiniteNumber(d.maxHeightM)) return false
-  if (d.maxStoreys != null && !isFiniteNumber(d.maxStoreys)) return false
-  if (d.farMax != null && !isFiniteNumber(d.farMax)) return false
-  if (typeof d.source !== 'string' || !d.source) return false
-  if (d.sourceDate != null && typeof d.sourceDate !== 'string') return false
-  const validConfidence: Confidence[] = ['high', 'medium', 'low', 'unconfirmed']
-  if (typeof d.confidence !== 'string' || !validConfidence.includes(d.confidence as Confidence)) return false
-  if (!Array.isArray(d.edgeRules)) return false
-  for (const rule of d.edgeRules) {
-    if (!rule || typeof rule !== 'object') return false
-    const r = rule as Record<string, unknown>
-    if (!isFiniteNumber(r.edgeIndex) || r.edgeIndex < 0) return false
-    if (!Array.isArray(r.points) || r.points.length === 0) return false
-    let lastHeight = -Infinity
-    for (const p of r.points) {
-      if (!p || typeof p !== 'object') return false
-      const pt = p as Record<string, unknown>
-      if (!isFiniteNumber(pt.heightM) || pt.heightM < 0) return false
-      if (!isFiniteNumber(pt.insetM) || pt.insetM < 0) return false
-      if (pt.heightM < lastHeight) return false // must be ascending
-      lastHeight = pt.heightM
-    }
-  }
-  // An envelope asserting neither a height cap nor any edge rule says
-  // nothing — treat it the same as absent rather than rendering an
-  // empty shape.
-  if (d.maxHeightM == null && (d.edgeRules as unknown[]).length === 0) return false
-  return true
-}
-
-/**
- * Looks for a real zoning envelope ONLY in value_data.zoning_envelope,
- * and only across layers in the 'planning' category — the same
- * "real data if present, honest absence if not" rule as
- * resolveLayerGeometry. As of this pass, no Site Intelligence
- * ingestion path writes this key anywhere (confirmed by a full-repo
- * search, same as value_data generally) — so this correctly returns
- * null for every layer today. That is the right behaviour, not a bug.
- */
 export function resolveZoningEnvelope(layers: SiteIntelligenceLayer[]): ZoningEnvelope | null {
-  for (const layer of layers) {
-    if (layer.layer_category !== 'planning') continue
-    const data = layer.value_data
-    if (!data) continue
-    const envelope = (data as { zoning_envelope?: unknown }).zoning_envelope
-    if (isValidZoningEnvelope(envelope)) return envelope
+  for (const l of layers) {
+    if (l.layer_category !== 'planning' || l.layer_type !== 'zoning_envelope') continue
+    const candidate = (l.value_data as { zoning_envelope?: unknown } | null)?.zoning_envelope
+    if (isValidZoningEnvelope(candidate)) {
+      return { edgeRules: candidate.edgeRules, maxHeightM: candidate.maxHeightM ?? null }
+    }
   }
   return null
 }
@@ -403,6 +333,7 @@ export function resolveZoningEnvelope(layers: SiteIntelligenceLayer[]): ZoningEn
  * planning constraint is always the same color regardless of which
  * layer_type produced it. */
 export const LAYER_CATEGORY_COLOR: Record<LayerCategory, string> = {
+  survey_plan: '#0D9488',
   planning: '#2563EB',
   environmental: '#16A34A',
   infrastructure: '#D97706',

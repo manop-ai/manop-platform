@@ -13,6 +13,16 @@ import { useAuth } from '../../../lib/useAuth'
 
 import { ManopLogoSVG } from '../../../components/ManopLogo'
 import TransactionPromptModal from '../../../components/TransactionPromptModal'
+import MyFinancePanel from '../../../components/MyFinancePanel'
+import { authedFetch } from '../../../lib/authed-fetch'
+import DealRoomPanel from '../../../components/DealRoomPanel'
+import UnitRequestSummary from '../../../components/UnitRequestSummary'
+import { LEAD_STAGES, CLOSED_STAGES } from '../../../lib/deal-room'
+import DevelopmentUpdates from '../../../components/DevelopmentUpdates'
+import DevelopmentCompleteness from '../../../components/DevelopmentCompleteness'
+import DevelopmentProgress from '../../../components/DevelopmentProgress'
+import PartnerFeesPanel from '../../../components/PartnerFeesPanel'
+import AgreementRequestPanel from '../../../components/agreements/AgreementRequestPanel'
 import { ExternalLink } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────
@@ -31,6 +41,8 @@ interface Project {
   name: string
   location: string
   city: string
+  neighborhood?: string | null
+  country_code?: string | null
   stage: string
   total_units: number
   handover_date: string | null
@@ -46,6 +58,7 @@ interface UnitType {
   unit_type: string
   price_ngn: number | null
   quantity: number | null
+  available_count?: number | null
   sold_count: number
   reserved_count: number
   size_sqm: number | null
@@ -64,23 +77,13 @@ interface Lead {
   budget_usd: number | null   // chose Developer Installment Plan in Get Financed,
 }                              // distinct from a general enquiry — see Finance tab
 
-interface DevUpdate {
-  id: string
-  project_id: string
-  title: string
-  body: string | null
-  stage_at_time: string | null
-  completion_pct_at_time: number | null
-  posted_by_role: string
-  posted_at: string
-}
-
 type Tab =
   | 'overview'
   | 'projects'
   | 'units'
   | 'construction'
   | 'review'
+  | 'agreement'
   | 'pipeline'
   | 'finance'
   | 'addproject'
@@ -109,8 +112,11 @@ export default function DeveloperDashboard() {
   const [dev, setDev] = useState<DevAccount | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [leads, setLeads] = useState<Lead[]>([])
+  const [dealRoomLead, setDealRoomLead] = useState<string | null>(null)
 
   const [tab, setTab] = useState<Tab>('overview')
+  const [agreementFor, setAgreementFor]   = useState<string | null>(null)
+  const [agreementOpen, setAgreementOpen] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(false)
 
@@ -294,32 +300,16 @@ export default function DeveloperDashboard() {
     leadId: string,
     newStage: string,
   ) {
-    const current = leads.find(l => l.id === leadId)
-    const fromStage = current?.stage ?? null
-
-    const { error } = await sb
-      .from('developer_leads')
-      .update({
-        stage: newStage,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', leadId)
-
-    if (error) return
-
-    // Audit trail behind the success-fee model — every stage change
-    // must be logged, not just the initial enquiry. Previously this
-    // only happened server-side at creation; moving a lead from the
-    // dashboard never wrote a row here at all.
-    const lead = leads.find(l => l.id === leadId)
-    if (lead) {
-      await sb.from('lead_stage_log').insert({
-        lead_id: leadId,
-        manop_lead_id: (lead as unknown as { manop_lead_id?: string }).manop_lead_id ?? null,
-        from_stage: fromStage,
-        to_stage: newStage,
-        changed_by: 'developer',
-      })
+    // Stage changes go through the server (authorised from database facts, stage rules
+    // applied, audit row written). Direct table updates are blocked by a database trigger.
+    const res = await authedFetch('/api/deal-room/stage', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_id: leadId, to_stage: newStage }),
+    })
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      window.alert(j.error || 'That stage change could not be saved.')
+      return
     }
 
     setLeads(prev =>
@@ -374,38 +364,6 @@ export default function DeveloperDashboard() {
   // stage field. This is the developer's own reported history; it's
   // recorded as 'reported', not 'manop_confirmed' — matching the same
   // claims-vs-verified distinction used across the rest of the platform.
-  const [devUpdates, setDevUpdates] = useState<DevUpdate[]>([])
-  const [newDevUpdate, setNewDevUpdate] = useState({ title: '', body: '', stage_at_time: '', completion_pct_at_time: '' })
-
-  const loadUpdates = useCallback(async (projectId: string) => {
-    if (!projectId) { setDevUpdates([]); return }
-    const { data } = await sb.from('development_updates')
-      .select('id,project_id,title,body,stage_at_time,completion_pct_at_time,posted_by_role,posted_at')
-      .eq('project_id', projectId)
-      .order('posted_at', { ascending: false })
-    setDevUpdates((data as DevUpdate[]) || [])
-  }, [])
-
-  useEffect(() => { if (activeProjectId) loadUpdates(activeProjectId) }, [activeProjectId, loadUpdates])
-
-  async function postDevUpdate() {
-    if (!activeProject || !newDevUpdate.title.trim()) return
-
-    const { error } = await sb.from('development_updates').insert({
-      project_id: activeProject.id,
-      title: newDevUpdate.title.trim(),
-      body: newDevUpdate.body.trim() || null,
-      stage_at_time: newDevUpdate.stage_at_time || null,
-      completion_pct_at_time: newDevUpdate.completion_pct_at_time ? parseInt(newDevUpdate.completion_pct_at_time) : null,
-      posted_by_role: 'developer',
-      posted_by_user_id: user?.id || null,
-    })
-
-    if (error) return
-    setNewDevUpdate({ title: '', body: '', stage_at_time: '', completion_pct_at_time: '' })
-    await loadUpdates(activeProject.id)
-  }
-
   async function handleSignOut() {
     await sb.auth.signOut()
     router.replace('/login')
@@ -487,7 +445,7 @@ export default function DeveloperDashboard() {
   )
 
   const activeLeads = leads.filter(
-    l => l.stage !== 'sold',
+    l => !CLOSED_STAGES.includes(l.stage),
   ).length
 
   // Leads that came in through Get Financed choosing a Developer
@@ -511,6 +469,7 @@ export default function DeveloperDashboard() {
     { key: 'units', label: 'Unit tracker' },
     { key: 'construction', label: 'Construction' },
     { key: 'review', label: 'Review status' },
+    { key: 'agreement', label: 'Agreement' },
     {
       key: 'pipeline',
       label: `Pipeline (${activeLeads})`,
@@ -908,6 +867,11 @@ export default function DeveloperDashboard() {
                     {p.unit_types?.length || 0} unit type{(p.unit_types?.length || 0) === 1 ? '' : 's'} →
                   </div>
                 </div>
+                <div onClick={ev => ev.stopPropagation()}>
+                  <details style={{ marginTop: 6 }}><summary style={{ fontSize: 11, cursor: 'pointer', color: text3 }}>Where this stands</summary>
+                    <DevelopmentProgress projectId={p.id} dark={dark} onRequestAgreement={id => { setAgreementFor(id); setTab('agreement') }} onOpenAgreement={rid => { setAgreementOpen(rid); setTab('agreement') }} />
+                  </details>
+                </div>
               </div>
             ))}
           </div>
@@ -1070,51 +1034,29 @@ export default function DeveloperDashboard() {
                   </div>
                 )}
 
-                {devUpdates.length === 0 && (
-                  <div style={{ ...CARD, textAlign: 'center', padding: '1.5rem 1rem', fontSize: '0.85rem', color: text2 }}>
-                    No updates posted yet for {activeProject.name}.
-                  </div>
-                )}
-
-                {devUpdates.map(u => (
-                  <div key={u.id} style={CARD}>
-                    <div style={{ fontWeight: 700, fontSize: '0.88rem', color: text }}>{u.title}</div>
-                    {u.body && <div style={{ fontSize: '0.78rem', color: text2, marginTop: 3 }}>{u.body}</div>}
-                    <div style={{ fontSize: '0.7rem', color: text3, marginTop: 5 }}>
-                      {new Date(u.posted_at).toLocaleDateString()}
-                      {u.stage_at_time ? ` · ${u.stage_at_time}` : ''}
-                      {u.completion_pct_at_time != null ? ` · ${u.completion_pct_at_time}% complete` : ''}
-                    </div>
-                  </div>
-                ))}
-
-                <div style={{ ...CARD, background: 'transparent', border: `1px dashed ${border}` }}>
-                  <div style={{ fontSize: '0.7rem', color: text3, marginBottom: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    Post an update
-                  </div>
-                  <input style={{ ...INP, marginBottom: 8 }} placeholder="e.g. Roofing complete" value={newDevUpdate.title} onChange={e => setNewDevUpdate({ ...newDevUpdate, title: e.target.value })} />
-                  <textarea style={{ ...INP, minHeight: 50, marginBottom: 8 }} placeholder="Details (optional)" value={newDevUpdate.body} onChange={e => setNewDevUpdate({ ...newDevUpdate, body: e.target.value })} />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                    <select style={INP} value={newDevUpdate.stage_at_time} onChange={e => setNewDevUpdate({ ...newDevUpdate, stage_at_time: e.target.value })}>
-                      <option value="">Stage (optional)</option>
-                      {['Planning', 'Foundation', 'Structure', 'Finishing', 'Completed'].map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <input style={INP} type="number" min={0} max={100} placeholder="% complete (optional)" value={newDevUpdate.completion_pct_at_time} onChange={e => setNewDevUpdate({ ...newDevUpdate, completion_pct_at_time: e.target.value })} />
-                  </div>
-                  <button
-                    onClick={postDevUpdate}
-                    style={{ background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.1rem', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'inherit' }}
-                  >
-                    + Post update
-                  </button>
-                  <div style={{ fontSize: '0.65rem', color: text3, marginTop: 6 }}>
-                    This is your own reported update. It's shown to buyers as reported by you — MANOP may separately confirm it.
-                  </div>
+                <div style={{ marginBottom: 20 }}>
+                  <DevelopmentCompleteness projectId={activeProject.id} dark={dark} tier="submitter"
+                    reloadToken={`${(activeProject.unit_types || []).length}-${activeProject.name}`} />
                 </div>
+                <DevelopmentUpdates
+                  key={activeProject.id}
+                  projectId={activeProject.id}
+                  projectName={activeProject.name}
+                  neighborhood={activeProject.neighborhood}
+                  city={activeProject.city}
+                  countryCode={activeProject.country_code}
+                  role="developer"
+                  dark={dark}
+                  units={(activeProject.unit_types || []).map(u => ({ id: u.id, unit_type: u.unit_type, price_ngn: u.price_ngn, available_count: u.available_count ?? null }))}
+                  onSaved={() => { if (user) loadData(user.id) }}
+                />
               </>
             )}
           </div>
         )}
+
+        {tab === 'agreement' && <AgreementRequestPanel role="developer" dark={dark} startForProject={agreementFor} openRequestId={agreementOpen} onHandled={() => { setAgreementFor(null); setAgreementOpen(null) }} />}
+        {tab === 'agreement' && <PartnerFeesPanel dark={dark} />}
 
         {/* REVIEW STATUS */}
 
@@ -1189,8 +1131,9 @@ export default function DeveloperDashboard() {
                   <div>
                     <div style={{ fontWeight: 700, color: text, fontSize: '0.88rem' }}>{l.name}</div>
                     <div style={{ fontSize: '0.75rem', color: text3, marginTop: 2 }}>
-                      {l.phone || 'No phone'} {l.unit_interest ? `· Interested in ${l.unit_interest}` : ''}
+                      {l.phone || 'No phone'}
                     </div>
+                    <UnitRequestSummary lead={l as any} dark={dark} compact />
                     {l.note && (
                       <div style={{ fontSize: '0.75rem', color: text2, marginTop: 4 }}>{l.note}</div>
                     )}
@@ -1205,11 +1148,20 @@ export default function DeveloperDashboard() {
                       fontSize: '0.75rem',
                     }}
                   >
-                    {['new', 'contacted', 'viewing', 'negotiating', 'reserved', 'sold', 'lost'].map(s => (
+                    {LEAD_STAGES.map(s => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
                 </div>
+                <button
+                  onClick={() => setDealRoomLead(dealRoomLead === l.id ? null : l.id)}
+                  style={{ ...INP, width: 'auto', marginTop: 10, padding: '0.35rem 0.7rem', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  {dealRoomLead === l.id ? 'Hide deal room' : 'Open deal room'}
+                </button>
+                {dealRoomLead === l.id && (
+                  <div style={{ marginTop: 10 }}><DealRoomPanel leadId={l.id} dark={dark} /></div>
+                )}
               </div>
             ))}
           </div>
@@ -1254,7 +1206,7 @@ export default function DeveloperDashboard() {
                       onChange={e => moveLead(l.id, e.target.value)}
                       style={{ ...INP, width: 'auto', padding: '0.4rem 0.6rem', fontSize: '0.75rem' }}
                     >
-                      {['new', 'contacted', 'viewing', 'negotiating', 'reserved', 'sold', 'lost'].map(s => (
+                      {LEAD_STAGES.map(s => (
                         <option key={s} value={s}>{s}</option>
                       ))}
                     </select>
@@ -1276,6 +1228,17 @@ export default function DeveloperDashboard() {
                 Open Investment Intelligence <ExternalLink size={12} />
               </Link>
             </div>
+
+            {/* PHASE 6: this is the developer's OWN saved analyses — e.g.
+                an Investment Intelligence run they did on their own unit
+                — distinct from financeLeads above, which are inbound
+                buyer enquiries, not something this developer produced. */}
+            {user && (
+              <div style={{ marginTop: 18 }}>
+                <div style={STAG}>My Finance</div>
+                <MyFinancePanel userId={user.id} dark={dark} />
+              </div>
+            )}
           </div>
         )}
 

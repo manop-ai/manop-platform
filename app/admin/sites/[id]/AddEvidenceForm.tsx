@@ -11,17 +11,14 @@
 // it's the manual counterpart to it, for evidence that has no
 // dataset to intersect against yet.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   LayerCategory, Confidence, EvidenceStatus,
   LAYER_CATEGORY_LABEL,
 } from '../../../../lib/site-intelligence'
-import { getDesignColors, designTokens } from '../../../../lib/theme'
+import { getInitialDark, getDesignColors, designTokens, listenTheme } from '../../../../lib/theme'
 import { authedFetch } from '../../../../lib/authed-fetch'
-
-const dark = true
-const c = getDesignColors(dark)
 
 const EVIDENCE_STATUS_OPTIONS: EvidenceStatus[] = [
   'provided', 'source_derived', 'cross_referenced', 'reviewed', 'unable_to_establish', 'requires_further_verification',
@@ -33,8 +30,11 @@ const SOURCE_TYPE_OPTIONS = [
 
 export default function AddEvidenceForm({ siteId }: { siteId: string }) {
   const router = useRouter()
+  const [dark, setDark] = useState(getInitialDark())
+  useEffect(() => listenTheme(setDark), [])
+  const c = getDesignColors(dark)
   const [open, setOpen] = useState(false)
-  const [category, setCategory] = useState<LayerCategory>('planning')
+  const [category, setCategory] = useState<LayerCategory>('survey_plan')
   const [label, setLabel] = useState('')
   const [valueSummary, setValueSummary] = useState('')
   const [fact, setFact] = useState('')
@@ -107,6 +107,9 @@ export default function AddEvidenceForm({ siteId }: { siteId: string }) {
       <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value as LayerCategory)}>
         {Object.entries(LAYER_CATEGORY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
+      <div style={{ fontSize: 11, color: c.textMuted, marginTop: -6, marginBottom: 10 }}>
+        Use Spatial / Survey Plan for facts read off a submitted survey (area, datum, beacons). Use Planning Context only for zoning or master-plan findings from a planning source.
+      </div>
 
       <label style={labelStyle}>Label *</label>
       <input style={inputStyle} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Confirmed with LASPPPA by phone" />

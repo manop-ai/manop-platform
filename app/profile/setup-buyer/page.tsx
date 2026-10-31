@@ -6,14 +6,12 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { sb } from '../../../lib/supabase/client'
 import { getInitialDark, listenTheme } from '../../../lib/theme'
 import { useAuth } from '../../../lib/useAuth'
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-)
+// The canonical client: it holds the signed-in session (storageKey 'manop-auth'). A client created here
+// used the default storage key, had no session, and wrote preferences as an anonymous caller.
 
 const CITIES   = ['Lagos', 'Abuja', 'Accra', 'Nairobi', 'Port Harcourt', 'Other']
 const BUDGETS  = ['Under ₦50M', '₦50M–100M', '₦100M–200M', '₦200M–500M', '₦500M+']

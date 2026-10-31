@@ -10,6 +10,8 @@ const sb = createClient(
   process.env.SUPABASE_SECRET_KEY!,
 )
 
+const RATE = new Map<string, number[]>()
+
 export async function OPTIONS() {
   return handleCORSPreflight()
 }
@@ -26,13 +28,13 @@ export async function POST(req: NextRequest) {
 
     await sb.from('activity_log').insert({
       event_type: signal_type,
-      message:    `${signal_type}${neighborhood ? ` · ${neighborhood}` : ''}`,
+      message:    `${signal_type}${typeof neighborhood === 'string' && neighborhood ? ` · ${neighborhood.slice(0, 80)}` : ''}`,
       metadata: {
-        neighborhood:  neighborhood  || null,
-        city:          city          || null,
-        partner_id:    partner_id    || null,
-        user_agent:    req.headers.get('user-agent')?.slice(0, 100) || null,
         ...metadata,
+        neighborhood:  typeof neighborhood === 'string' ? neighborhood.slice(0, 80) : null,
+        city:          typeof city === 'string' ? city.slice(0, 80) : null,
+        partner_id:    typeof partner_id === 'string' ? partner_id.slice(0, 64) : null,
+        user_agent:    req.headers.get('user-agent')?.slice(0, 100) || null,
         logged_at: new Date().toISOString(),
       },
     })
@@ -41,7 +43,7 @@ export async function POST(req: NextRequest) {
     return addCORSHeaders(response)
   } catch (err) {
     // Silently fail — never break the UI for analytics
-    const response = NextResponse.json({ ok: false, error: String(err) }, { status: 200 })
+    const response = NextResponse.json({ ok: false }, { status: 200 })
     return addCORSHeaders(response)
   }
 }
