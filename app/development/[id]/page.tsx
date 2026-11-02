@@ -74,7 +74,7 @@ export default async function DevelopmentDetailPage({ params }: { params: { id: 
 
   const { data: units } = await sb
     .from('developer_unit_types')
-    .select('id,unit_type,price_ngn,price_usd,currency_code,size_sqm,available_count,deposit_pct,installment_months,last_price_verified_at')
+    .select('id,unit_type,price_ngn,price_usd,currency_code,size_sqm,available_count,quantity,deposit_pct,installment_months,last_price_verified_at')
     .eq('project_id', project.id)
     // A stable order. The list used to come back in whatever order the database chose, which is also
     // what made "the first unit" arbitrary. Nothing below treats any position as special.
@@ -101,7 +101,7 @@ export default async function DevelopmentDetailPage({ params }: { params: { id: 
   // submitting agency — each one labeled, never blurred together.
   const { data: updates } = await sb
     .from('development_updates')
-    .select('id,title,body,stage_at_time,completion_pct_at_time,posted_by_role,verification_status,posted_at')
+    .select('id,title,body,stage_at_time,completion_pct_at_time,posted_by_role,verification_status,posted_at,media_urls')
     .eq('project_id', project.id)
     .order('posted_at', { ascending: false })
 

@@ -137,7 +137,7 @@ export async function opportunityOptions(r: Requester) {
   const openRef = new Map<string, string>()
   for (const l of links ?? []) { const rq = (reqs ?? []).find(x => x.id === l.request_id); if (rq && !['draft', 'declined', 'withdrawn'].includes(rq.status)) openRef.set(l.project_id, rq.reference) }
   return rows.map(p => ({
-    id: p.id as string, name: p.name as string, location: [p.neighborhood, p.city].filter(Boolean).join(', '), statusLabel: PUBLISH_LABEL[p.publish_status] ?? String(p.publish_status ?? ''),
+    id: p.id as string, name: p.name as string, publishStatus: String(p.publish_status ?? ''), location: [p.neighborhood, p.city].filter(Boolean).join(', '), statusLabel: PUBLISH_LABEL[p.publish_status] ?? String(p.publish_status ?? ''),
     mandateLabel: r.role === 'agency' ? (p.mandate_letter_id ? ((letters ?? []).find(l => l.id === p.mandate_letter_id)?.status ?? null) : 'none uploaded') : null,
     blockedReason: p.publish_status === 'rejected' ? 'MANOP did not approve this submission. Resubmit it before requesting an agreement.' : openRef.has(p.id) ? `Already has an open agreement request (${openRef.get(p.id)}).` : null,
   }))

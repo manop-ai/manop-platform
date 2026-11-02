@@ -19,6 +19,10 @@ import DealRoomPanel from '../../../components/DealRoomPanel'
 import UnitRequestSummary from '../../../components/UnitRequestSummary'
 import { LEAD_STAGES, CLOSED_STAGES } from '../../../lib/deal-room'
 import DevelopmentUpdates from '../../../components/DevelopmentUpdates'
+import UnitTermsPanel from '../../../components/developer/UnitTermsPanel'
+import DeveloperProjectForm from '../../../components/DeveloperProjectForm'
+import SetupChecklist from '../../../components/developer/SetupChecklist'
+import { canEditProject } from '../../../lib/developer-project'
 import DevelopmentCompleteness from '../../../components/DevelopmentCompleteness'
 import DevelopmentProgress from '../../../components/DevelopmentProgress'
 import PartnerFeesPanel from '../../../components/PartnerFeesPanel'
@@ -57,6 +61,8 @@ interface UnitType {
   id: string
   unit_type: string
   price_ngn: number | null
+  deposit_pct?: number | null
+  installment_months?: number | null
   quantity: number | null
   available_count?: number | null
   sold_count: number
@@ -129,20 +135,10 @@ export default function DeveloperDashboard() {
   const [txProjectName, setTxProjectName] = useState('')
   const [txCity, setTxCity] = useState('')
 
-  // ── Add project form ─────────────────────────────────
-
-  const [newProj, setNewProj] = useState({
-    name: '',
-    location: '',
-    city: 'Lagos',
-    total_units: '',
-    stage: 'Foundation',
-    handover: '',
-    completion: '',
-  })
-
-  const [addErr, setAddErr] = useState('')
-  const [adding, setAdding] = useState(false)
+  // ── Add / edit a development ─────────────────────────
+  // Saved through /api/developer/projects (draft first, then submit for MANOP review). The form lives in components/DeveloperProjectForm.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [flash, setFlash] = useState('')
 
   // ── Theme ────────────────────────────────────────────
 
@@ -220,80 +216,6 @@ export default function DeveloperDashboard() {
     if (user) loadData(user.id)
   }, [user, loadData])
 
-  // ── Add project ──────────────────────────────────────
-
-  async function handleAddProject() {
-    setAddErr('')
-
-    if (!newProj.name.trim() || !newProj.location.trim()) {
-      setAddErr('Project name and location are required.')
-      return
-    }
-
-    if (
-      !newProj.total_units ||
-      parseInt(newProj.total_units) < 1
-    ) {
-      setAddErr('Total units required.')
-      return
-    }
-
-    if (!dev) return
-
-    setAdding(true)
-
-    try {
-      const { error } = await sb
-        .from('developer_projects')
-        .insert({
-          developer_id: dev.id,
-          name: newProj.name.trim(),
-          location: newProj.location.trim(),
-          city: newProj.city,
-          stage: newProj.stage,
-          total_units: parseInt(newProj.total_units),
-          handover_date: newProj.handover || null,
-          completion_pct: newProj.completion
-            ? parseInt(newProj.completion)
-            : 0,
-          active: true,
-          created_at: new Date().toISOString(),
-        })
-
-      if (error) throw new Error(error.message)
-
-      // ── Transaction prompt ─────────────────────
-
-      setTxProjectName(newProj.name)
-      setTxCity(newProj.city)
-      setShowTxPrompt(true)
-
-      // ── Reset form ─────────────────────────────
-
-      setNewProj({
-        name: '',
-        location: '',
-        city: 'Lagos',
-        total_units: '',
-        stage: 'Foundation',
-        handover: '',
-        completion: '',
-      })
-
-      setTab('projects')
-
-      await loadData(user!.id)
-    } catch (e: unknown) {
-      setAddErr(
-        e instanceof Error
-          ? e.message
-          : 'Failed to create project.',
-      )
-    } finally {
-      setAdding(false)
-    }
-  }
-
   // ── Move lead ────────────────────────────────────────
 
   async function moveLead(
@@ -329,6 +251,7 @@ export default function DeveloperDashboard() {
   async function addUnitType() {
     if (!activeProject) return
     if (!newUnit.unit_type.trim()) return
+    if (activeProject.publish_status === 'published') return   // the database also refuses this; published unit types are changed with MANOP
 
     const { error } = await sb.from('developer_unit_types').insert({
       project_id: activeProject.id,
@@ -392,7 +315,7 @@ export default function DeveloperDashboard() {
   const STAG: React.CSSProperties = {
     fontSize: '0.6rem',
     fontWeight: 700,
-    color: '#F59E0B',
+    color: '#2DD4BF',
     textTransform: 'uppercase',
     letterSpacing: '0.12em',
     marginBottom: 10,
@@ -478,7 +401,8 @@ export default function DeveloperDashboard() {
       key: 'finance',
       label: `Finance (${financeLeads.length})`,
     },
-    { key: 'addproject', label: '+ New project' },
+    { key: 'addproject', label: '+ New development' },
+    { key: 'settings', label: 'Profile & verification' },
   ]
 
   // Site Intelligence lives on its own domain — same pattern already
@@ -672,7 +596,7 @@ export default function DeveloperDashboard() {
               border: 'none',
               borderBottom: `2px solid ${
                 tab === t.key
-                  ? '#F59E0B'
+                  ? '#5B2EFF'
                   : 'transparent'
               }`,
               color:
@@ -716,8 +640,16 @@ export default function DeveloperDashboard() {
       >
         {/* OVERVIEW */}
 
+        {flash && (
+          <div role="status" style={{ background: 'rgba(45,212,191,0.1)', border: '1px solid rgba(45,212,191,0.3)', borderRadius: 10, padding: '0.7rem 0.9rem', fontSize: 13, color: dark ? '#2DD4BF' : '#0D9488', marginBottom: 14, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            <span>{flash}</span>
+            <button onClick={() => setFlash('')} aria-label="Dismiss" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+          </div>
+        )}
+
         {tab === 'overview' && (
           <div>
+            <SetupChecklist dark={dark} projectCount={projects.length} submittedCount={projects.filter(p => p.publish_status !== 'draft').length} onAddProject={() => { setEditingId(null); setTab('addproject') }} compact />
             <div
               style={{
                 display: 'grid',
@@ -751,9 +683,9 @@ export default function DeveloperDashboard() {
                   No projects yet.
                 </div>
                 <button
-                  onClick={() => setTab('addproject')}
+                  onClick={() => { setEditingId(null); setTab('addproject') }}
                   style={{
-                    background: '#F59E0B',
+                    background: '#5B2EFF',
                     color: '#fff',
                     border: 'none',
                     borderRadius: 8,
@@ -791,8 +723,8 @@ export default function DeveloperDashboard() {
                     style={{
                       fontSize: '0.68rem',
                       fontWeight: 700,
-                      color: '#F59E0B',
-                      background: 'rgba(245,158,11,0.1)',
+                      color: '#2DD4BF',
+                      background: 'rgba(45,212,191,0.12)',
                       border: '1px solid rgba(245,158,11,0.25)',
                       borderRadius: 20,
                       padding: '2px 10px',
@@ -821,7 +753,7 @@ export default function DeveloperDashboard() {
                     style={{
                       width: `${Math.min(100, p.completion_pct ?? 0)}%`,
                       height: '100%',
-                      background: '#F59E0B',
+                      background: '#2DD4BF',
                     }}
                   />
                 </div>
@@ -840,8 +772,8 @@ export default function DeveloperDashboard() {
               <div style={{ ...CARD, textAlign: 'center', padding: '2rem 1rem', fontSize: '0.85rem', color: text2 }}>
                 No projects yet. Use{' '}
                 <button
-                  onClick={() => setTab('addproject')}
-                  style={{ background: 'none', border: 'none', color: '#F59E0B', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', padding: 0 }}
+                  onClick={() => { setEditingId(null); setTab('addproject') }}
+                  style={{ background: 'none', border: 'none', color: '#7C5FFF', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', padding: 0 }}
                 >
                   + New project
                 </button>{' '}
@@ -863,10 +795,21 @@ export default function DeveloperDashboard() {
                     <div style={{ fontWeight: 700, color: text, fontSize: '0.92rem' }}>{p.name}</div>
                     <div style={{ fontSize: '0.75rem', color: text3, marginTop: 2 }}>{p.location} · {p.city}</div>
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: text2 }}>
+                  <div style={{ fontSize: '0.72rem', color: text2, textAlign: 'right' }}>
                     {p.unit_types?.length || 0} unit type{(p.unit_types?.length || 0) === 1 ? '' : 's'} →
+                    <div style={{ marginTop: 4, fontWeight: 700, color: p.publish_status === 'published' ? '#22C55E' : p.publish_status === 'rejected' ? '#EF4444' : p.publish_status === 'pending_review' ? '#A78BFA' : text3 }}>
+                      {p.publish_status === 'published' ? 'Published' : p.publish_status === 'rejected' ? 'Not approved' : p.publish_status === 'pending_review' ? 'In MANOP review' : 'Draft'}
+                    </div>
                   </div>
                 </div>
+                {canEditProject(p.publish_status) && (
+                  <div onClick={ev => ev.stopPropagation()} style={{ marginTop: 8 }}>
+                    <button onClick={() => { setEditingId(p.id); setTab('addproject') }}
+                      style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      Edit draft and submit for review
+                    </button>
+                  </div>
+                )}
                 <div onClick={ev => ev.stopPropagation()}>
                   <details style={{ marginTop: 6 }}><summary style={{ fontSize: 11, cursor: 'pointer', color: text3 }}>Where this stands</summary>
                     <DevelopmentProgress projectId={p.id} dark={dark} onRequestAgreement={id => { setAgreementFor(id); setTab('agreement') }} onOpenAgreement={rid => { setAgreementOpen(rid); setTab('agreement') }} />
@@ -898,9 +841,9 @@ export default function DeveloperDashboard() {
                     style={{
                       fontSize: '0.75rem',
                       fontWeight: 600,
-                      color: activeProjectId === p.id ? '#0F172A' : text2,
-                      background: activeProjectId === p.id ? '#F59E0B' : 'transparent',
-                      border: `1px solid ${activeProjectId === p.id ? '#F59E0B' : border}`,
+                      color: activeProjectId === p.id ? '#fff' : text2,
+                      background: activeProjectId === p.id ? '#5B2EFF' : 'transparent',
+                      border: `1px solid ${activeProjectId === p.id ? '#5B2EFF' : border}`,
                       borderRadius: 20,
                       padding: '0.4rem 0.9rem',
                       cursor: 'pointer',
@@ -920,62 +863,29 @@ export default function DeveloperDashboard() {
             )}
 
             {activeProject?.unit_types?.map(u => {
-              const soldPct = pct(u.sold_count, u.quantity || 0)
-              const reservedPct = pct(u.reserved_count, u.quantity || 0)
               return (
                 <div key={u.id} style={CARD}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
                     <div style={{ fontWeight: 700, color: text, fontSize: '0.88rem' }}>{u.unit_type}</div>
-                    <button onClick={() => deleteUnitType(u.id)} style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 15 }}>×</button>
+                    {activeProject.publish_status !== 'published' && <button onClick={() => deleteUnitType(u.id)} aria-label={`Remove ${u.unit_type}`} style={{ background: 'transparent', border: 'none', color: '#B42318', cursor: 'pointer', fontSize: 15 }}>×</button>}
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                    <div>
-                      <div style={{ fontSize: '0.65rem', color: text3, marginBottom: 3 }}>Price (₦)</div>
-                      <input
-                        style={{ ...INP, padding: '0.4rem 0.5rem', fontSize: '0.78rem' }}
-                        type="number"
-                        defaultValue={u.price_ngn ?? ''}
-                        placeholder="Not set"
-                        onBlur={e => updateUnitTypeField(u.id, 'price_ngn', e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.65rem', color: text3, marginBottom: 3 }}>Total units</div>
-                      <input
-                        style={{ ...INP, padding: '0.4rem 0.5rem', fontSize: '0.78rem' }}
-                        type="number"
-                        defaultValue={u.quantity ?? ''}
-                        placeholder="Not set"
-                        onBlur={e => updateUnitTypeField(u.id, 'quantity', e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.65rem', color: text3, marginBottom: 3 }}>Size (sq.m)</div>
-                      <input
-                        style={{ ...INP, padding: '0.4rem 0.5rem', fontSize: '0.78rem' }}
-                        type="number"
-                        defaultValue={u.size_sqm ?? ''}
-                        placeholder="Not set"
-                        onBlur={e => updateUnitTypeField(u.id, 'size_sqm', e.target.value)}
-                      />
-                    </div>
+                  <UnitTermsPanel unit={u} published={activeProject.publish_status === 'published'} dark={dark} onSaved={() => { if (user) loadData(user.id) }} />
+                  <div style={{ marginTop: 10, maxWidth: 160 }}>
+                    <div style={{ fontSize: '0.65rem', color: text3, marginBottom: 3 }}>Size (sq.m)</div>
+                    <input style={{ ...INP, padding: '0.4rem 0.5rem', fontSize: '0.78rem' }} type="number" defaultValue={u.size_sqm ?? ''} placeholder="Not set"
+                      onBlur={e => updateUnitTypeField(u.id, 'size_sqm', e.target.value)} />
                   </div>
-
-                  <div style={{ fontSize: '0.72rem', color: text2, marginBottom: 6 }}>
-                    {u.sold_count} sold · {u.reserved_count} reserved{u.quantity ? ` / ${u.quantity}` : ''}
-                  </div>
-                  {u.quantity ? (
-                    <div style={{ height: 6, borderRadius: 4, background: border, overflow: 'hidden', display: 'flex' }}>
-                      <div style={{ width: `${soldPct}%`, height: '100%', background: '#22C55E' }} />
-                      <div style={{ width: `${reservedPct}%`, height: '100%', background: '#F59E0B' }} />
-                    </div>
-                  ) : null}
                 </div>
               )
             })}
 
-            {activeProject && (
+            {activeProject && activeProject.publish_status === 'published' && (
+              <div style={{ ...CARD, background: 'transparent', border: `1px dashed ${border}`, fontSize: '0.75rem', color: text2 }}>
+                To add or remove a unit type on a live development, contact MANOP. Prices, deposits, instalment periods and availability can be changed above at any time.
+              </div>
+            )}
+            {activeProject && activeProject.publish_status !== 'published' && (
               <div style={{ ...CARD, background: 'transparent', border: `1px dashed ${border}` }}>
                 <div style={{ fontSize: '0.7rem', color: text3, marginBottom: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Add a unit type
@@ -988,7 +898,7 @@ export default function DeveloperDashboard() {
                 </div>
                 <button
                   onClick={addUnitType}
-                  style={{ background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 8, padding: '0.5rem 1rem', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'inherit' }}
+                  style={{ background: '#5B2EFF', color: '#fff', border: 'none', borderRadius: 8, padding: '0.5rem 1rem', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'inherit' }}
                 >
                   + Add unit type
                 </button>
@@ -1022,9 +932,9 @@ export default function DeveloperDashboard() {
                         onClick={() => setActiveProjectId(p.id)}
                         style={{
                           fontSize: '0.75rem', fontWeight: 600,
-                          color: activeProjectId === p.id ? '#0F172A' : text2,
-                          background: activeProjectId === p.id ? '#F59E0B' : 'transparent',
-                          border: `1px solid ${activeProjectId === p.id ? '#F59E0B' : border}`,
+                          color: activeProjectId === p.id ? '#fff' : text2,
+                          background: activeProjectId === p.id ? '#5B2EFF' : 'transparent',
+                          border: `1px solid ${activeProjectId === p.id ? '#5B2EFF' : border}`,
                           borderRadius: 20, padding: '0.4rem 0.9rem', cursor: 'pointer', fontFamily: 'inherit',
                         }}
                       >
@@ -1246,7 +1156,9 @@ export default function DeveloperDashboard() {
 
         {tab === 'settings' && dev && (
           <div style={{ maxWidth: 560 }}>
-            <div style={STAG}>Company profile</div>
+            <div style={STAG}>Profile and verification</div>
+            <SetupChecklist dark={dark} projectCount={projects.length} submittedCount={projects.filter(p => p.publish_status !== 'draft').length} onAddProject={() => { setEditingId(null); setTab('addproject') }} />
+            <div style={{ ...STAG, marginTop: 8 }}>Company profile</div>
 
             <div style={CARD}>
               <div style={{ display: 'grid', gap: 10 }}>
@@ -1278,7 +1190,7 @@ export default function DeveloperDashboard() {
                 marginTop: 12,
                 fontSize: '0.8rem',
                 fontWeight: 700,
-                color: '#F59E0B',
+                color: '#7C5FFF',
                 textDecoration: 'none',
               }}
             >
@@ -1287,102 +1199,33 @@ export default function DeveloperDashboard() {
           </div>
         )}
 
-        {/* ADD PROJECT */}
+        {/* ADD / EDIT A DEVELOPMENT */}
 
-        {tab === 'addproject' && (
-          <div style={{ maxWidth: 560 }}>
-            <div style={STAG}>New project</div>
-
-            <div
-                style={{
-                  background: bg3,
-                  border: `1px solid ${border}`,
-                  borderRadius: 12,
-                  padding: '1.5rem',
-                }}
-              >
-                {/* FORM CONTENT */}
-
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns:
-                      '1fr 1fr',
-                    gap: 12,
-                    marginBottom: 12,
+        {tab === 'addproject' && (() => {
+          const editing = editingId ? projects.find(p => p.id === editingId) ?? null : null
+          return (
+            <div style={{ maxWidth: 760 }}>
+              <div style={STAG}>{editing ? `Edit draft: ${editing.name}` : 'New development'}</div>
+              <div style={{ fontSize: '0.8rem', color: text2, lineHeight: 1.6, marginBottom: 14, maxWidth: 620 }}>
+                Add the details you have. Save a draft any time, then submit it for MANOP review when it is ready. It is not published until MANOP approves it.
+              </div>
+              <div style={{ background: bg3, border: `1px solid ${border}`, borderRadius: 12, padding: '1.25rem' }}>
+                <DeveloperProjectForm
+                  key={editingId ?? 'new'}
+                  dark={dark}
+                  existing={editing as any}
+                  onCancel={() => { setEditingId(null); setTab('projects') }}
+                  onDone={async r => {
+                    setFlash(r.status === 'pending_review' ? 'Submitted for MANOP review. You can follow it under Review status.' : 'Draft saved. You can reopen it from Projects and submit it when ready.')
+                    setEditingId(null)
+                    if (user) await loadData(user.id)
+                    setTab(r.status === 'pending_review' ? 'review' : 'projects')
                   }}
-                >
-                  <div
-                    style={{
-                      gridColumn: '1/-1',
-                    }}
-                  >
-                    <label
-                      style={{
-                        fontSize: 12,
-                        color: text2,
-                        display: 'block',
-                        marginBottom: 4,
-                      }}
-                    >
-                      Project name *
-                    </label>
-
-                    <input
-                      style={INP}
-                      value={newProj.name}
-                      onChange={e =>
-                        setNewProj(p => ({
-                          ...p,
-                          name: e.target.value,
-                        }))
-                      }
-                      placeholder="e.g. The Lekki Waterfront"
-                    />
-                  </div>
-                </div>
-
-                {addErr && (
-                  <div
-                    style={{
-                      background:
-                        'rgba(239,68,68,0.1)',
-                      border:
-                        '1px solid rgba(239,68,68,0.25)',
-                      borderRadius: 8,
-                      padding: '0.65rem',
-                      fontSize: 13,
-                      color: '#EF4444',
-                      marginBottom: 10,
-                    }}
-                  >
-                    {addErr}
-                  </div>
-                )}
-
-                <button
-                  onClick={handleAddProject}
-                  disabled={adding}
-                  style={{
-                    width: '100%',
-                    background: '#F59E0B',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 9,
-                    padding: '0.8rem',
-                    fontSize: '0.9rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    opacity: adding ? 0.7 : 1,
-                  }}
-                >
-                  {adding
-                    ? 'Creating…'
-                    : 'Create project →'}
-                </button>
+                />
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
 
       {/* Transaction Modal */}

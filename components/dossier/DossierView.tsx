@@ -29,6 +29,17 @@ export interface DossierData {
 }
 
 const POSTED_BY: Record<string, string> = { admin: 'MANOP', developer: 'The developer', agency: 'Submitting agency' }
+// Who stands behind an update. "MANOP-confirmed" is only for an update MANOP marked as verified. An update MANOP entered on the developer's behalf
+// is shown as relayed, so a buyer is never told MANOP checked something it only passed on.
+function progressLabel(u: { posted_by_role: string }, confirmed: boolean) {
+  if (confirmed) return 'MANOP-confirmed'
+  if (u.posted_by_role === 'admin') return 'Relayed by MANOP from the developer, not yet verified by MANOP'
+  return `Reported by ${POSTED_BY[u.posted_by_role] || u.posted_by_role}, not verified by MANOP`
+}
+const updImg = (u: string, w: number) => {
+  const m = u.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/)
+  return m ? `${m[1]}f_auto,q_auto,w_${w},c_limit/${m[2]}` : u
+}
 const STAGES = ['Planning', 'Foundation', 'Structure', 'Finishing', 'Completed']
 const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
@@ -79,7 +90,7 @@ export default function DossierView({ data, dark }: { data: DossierData; dark: b
             <div key={u.id} className="dx-unit">
               <div>
                 <h3>{u.unit_type}</h3>
-                <div className="meta">{u.size_sqm ? <span>{u.size_sqm} sqm</span> : null}{u.available_count === 0 ? <span style={{ color: 'var(--dx-amber)', fontWeight: 700 }}>Sold out, per the developer</span> : u.available_count == null ? <span>Availability not stated</span> : <span>{u.available_count} available, per the developer</span>}</div>
+                <div className="meta">{u.size_sqm ? <span>{u.size_sqm} sqm</span> : null}{u.available_count === 0 ? <span style={{ color: 'var(--dx-teal, #0F766E)', fontWeight: 700 }}>Sold out, per the developer</span> : u.available_count == null ? <span>Availability not stated</span> : <span>{u.available_count}{u.quantity != null && u.quantity >= u.available_count ? ` of ${u.quantity}` : ''} available, per the developer</span>}</div>
               </div>
               <div>
                 <div className="p">{u.price_ngn ? `₦${Number(u.price_ngn).toLocaleString()}` : 'Price not published'}</div>
@@ -148,7 +159,17 @@ export default function DossierView({ data, dark }: { data: DossierData; dark: b
                   ))}
                 </ul>
               )}
-              <div className="m" style={{ color: ok ? 'var(--dx-green)' : 'var(--dx-amber)' }}>{ok ? 'MANOP-confirmed' : `Reported by ${POSTED_BY[u.posted_by_role] || u.posted_by_role}`}</div>
+              {Array.isArray(u.media_urls) && u.media_urls.length > 0 && (
+                <div className="dx-ph">
+                  {u.media_urls.filter((s: unknown) => typeof s === 'string' && /^https:\/\//.test(s as string)).map((src: string, k: number) => (
+                    <a key={k} href={src} target="_blank" rel="noopener noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={updImg(src, 480)} alt={`${u.title}, photo ${k + 1}`} loading="lazy" />
+                    </a>
+                  ))}
+                </div>
+              )}
+              <div className="m" style={{ color: ok ? 'var(--dx-green)' : 'var(--dx-teal, #0F766E)' }}>{progressLabel(u, ok)}</div>
             </div>
           )
         })}

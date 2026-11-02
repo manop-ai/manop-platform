@@ -57,9 +57,10 @@ const TOP_LINKS = [
   { href: '/markets',      label: 'Market Intelligence' },
 ]
 
-export default function NavBar() {
+export default function NavBar({ initialDark }: { initialDark?: boolean } = {}) {
   const pathname = usePathname()
-  const [dark, setDark] = useState(getInitialDark)
+  // Start from the server's value (same on server and browser, so hydration matches), then follow the browser's saved choice.
+  const [dark, setDark] = useState<boolean>(initialDark ?? true)
   const [scrolled, setScrolled] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -70,6 +71,7 @@ export default function NavBar() {
 
   useEffect(() => {
     setMounted(true)
+    setDark(getInitialDark())
 
     const onScroll = () => setScrolled(window.scrollY > 10)
     window.addEventListener('scroll', onScroll)

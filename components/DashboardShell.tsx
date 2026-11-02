@@ -34,7 +34,7 @@ const DASHBOARD_ROUTES = [
   '/investor/dashboard', // also matches /investor/dashboard-v2 and any future variant
 ]
 
-export default function DashboardShell({ children }: { children: React.ReactNode }) {
+export default function DashboardShell({ children, initialDark }: { children: React.ReactNode; initialDark?: boolean }) {
   const pathname = usePathname()
  
   const isDashboard = DASHBOARD_ROUTES.some(route =>
@@ -59,7 +59,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   // Public routes: render with NavBar and Footer as before
   return (
     <>
-      <NavBar />
+      <NavBar initialDark={initialDark} />
       {children}
       <ManopFooter />
     </>

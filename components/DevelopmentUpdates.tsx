@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { sb } from '../lib/supabase/client'
+import { authedFetch } from '../lib/authed-fetch'
 import ImageUploader from './ImageUploader'
 import { logDevelopmentChange } from '../lib/log-development-change'
 
@@ -68,6 +69,7 @@ export default function DevelopmentUpdates(p: Props) {
   const [images, setImages] = useState<string[]>([])
   const [unitEdits, setUnitEdits] = useState<Record<string, { price: string; qty: string }>>({})
   const [saving, setSaving] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)   // admin only: has MANOP itself verified this update?
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [uploaderKey, setUploaderKey] = useState(0)
 
@@ -127,7 +129,8 @@ export default function DevelopmentUpdates(p: Props) {
       posted_by_role: p.role,
       posted_by_user_id: user.id,
       // admin posts are MANOP-confirmed (existing convention); others stay "reported"
-      ...(p.role === 'admin' ? { verification_status: 'manop_confirmed' } : {}),
+      // MANOP-confirmed only when the admin says MANOP verified it. Passing on what a developer reported stays "reported".
+      ...(p.role === 'admin' && confirmed ? { verification_status: 'manop_confirmed' } : {}),
       media_urls: images,
     }).select('id').single()
 
@@ -144,24 +147,21 @@ export default function DevelopmentUpdates(p: Props) {
     let unitErr: string | null = null
 
     if (pending.length) {
-      // History first (append-only), then the live value.
-      const { error: chErr } = await sb.from('development_update_changes').insert(
-        pending.map(c => ({
-          update_id: created.id, project_id: p.projectId, unit_type_id: c.unit.id,
-          unit_label: c.unit.unit_type, field: c.field, previous_value: c.prev, new_value: c.next,
-        })))
-      if (chErr) unitErr = chErr.message
-      else {
-        for (const c of pending) {
-          const patch = c.field === 'price_ngn'
-            ? { price_ngn: c.next, last_price_verified_at: new Date().toISOString() }
-            : { available_count: c.next }
-          const { error: uErr } = await sb.from('developer_unit_types').update(patch).eq('id', c.unit.id)
-          if (uErr) { unitErr = `${c.unit.unit_type}: ${uErr.message}`; break }
-          void logDevelopmentChange(sb,
-            c.field === 'price_ngn' ? 'development_unit_price_changed' : 'development_unit_availability_changed',
-            ctx, { update_id: created.id, unit_type: c.unit.unit_type, previous: c.prev, new: c.next })
-        }
+      // One call per unit through the server route: it validates, checks ownership, records the history (before, after, who, when)
+      // atomically with the change, refuses if the value moved since this page loaded, and tells MANOP about material changes.
+      const byUnit = new Map<string, typeof pending>()
+      for (const c of pending) byUnit.set(c.unit.id, [...(byUnit.get(c.unit.id) ?? []), c])
+      for (const [unitId, list] of byUnit) {
+        const changes: Record<string, number> = {}; const expected: Record<string, number | null> = {}
+        for (const c of list) { changes[c.field] = c.next as number; expected[c.field] = c.prev }
+        try {
+          const res = await authedFetch('/api/developer/unit-terms', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ unit_id: unitId, changes, expected, update_id: created.id }),
+          })
+          const j = await res.json().catch(() => ({}))
+          if (!res.ok) { unitErr = `${list[0].unit.unit_type}: ${j.error || 'not saved'}`; break }
+        } catch { unitErr = `${list[0].unit.unit_type}: network error`; break }
       }
     }
 
@@ -170,7 +170,7 @@ export default function DevelopmentUpdates(p: Props) {
     if (images.length) void logDevelopmentChange(sb, 'development_image_added', ctx, { update_id: created.id, count: images.length })
 
     setForm({ title: '', body: '', stage: '', pct: '' })
-    setImages([]); setUnitEdits({}); setUploaderKey(k => k + 1)
+    setImages([]); setUnitEdits({}); setConfirmed(false); setUploaderKey(k => k + 1)
     setSaving(false)
     setMsg(unitErr
       ? { ok: false, text: `Update saved, but unit changes were not fully applied (${unitErr}).` }
@@ -198,10 +198,10 @@ export default function DevelopmentUpdates(p: Props) {
             value={form.pct} onChange={e => setForm({ ...form, pct: e.target.value })} />
         </div>
 
-        {p.units.length > 0 && (
+        {p.units.length > 0 && p.role !== 'agency' && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, color: text2, marginBottom: 6 }}>
-              Unit changes (optional) — leave blank for no change. Previous values are kept in the history.
+              Unit changes (optional) — leave blank for no change. Every change is recorded permanently and MANOP is notified of significant ones.
             </div>
             {p.units.map(u => (
               <div key={u.id} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -222,6 +222,12 @@ export default function DevelopmentUpdates(p: Props) {
           </div>
         )}
 
+        {p.role === 'admin' && (
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, color: text2, margin: '10px 0 0' }}>
+            <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} style={{ marginTop: 3 }} />
+            <span>MANOP has verified this update itself (site visit, photos or documents reviewed). Leave unticked if you are passing on what the developer told you; buyers will then see it as relayed, not verified.</span>
+          </label>
+        )}
         <ImageUploader key={uploaderKey} dark={dark} label="Photos (optional)" maxImages={6}
           hint="Site progress, completed sections, amenities" onImagesChange={setImages} />
 
@@ -243,7 +249,7 @@ export default function DevelopmentUpdates(p: Props) {
       {loading && <div style={{ fontSize: 13, color: text3 }}>Loading…</div>}
       {!loading && rows.length === 0 && <div style={{ fontSize: 13, color: text3 }}>No updates yet.</div>}
       {rows.map(u => (
-        <div key={u.id} style={{ paddingLeft: 12, borderLeft: `2px solid ${u.verification_status === 'manop_confirmed' ? '#22C55E' : '#F59E0B'}`, marginBottom: 18 }}>
+        <div key={u.id} style={{ paddingLeft: 12, borderLeft: `2px solid ${u.verification_status === 'manop_confirmed' ? '#0D9488' : '#5B2EFF'}`, marginBottom: 18 }}>
           <div style={{ fontSize: 11, color: text3 }}>
             {new Date(u.posted_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
             {' · '}{ROLE_LABEL[u.posted_by_role] || u.posted_by_role}

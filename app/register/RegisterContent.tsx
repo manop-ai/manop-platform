@@ -19,7 +19,7 @@ import { CONSENT_VERSION, EVIDENCE_NOTICE, PRIVACY_URL, TERMS_URL, consentRecord
 type AccountType = 'buyer' | 'diaspora' | 'agency' | 'developer'
 
 const ACCOUNT_TYPES: { key: AccountType; label: string; sub: string; color: string }[] = [
-  { key: 'developer', label: 'Developer',           sub: 'Present and update your developments', color: '#F59E0B' },
+  { key: 'developer', label: 'Developer',           sub: 'Present and update your developments', color: '#5B2EFF' },
   { key: 'agency',    label: 'Agency',              sub: 'Submit and track developments',        color: '#7C5FFF' },
   { key: 'diaspora',  label: 'Investor (diaspora)', sub: 'Assess developments from abroad',      color: '#14B8A6' },
   { key: 'buyer',     label: 'Buyer',               sub: 'Understand a development first',       color: '#5B2EFF' },

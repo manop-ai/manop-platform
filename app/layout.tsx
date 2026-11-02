@@ -9,6 +9,7 @@ import NavBar from '../components/NavBar'
 import ManopFooter from '../components/ManopFooter'
 import DashboardShell from '../components/DashboardShell'
 import UsageTracker from '../components/UsageTracker'
+import { getServerDark } from '../lib/theme-server'
 
 export const metadata: Metadata = {
   title: 'Manop - Africa Property Intelligence',
@@ -32,7 +33,10 @@ const themeScript = `
 })();
 `
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // The nav is a client component whose colours depend on the theme. It must start from the same value the server rendered with,
+  // otherwise a visitor who chose light mode gets light-mode markup with dark-mode (white) text until they toggle the theme.
+  const initialDark = await getServerDark()
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -54,7 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           For all other routes - renders NavBar + children + Footer as before.
         */}
         <UsageTracker />
-        <DashboardShell>
+        <DashboardShell initialDark={initialDark}>
           {children}
         </DashboardShell>
       </body>

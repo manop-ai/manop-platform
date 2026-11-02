@@ -20,6 +20,7 @@ import { getInitialDark, listenTheme } from '../../../../lib/theme'
 import { useAuth } from '../../../../lib/useAuth'
 import ManopLoader from '../../../../components/ManopLoader'
 import { logDevelopmentChange } from '../../../../lib/log-development-change'
+import { authedFetch } from '../../../../lib/authed-fetch'
 import { awaitingReview } from '../../../../lib/submission-origin'
 import DevelopmentCompleteness from '../../../../components/DevelopmentCompleteness'
 import SurroundingDevelopments from '../../../../components/SurroundingDevelopments'
@@ -32,7 +33,7 @@ interface Submission {
   mandate_type: string | null; mandate_document_url: string | null; fee_model: string | null
   reviewed_at: string | null; manop_checked_note: string | null; manop_flag_note: string | null
   created_at: string; developer_id: string
-  developer_accounts: { company_name: string } | { company_name: string }[] | null
+  developer_accounts: { id: string; company_name: string; verified: boolean | null } | { id: string; company_name: string; verified: boolean | null }[] | null
   data_partners: { name: string; verification_status: string } | { name: string; verification_status: string }[] | null
 }
 interface Doc { id: string; document_type: string; document_name: string; document_url: string; verified: boolean }
@@ -61,7 +62,7 @@ export default function ReviewSubmissionsPage() {
 
   const load = useCallback(async () => {
     const { data, error } = await sb.from('developer_projects')
-      .select('id,name,neighborhood,city,state,country_code,stage,total_units,handover_date,description,images,video_urls,publish_status,submitted_via,submitting_agency_id,mandate_type,mandate_document_url,fee_model,reviewed_at,manop_checked_note,manop_flag_note,created_at,developer_id,developer_accounts(company_name),data_partners!submitting_agency_id(name,verification_status)')
+      .select('id,name,neighborhood,city,state,country_code,stage,total_units,handover_date,description,images,video_urls,publish_status,submitted_via,submitting_agency_id,mandate_type,mandate_document_url,fee_model,reviewed_at,manop_checked_note,manop_flag_note,created_at,developer_id,developer_accounts(id,company_name,verified),data_partners!submitting_agency_id(name,verification_status)')
       .neq('publish_status', 'published')
       .order('created_at', { ascending: false })
     if (error) { flash('Could not load submissions.', false); setLoaded(true); return }
@@ -193,7 +194,20 @@ export default function ReviewSubmissionsPage() {
                   <div style={{ fontSize: 18, fontWeight: 800 }}>{sel.name}</div>
                   <div style={{ fontSize: 13, color: text2, marginTop: 4, lineHeight: 1.7 }}>
                     {[sel.neighborhood, sel.city, sel.state].filter(Boolean).join(', ') || 'Location not given'}<br />
-                    Developer: {developer?.company_name || 'unknown'}<br />
+                    Developer: {developer?.company_name || 'unknown'}
+                    {developer && (
+                      <>
+                        {' '}<span style={{ color: developer.verified ? '#22C55E' : text3 }}>{developer.verified ? '(verified)' : '(not verified)'}</span>{' '}
+                        <button type="button" style={{ ...btn(false), minHeight: 30, padding: '0.2rem 0.6rem', fontSize: 12 }}
+                          onClick={async () => {
+                            const r = await authedFetch(`/api/admin/developers/${developer.id}/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verified: !developer.verified }) })
+                            const j = await r.json().catch(() => ({}))
+                            if (!r.ok) flash(j.error || 'Could not update verification.', false)
+                            else { flash(developer.verified ? 'Verification removed.' : 'Developer marked verified.', true); await load() }
+                          }}>{developer.verified ? 'Remove verification' : 'Mark developer verified'}</button>
+                      </>
+                    )}
+                    <br />
                     Submitted by: {agency ? `${agency.name} (${agency.verification_status})` : 'MANOP team or developer'} · {new Date(sel.created_at).toLocaleDateString()}<br />
                     Stage: {sel.stage || '—'} · Units: {sel.total_units ?? '—'} · Handover: {sel.handover_date || '—'}
                     {sel.submitting_agency_id && <><br />Mandate: {sel.mandate_type || '—'} · Fee model: {sel.fee_model || '—'}</>}

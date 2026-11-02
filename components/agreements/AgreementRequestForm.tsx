@@ -17,7 +17,7 @@ export interface ReqRow { id: string; reference: string; status: string; [k: str
 interface Props {
   role: 'agency' | 'developer'
   dark: boolean
-  projects: { id: string; name: string; location?: string; statusLabel?: string; mandateLabel?: string | null; blockedReason?: string | null }[]
+  projects: { id: string; name: string; publishStatus?: string; location?: string; statusLabel?: string; mandateLabel?: string | null; blockedReason?: string | null }[]
   defaults: { company_name: string; requester_name: string; contact_email: string; contact_phone: string }
   /** when editing a returned/draft request */
   existing?: { request: ReqRow; project_ids: string[] } | null
@@ -39,6 +39,8 @@ export default function AgreementRequestForm({ role, dark, projects, defaults, e
   const card: React.CSSProperties = { border: `1px solid ${border}`, borderRadius: 4, padding: 'clamp(0.9rem,3vw,1.25rem)', marginBottom: 14, background: bg3 }
   const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }
 
+  const [pq, setPq] = useState('')
+  const [pStatus, setPStatus] = useState<'all' | 'published' | 'pending_review' | 'draft'>('all')
   const e = existing?.request
   const [clientId] = useState(() => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`))
   const [f, setF] = useState({
@@ -128,21 +130,54 @@ export default function AgreementRequestForm({ role, dark, projects, defaults, e
 
       <div style={{ fontSize: 11, fontWeight: 700, color: text3, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '18px 0 8px' }}>2 · Your opportunity</div>
       <div style={card}>
-        <div style={{ fontSize: 13.5, color: text2, marginBottom: 8 }}>These are the opportunities you have submitted. Choose the one this agreement is for, or leave all unticked for a broader agency-level agreement.</div>
+        <div style={{ fontSize: 13.5, color: text2, marginBottom: 10, lineHeight: 1.6 }}>Search the developments you have submitted and tick the exact ones this agreement covers. Leave all unticked for a broader agency-level agreement.</div>
         {projects.length === 0 && <div style={{ fontSize: 14, color: text3 }}>You have not submitted an opportunity yet. You can still request a broader agency-level agreement below.</div>}
-        {projects.map(p => {
-          const blocked = !!p.blockedReason && !f.project_ids.includes(p.id)
+        {projects.length > 0 && (() => {
+          const needle = pq.trim().toLowerCase()
+          const shown = projects.filter(p => (pStatus === 'all' || p.publishStatus === pStatus) && (!needle || `${p.name} ${p.location ?? ''}`.toLowerCase().includes(needle)))
+          const selectable = shown.filter(p => !(p.blockedReason && !f.project_ids.includes(p.id)))
+          const chosen = projects.filter(p => f.project_ids.includes(p.id))
+          const chip = (on: boolean): React.CSSProperties => ({ border: `1px solid ${on ? accent : border}`, background: on ? accent : 'transparent', color: on ? '#fff' : text2, borderRadius: 99, padding: '5px 12px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', minHeight: 32 })
           return (
-            <label key={p.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minHeight: 44, cursor: blocked ? 'not-allowed' : 'pointer', fontSize: 15, opacity: blocked ? 0.6 : 1, padding: '6px 0', borderTop: `1px solid ${border}` }}>
-              <input type="checkbox" disabled={blocked} style={{ width: 18, height: 18, marginTop: 3 }} checked={f.project_ids.includes(p.id)} onChange={ev => set('project_ids', ev.target.checked ? [...f.project_ids, p.id] : f.project_ids.filter(x => x !== p.id))} />
-              <span>
-                <strong>{p.name}</strong>
-                <span style={{ display: 'block', fontSize: 12.5, color: text3 }}>{[p.location, p.statusLabel].filter(Boolean).join(' · ')}{p.mandateLabel ? ` · Mandate letter: ${p.mandateLabel}` : ''}</span>
-                {p.blockedReason && <span style={{ display: 'block', fontSize: 12.5, color: amber }}>{p.blockedReason}</span>}
-              </span>
-            </label>
+            <>
+              <input type="search" aria-label="Search your developments" placeholder="Search by development name or location" value={pq} onChange={ev => setPq(ev.target.value)} style={{ ...inp, marginBottom: 10 }} />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                {([['all', 'All'], ['published', 'Published'], ['pending_review', 'In review'], ['draft', 'Draft']] as const).map(([k, l]) => (
+                  <button type="button" key={k} style={chip(pStatus === k)} onClick={() => setPStatus(k)}>{l}</button>
+                ))}
+                <button type="button" style={{ ...chip(false), marginLeft: 'auto' }} disabled={selectable.length === 0}
+                  onClick={() => set('project_ids', Array.from(new Set([...f.project_ids, ...selectable.map(p => p.id)])))}>Select all shown ({selectable.length})</button>
+              </div>
+              {chosen.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }} aria-label="Selected developments">
+                  {chosen.map(p => (
+                    <button type="button" key={p.id} onClick={() => set('project_ids', f.project_ids.filter(x => x !== p.id))} style={{ ...chip(true), background: 'transparent', color: text, borderColor: teal }} title="Remove from this agreement">
+                      {p.name} ×
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => set('project_ids', [])} style={{ ...chip(false), border: 'none', textDecoration: 'underline' }}>Clear</button>
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: text3, marginBottom: 4 }}>{chosen.length} selected · showing {shown.length} of {projects.length}</div>
+              <div style={{ maxHeight: 340, overflowY: 'auto', borderTop: `1px solid ${border}` }}>
+                {shown.length === 0 && <div style={{ fontSize: 14, color: text3, padding: '14px 0' }}>No developments match. Clear the search or change the filter.</div>}
+                {shown.map(p => {
+                  const blocked = !!p.blockedReason && !f.project_ids.includes(p.id)
+                  return (
+                    <label key={p.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minHeight: 44, cursor: blocked ? 'not-allowed' : 'pointer', fontSize: 15, opacity: blocked ? 0.6 : 1, padding: '8px 0', borderBottom: `1px solid ${border}` }}>
+                      <input type="checkbox" disabled={blocked} style={{ width: 18, height: 18, marginTop: 3 }} checked={f.project_ids.includes(p.id)} onChange={ev => set('project_ids', ev.target.checked ? [...f.project_ids, p.id] : f.project_ids.filter(x => x !== p.id))} />
+                      <span>
+                        <strong>{p.name}</strong>
+                        <span style={{ display: 'block', fontSize: 12.5, color: text3 }}>{[p.location, p.statusLabel].filter(Boolean).join(' · ')}{p.mandateLabel ? ` · Mandate letter: ${p.mandateLabel}` : ''}</span>
+                        {p.blockedReason && <span style={{ display: 'block', fontSize: 12.5, color: amber }}>{p.blockedReason}</span>}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            </>
           )
-        })}
+        })()}
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: text3, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '18px 0 8px' }}>3 · What kind of arrangement</div>
